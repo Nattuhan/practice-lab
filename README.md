@@ -272,6 +272,16 @@ scripts\publish_pages.bat --metadata-only
 `public/` を置くだけで動きます。詳細は
 [`docs/static-library.md`](docs/static-library.md) を参照してください。
 
+## 利用条件とコンテンツの権利
+
+PracticeLabのソースコードは [`LICENSE`](LICENSE) に記載したMIT Licenseで公開します。ただし、インストールされる第三者製パッケージ、学習済みモデル、利用者が入力する音源・動画には、それぞれ別の利用条件が適用されます。
+
+- 自分が権利を持つ、または解析・複製の許可を得た音源と動画だけを使用してください。
+- YouTubeなど外部サービスのコンテンツを扱う場合は、そのサービスの利用規約と適用法令を確認し、遵守してください。YouTubeの利用条件は [YouTube Terms of Service](https://www.youtube.com/static?template=terms) で確認できます。
+- このリポジトリには、利用者が取得・生成した音源、動画、stems、楽譜画像、解析結果を含めません。それらを公開・共有する場合の権利確認は利用者の責任で行ってください。
+- `madmom`のソースコードはBSDライセンスですが、付属する学習済みモデルとデータはCC BY-NC-SA 4.0です。これらを利用する解析機能には非商用条件が適用されます。商用利用を検討する場合は、[madmomの公式ライセンス](https://github.com/CPJKU/madmom/blob/master/LICENSE) を確認してください。
+- PracticeLabのMIT Licenseは、第三者製パッケージやモデルのライセンス条件を変更するものではありません。
+
 ## 方針
 
 - ソースコードと生成物を混ぜない
