@@ -1655,6 +1655,29 @@ body.video-fullscreen-mode .video-fs-hud {
 }
 
 .section-editor::backdrop { background: rgba(3, 6, 12, .7); }
+.app-dialog {
+  width: min(440px, calc(100vw - 28px));
+  padding: 0;
+  border: 1px solid var(--gray-4);
+  border-radius: 14px;
+  background: var(--gray-1);
+  color: var(--gray-9);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .62);
+}
+.app-dialog::backdrop { background: rgba(3, 6, 12, .76); backdrop-filter: blur(3px); }
+.app-dialog-card { display: flex; flex-direction: column; }
+.app-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--gray-3); }
+.app-dialog-head strong { font-size: 14px; }
+.app-dialog-body { display: grid; gap: 12px; padding: 18px 16px; }
+.app-dialog-body p { margin: 0; color: var(--gray-7); font-size: 12px; line-height: 1.7; white-space: pre-line; }
+.app-dialog-input-wrap[hidden],
+.app-dialog-body p[hidden] { display: none; }
+.app-dialog-input { width: 100%; height: 38px; border: 1px solid var(--gray-4); border-radius: var(--r); background: var(--gray-2); color: var(--gray-9); padding: 0 10px; outline: none; }
+.app-dialog-input:focus { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(249, 115, 22, .15); }
+.app-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 16px; }
+.app-dialog-actions button { min-width: 88px; height: 34px; }
+.app-dialog-confirm.danger { border-color: rgba(248, 113, 113, .48); background: rgba(239, 68, 68, .16); color: #fca5a5; }
+.app-dialog-confirm.danger:hover { background: rgba(239, 68, 68, .25); }
 .section-editor-card { display: flex; flex-direction: column; max-height: inherit; }
 .section-editor-head,
 .section-editor-actions { display: flex; align-items: center; gap: 8px; padding: 14px 16px; }

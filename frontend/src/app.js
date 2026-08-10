@@ -1,4 +1,5 @@
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
+import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, sortLibraryItems } from "./library.js";
 import { mutateSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
@@ -42,6 +43,14 @@ const SELECTORS = {
   queueCount: document.getElementById("queue-count"),
   btnAddFolder: document.getElementById("btn-add-folder"),
   btnStorage: document.getElementById("btn-storage"),
+  appDialog: document.getElementById("app-dialog"),
+  appDialogTitle: document.getElementById("app-dialog-title"),
+  appDialogMessage: document.getElementById("app-dialog-message"),
+  appDialogInputWrap: document.getElementById("app-dialog-input-wrap"),
+  appDialogInput: document.getElementById("app-dialog-input"),
+  appDialogClose: document.getElementById("app-dialog-close"),
+  appDialogCancel: document.getElementById("app-dialog-cancel"),
+  appDialogConfirm: document.getElementById("app-dialog-confirm"),
   storageDialog: document.getElementById("storage-dialog"),
   storageTotal: document.getElementById("storage-total"),
   storageList: document.getElementById("storage-list"),
@@ -196,6 +205,20 @@ const SELECTORS = {
   scoreRegenerateBtn: document.getElementById("score-regenerate-btn"),
   scoreResult: document.getElementById("score-result"),
 };
+
+const appDialog = createAppDialog({
+  dialog: SELECTORS.appDialog,
+  title: SELECTORS.appDialogTitle,
+  message: SELECTORS.appDialogMessage,
+  inputWrap: SELECTORS.appDialogInputWrap,
+  input: SELECTORS.appDialogInput,
+  close: SELECTORS.appDialogClose,
+  cancel: SELECTORS.appDialogCancel,
+  confirm: SELECTORS.appDialogConfirm,
+});
+const showAlert = (message, options) => appDialog.alert(message, options);
+const showConfirm = (message, options) => appDialog.confirm(message, options);
+const showPrompt = (message, defaultValue, options) => appDialog.prompt(message, defaultValue, options);
 
 const setScoreFeatureVisible = visible => {
   SELECTORS.tabScore.hidden = !visible;
@@ -675,13 +698,13 @@ const saveLibraryMetadata = async (sessionId, payload) => {
 };
 
 const editSessionTags = async item => {
-  const value = prompt("タグをカンマ区切りで入力", (item.tags || []).join(", "));
+  const value = await showPrompt("タグをカンマ区切りで入力", (item.tags || []).join(", "), { title: "タグを編集" });
   if (value === null) return;
   const tags = value.split(/[,、]/).map(tag => tag.trim()).filter(Boolean);
   try {
     await saveLibraryMetadata(item.id, { tags });
   } catch (error) {
-    alert(error.message);
+    await showAlert(error.message, { title: "タグを保存できませんでした" });
   }
 };
 
@@ -2173,7 +2196,7 @@ const syncCloudLibrary = async () => {
     if (!response.ok) throw new Error(submitted.detail || `同期に失敗しました (${response.status})`);
     trackQueuedJob(submitted.jobId, { label: "クラウド同期" });
   } catch (error) {
-    alert(error.message);
+    await showAlert(error.message, { title: "クラウド同期に失敗しました" });
   } finally {
     SELECTORS.btnCloudSync.disabled = false;
   }
@@ -3050,7 +3073,7 @@ const saveSectionEditor = async () => {
 };
 
 const restoreAutomaticSections = async () => {
-  if (!confirm("編集内容を破棄して自動解析結果へ戻しますか？")) return;
+  if (!await showConfirm("編集内容を破棄して自動解析結果へ戻しますか？", { title: "自動解析へ戻す", confirmLabel: "戻す", danger: true })) return;
   SELECTORS.sectionEditorError.textContent = "";
   try {
     const response = await fetch(`/results/${encodeURIComponent(currentId)}/sections`, { method: "DELETE" });
@@ -3093,7 +3116,7 @@ const openStorageDialog = async () => {
 };
 
 const cleanStorageCategory = async key => {
-  if (!confirm("再生成可能なキャッシュを削除しますか？")) return;
+  if (!await showConfirm("再生成可能なキャッシュを削除しますか？", { title: "キャッシュを整理", confirmLabel: "整理する", danger: true })) return;
   const button = SELECTORS.storageList.querySelector(`[data-storage-clean="${CSS.escape(key)}"]`);
   if (button) button.disabled = true;
   try {
@@ -3107,7 +3130,7 @@ const cleanStorageCategory = async key => {
     renderStorageReport(result.report);
     SELECTORS.storageTotal.textContent += `（${formatBytes(result.removedBytes)}削除）`;
   } catch (error) {
-    alert(error.message);
+    await showAlert(error.message, { title: "キャッシュを整理できませんでした" });
   } finally {
     if (button) button.disabled = false;
   }
@@ -3142,15 +3165,15 @@ const renderSidebar = items => {
     saveFolders(next);
     renderSidebar(items);
   };
-  const deleteFolder = folder => {
-    if (!confirm(`フォルダー「${folder.name}」を削除しますか？\nセッションは未分類へ移動します。`)) return;
+  const deleteFolder = async folder => {
+    if (!await showConfirm(`フォルダー「${folder.name}」を削除しますか？\nセッションは未分類へ移動します。`, { title: "フォルダーを削除", confirmLabel: "削除", danger: true })) return;
     const next = folders.filter(item => item.id !== folder.id);
     forgetFolderCollapsed(folder.id);
     saveFolders(next);
     renderSidebar(items);
   };
-  const renameFolder = folder => {
-    const name = prompt("フォルダー名", folder.name)?.trim();
+  const renameFolder = async folder => {
+    const name = (await showPrompt("フォルダー名", folder.name, { title: "フォルダー名を変更" }))?.trim();
     if (!name || name === folder.name) return;
     const next = folders.map(item => item.id === folder.id ? { ...item, name } : item);
     saveFolders(next);
@@ -3270,7 +3293,7 @@ const renderSidebar = items => {
 };
 
 const addFolder = async () => {
-  const name = prompt("フォルダー名", "新しいフォルダー")?.trim();
+  const name = (await showPrompt("フォルダー名", "新しいフォルダー", { title: "フォルダーを追加", confirmLabel: "追加" }))?.trim();
   if (!name) return;
   const folders = getFolders();
   folders.push({ id: makeFolderId(), name, collapsed: false, sessionIds: [] });
@@ -3395,7 +3418,7 @@ const loadResult = async (session, { autoplay = false } = {}) => {
   const assets = sessionAssets(typeof session === "string" ? { id } : session);
   const response = await fetch(assets.result, { cache: "no-store" });
   if (!response.ok) {
-    if (hasServer && confirm("解析データが見つかりません。再解析しますか？")) {
+    if (hasServer && await showConfirm("解析データが見つかりません。再解析しますか？", { title: "解析データがありません", confirmLabel: "再解析" })) {
       await doAnalyze(`https://www.youtube.com/watch?v=${id}`, true);
     }
     return;
@@ -3405,10 +3428,10 @@ const loadResult = async (session, { autoplay = false } = {}) => {
 
 const deleteResult = async (id, currentList) => {
   if (!hasServer) {
-    alert("サーバー接続が必要です");
+    await showAlert("サーバー接続が必要です", { title: "操作できません" });
     return;
   }
-  if (!confirm("このセッションと音声ファイルを削除しますか？")) return;
+  if (!await showConfirm("このセッションと音声ファイルを削除しますか？", { title: "セッションを削除", confirmLabel: "削除", danger: true })) return;
   try {
     const response = await fetch(`/results/${encodeURIComponent(id)}`, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
@@ -3416,18 +3439,18 @@ const deleteResult = async (id, currentList) => {
     selectedSessionIds.delete(id);
     renderSidebar(currentList.filter(item => item.id !== id));
   } catch (error) {
-    alert(`削除に失敗しました: ${error.message}`);
+    await showAlert(`削除に失敗しました: ${error.message}`, { title: "削除できませんでした" });
   }
 };
 
 const deleteSelectedResults = async currentList => {
   if (!hasServer) {
-    alert("サーバー接続が必要です");
+    await showAlert("サーバー接続が必要です", { title: "操作できません" });
     return;
   }
   const ids = getSidebarOrderedSessionIds(currentList).filter(id => selectedSessionIds.has(id));
   if (!ids.length) return;
-  if (!confirm(`選択した${ids.length}件のセッションと音声ファイルを削除しますか？`)) return;
+  if (!await showConfirm(`選択した${ids.length}件のセッションと音声ファイルを削除しますか？`, { title: "複数のセッションを削除", confirmLabel: `${ids.length}件を削除`, danger: true })) return;
 
   SELECTORS.btnDeleteSessionSelection.disabled = true;
   try {
@@ -3443,7 +3466,7 @@ const deleteSelectedResults = async currentList => {
     lastSelectedSessionId = null;
     renderSidebar(currentList.filter(item => !deletedIds.has(item.id)));
   } catch (error) {
-    alert(`一括削除に失敗しました: ${error.message}`);
+    await showAlert(`一括削除に失敗しました: ${error.message}`, { title: "削除できませんでした" });
   } finally {
     SELECTORS.btnDeleteSessionSelection.disabled = false;
   }
@@ -3451,10 +3474,10 @@ const deleteSelectedResults = async currentList => {
 
 const renameSession = async (item, currentList) => {
   if (!hasServer) {
-    alert("サーバー接続が必要です");
+    await showAlert("サーバー接続が必要です", { title: "操作できません" });
     return;
   }
-  const title = prompt("セッション名", item.title)?.trim();
+  const title = (await showPrompt("セッション名", item.title, { title: "セッション名を変更" }))?.trim();
   if (!title || title === item.title) return;
   const nextList = currentList.map(entry => entry.id === item.id ? { ...entry, title } : entry);
   renderSidebar(nextList);
@@ -3478,7 +3501,7 @@ const renameSession = async (item, currentList) => {
       currentData = previousData;
       SELECTORS.topbarSong.textContent = previousData.title || item.title;
     }
-    alert(error.message);
+    await showAlert(error.message, { title: "名前を変更できませんでした" });
   }
 };
 

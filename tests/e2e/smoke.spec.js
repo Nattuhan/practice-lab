@@ -25,6 +25,20 @@ test("曲構成と楽譜抽出を切り替えられる", async ({ page }) => {
   await expect(page.locator("#structure-panel")).toBeVisible();
 });
 
+test("入力ポップアップをアプリ内の画面として表示する", async ({ page }) => {
+  const browserDialogs = [];
+  page.on("dialog", dialog => browserDialogs.push(dialog.type()));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "新しいフォルダー" }).click();
+  const dialog = page.getByRole("dialog", { name: "フォルダーを追加" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "フォルダー名" })).toHaveValue("新しいフォルダー");
+  await dialog.getByRole("button", { name: "キャンセル" }).click();
+  await expect(dialog).toBeHidden();
+  expect(browserDialogs).toEqual([]);
+});
+
 test("再起動で中断したジョブを利用者が再開できる", async ({ page }) => {
   await page.route("**/jobs?recoverable=true", route => route.fulfill({
     contentType: "application/json",
@@ -137,14 +151,15 @@ test("容量を確認して再生成可能なキャッシュだけを整理で�
       body: JSON.stringify({ removedBytes: 1024, removedFiles: 2, report: { ...report, totalBytes: 2048, categories: report.categories.map(category => category.key === "work" ? { ...category, bytes: 0, files: 0 } : category) } }),
     });
   });
-  page.on("dialog", dialog => dialog.accept());
-
   await page.goto("/");
   await page.getByRole("button", { name: "容量とキャッシュ" }).click();
   await expect(page.getByText("作業キャッシュ", { exact: true })).toBeVisible();
   await expect(page.getByText("元音声", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "整理", exact: true })).toHaveCount(1);
   await page.getByRole("button", { name: "整理", exact: true }).click();
+  const confirmDialog = page.getByRole("dialog", { name: "キャッシュを整理" });
+  await expect(confirmDialog).toBeVisible();
+  await confirmDialog.getByRole("button", { name: "整理する" }).click();
   await expect.poll(() => cleanupRequest).toEqual({ categories: ["work"] });
   await expect(page.locator("#storage-total")).toContainText("1.00 KB削除");
 });

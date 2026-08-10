@@ -2121,6 +2121,87 @@ var icons = {
 };
 var renderIcons = () => createIcons({ icons });
 
+// frontend/src/app-dialog.js
+var createAppDialog = (elements) => {
+  let queue = Promise.resolve();
+  const open = ({
+    type,
+    title,
+    message,
+    defaultValue = "",
+    confirmLabel = "OK",
+    cancelLabel = "\u30AD\u30E3\u30F3\u30BB\u30EB",
+    danger = false
+  }) => new Promise((resolve) => {
+    const previouslyFocused = document.activeElement;
+    elements.title.textContent = title;
+    elements.message.textContent = message || "";
+    elements.message.hidden = !message;
+    elements.inputWrap.hidden = type !== "prompt";
+    elements.input.value = defaultValue;
+    elements.cancel.hidden = type === "alert";
+    elements.cancel.textContent = cancelLabel;
+    elements.confirm.textContent = confirmLabel;
+    elements.confirm.classList.toggle("danger", danger);
+    elements.close.onclick = () => elements.dialog.close("cancel");
+    elements.cancel.onclick = () => elements.dialog.close("cancel");
+    const finish = () => {
+      const accepted = elements.dialog.returnValue === "confirm";
+      elements.dialog.removeEventListener("close", finish);
+      elements.dialog.removeEventListener("cancel", handleCancel);
+      previouslyFocused?.focus?.();
+      if (type === "prompt") resolve(accepted ? elements.input.value : null);
+      else resolve(type === "alert" ? void 0 : accepted);
+    };
+    const handleCancel = (event) => {
+      event.preventDefault();
+      elements.dialog.close("cancel");
+    };
+    elements.dialog.addEventListener("close", finish);
+    elements.dialog.addEventListener("cancel", handleCancel);
+    elements.dialog.returnValue = "cancel";
+    elements.dialog.showModal();
+    requestAnimationFrame(() => {
+      if (type === "prompt") {
+        elements.input.focus();
+        elements.input.select();
+      } else {
+        elements.confirm.focus();
+      }
+    });
+  });
+  const enqueue = (options) => {
+    const result = queue.then(() => open(options), () => open(options));
+    queue = result.catch(() => {
+    });
+    return result;
+  };
+  return {
+    alert: (message, options = {}) => enqueue({
+      type: "alert",
+      title: options.title || "\u304A\u77E5\u3089\u305B",
+      message,
+      confirmLabel: options.confirmLabel || "OK"
+    }),
+    confirm: (message, options = {}) => enqueue({
+      type: "confirm",
+      title: options.title || "\u78BA\u8A8D",
+      message,
+      confirmLabel: options.confirmLabel || "OK",
+      cancelLabel: options.cancelLabel || "\u30AD\u30E3\u30F3\u30BB\u30EB",
+      danger: options.danger || false
+    }),
+    prompt: (message, defaultValue = "", options = {}) => enqueue({
+      type: "prompt",
+      title: options.title || "\u5165\u529B",
+      message,
+      defaultValue,
+      confirmLabel: options.confirmLabel || "\u4FDD\u5B58",
+      cancelLabel: options.cancelLabel || "\u30AD\u30E3\u30F3\u30BB\u30EB"
+    })
+  };
+};
+
 // frontend/src/library.js
 var filterLibraryItems = (items, { query = "", filter = "all" } = {}) => {
   const normalizedQuery = query.trim().toLocaleLowerCase("ja");
@@ -2219,6 +2300,14 @@ var SELECTORS = {
   queueCount: document.getElementById("queue-count"),
   btnAddFolder: document.getElementById("btn-add-folder"),
   btnStorage: document.getElementById("btn-storage"),
+  appDialog: document.getElementById("app-dialog"),
+  appDialogTitle: document.getElementById("app-dialog-title"),
+  appDialogMessage: document.getElementById("app-dialog-message"),
+  appDialogInputWrap: document.getElementById("app-dialog-input-wrap"),
+  appDialogInput: document.getElementById("app-dialog-input"),
+  appDialogClose: document.getElementById("app-dialog-close"),
+  appDialogCancel: document.getElementById("app-dialog-cancel"),
+  appDialogConfirm: document.getElementById("app-dialog-confirm"),
   storageDialog: document.getElementById("storage-dialog"),
   storageTotal: document.getElementById("storage-total"),
   storageList: document.getElementById("storage-list"),
@@ -2373,6 +2462,19 @@ var SELECTORS = {
   scoreRegenerateBtn: document.getElementById("score-regenerate-btn"),
   scoreResult: document.getElementById("score-result")
 };
+var appDialog = createAppDialog({
+  dialog: SELECTORS.appDialog,
+  title: SELECTORS.appDialogTitle,
+  message: SELECTORS.appDialogMessage,
+  inputWrap: SELECTORS.appDialogInputWrap,
+  input: SELECTORS.appDialogInput,
+  close: SELECTORS.appDialogClose,
+  cancel: SELECTORS.appDialogCancel,
+  confirm: SELECTORS.appDialogConfirm
+});
+var showAlert = (message, options) => appDialog.alert(message, options);
+var showConfirm = (message, options) => appDialog.confirm(message, options);
+var showPrompt = (message, defaultValue, options) => appDialog.prompt(message, defaultValue, options);
 var setScoreFeatureVisible = (visible) => {
   SELECTORS.tabScore.hidden = !visible;
   SELECTORS.scorePanel.hidden = true;
@@ -2800,13 +2902,13 @@ var saveLibraryMetadata = async (sessionId, payload) => {
   return updated;
 };
 var editSessionTags = async (item) => {
-  const value = prompt("\u30BF\u30B0\u3092\u30AB\u30F3\u30DE\u533A\u5207\u308A\u3067\u5165\u529B", (item.tags || []).join(", "));
+  const value = await showPrompt("\u30BF\u30B0\u3092\u30AB\u30F3\u30DE\u533A\u5207\u308A\u3067\u5165\u529B", (item.tags || []).join(", "), { title: "\u30BF\u30B0\u3092\u7DE8\u96C6" });
   if (value === null) return;
   const tags = value.split(/[,、]/).map((tag) => tag.trim()).filter(Boolean);
   try {
     await saveLibraryMetadata(item.id, { tags });
   } catch (error) {
-    alert(error.message);
+    await showAlert(error.message, { title: "\u30BF\u30B0\u3092\u4FDD\u5B58\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
   }
 };
 var markCurrentSessionPracticed = () => {
@@ -4144,7 +4246,7 @@ var syncCloudLibrary = async () => {
     if (!response.ok) throw new Error(submitted.detail || `\u540C\u671F\u306B\u5931\u6557\u3057\u307E\u3057\u305F (${response.status})`);
     trackQueuedJob(submitted.jobId, { label: "\u30AF\u30E9\u30A6\u30C9\u540C\u671F" });
   } catch (error) {
-    alert(error.message);
+    await showAlert(error.message, { title: "\u30AF\u30E9\u30A6\u30C9\u540C\u671F\u306B\u5931\u6557\u3057\u307E\u3057\u305F" });
   } finally {
     SELECTORS.btnCloudSync.disabled = false;
   }
@@ -4952,7 +5054,7 @@ var saveSectionEditor = async () => {
   }
 };
 var restoreAutomaticSections = async () => {
-  if (!confirm("\u7DE8\u96C6\u5185\u5BB9\u3092\u7834\u68C4\u3057\u3066\u81EA\u52D5\u89E3\u6790\u7D50\u679C\u3078\u623B\u3057\u307E\u3059\u304B\uFF1F")) return;
+  if (!await showConfirm("\u7DE8\u96C6\u5185\u5BB9\u3092\u7834\u68C4\u3057\u3066\u81EA\u52D5\u89E3\u6790\u7D50\u679C\u3078\u623B\u3057\u307E\u3059\u304B\uFF1F", { title: "\u81EA\u52D5\u89E3\u6790\u3078\u623B\u3059", confirmLabel: "\u623B\u3059", danger: true })) return;
   SELECTORS.sectionEditorError.textContent = "";
   try {
     const response = await fetch(`/results/${encodeURIComponent(currentId)}/sections`, { method: "DELETE" });
@@ -4990,7 +5092,7 @@ var openStorageDialog = async () => {
   }
 };
 var cleanStorageCategory = async (key) => {
-  if (!confirm("\u518D\u751F\u6210\u53EF\u80FD\u306A\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F")) return;
+  if (!await showConfirm("\u518D\u751F\u6210\u53EF\u80FD\u306A\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F", { title: "\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u6574\u7406", confirmLabel: "\u6574\u7406\u3059\u308B", danger: true })) return;
   const button = SELECTORS.storageList.querySelector(`[data-storage-clean="${CSS.escape(key)}"]`);
   if (button) button.disabled = true;
   try {
@@ -5004,7 +5106,7 @@ var cleanStorageCategory = async (key) => {
     renderStorageReport(result.report);
     SELECTORS.storageTotal.textContent += `\uFF08${formatBytes(result.removedBytes)}\u524A\u9664\uFF09`;
   } catch (error) {
-    alert(error.message);
+    await showAlert(error.message, { title: "\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u6574\u7406\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
   } finally {
     if (button) button.disabled = false;
   }
@@ -5037,16 +5139,16 @@ var renderSidebar = (items) => {
     saveFolders(next);
     renderSidebar(items);
   };
-  const deleteFolder = (folder) => {
-    if (!confirm(`\u30D5\u30A9\u30EB\u30C0\u30FC\u300C${folder.name}\u300D\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F
-\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u672A\u5206\u985E\u3078\u79FB\u52D5\u3057\u307E\u3059\u3002`)) return;
+  const deleteFolder = async (folder) => {
+    if (!await showConfirm(`\u30D5\u30A9\u30EB\u30C0\u30FC\u300C${folder.name}\u300D\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F
+\u30BB\u30C3\u30B7\u30E7\u30F3\u306F\u672A\u5206\u985E\u3078\u79FB\u52D5\u3057\u307E\u3059\u3002`, { title: "\u30D5\u30A9\u30EB\u30C0\u30FC\u3092\u524A\u9664", confirmLabel: "\u524A\u9664", danger: true })) return;
     const next = folders.filter((item) => item.id !== folder.id);
     forgetFolderCollapsed(folder.id);
     saveFolders(next);
     renderSidebar(items);
   };
-  const renameFolder = (folder) => {
-    const name = prompt("\u30D5\u30A9\u30EB\u30C0\u30FC\u540D", folder.name)?.trim();
+  const renameFolder = async (folder) => {
+    const name = (await showPrompt("\u30D5\u30A9\u30EB\u30C0\u30FC\u540D", folder.name, { title: "\u30D5\u30A9\u30EB\u30C0\u30FC\u540D\u3092\u5909\u66F4" }))?.trim();
     if (!name || name === folder.name) return;
     const next = folders.map((item) => item.id === folder.id ? { ...item, name } : item);
     saveFolders(next);
@@ -5163,7 +5265,7 @@ var renderSidebar = (items) => {
   updateSidebarSelectionUI();
 };
 var addFolder = async () => {
-  const name = prompt("\u30D5\u30A9\u30EB\u30C0\u30FC\u540D", "\u65B0\u3057\u3044\u30D5\u30A9\u30EB\u30C0\u30FC")?.trim();
+  const name = (await showPrompt("\u30D5\u30A9\u30EB\u30C0\u30FC\u540D", "\u65B0\u3057\u3044\u30D5\u30A9\u30EB\u30C0\u30FC", { title: "\u30D5\u30A9\u30EB\u30C0\u30FC\u3092\u8FFD\u52A0", confirmLabel: "\u8FFD\u52A0" }))?.trim();
   if (!name) return;
   const folders = getFolders();
   folders.push({ id: makeFolderId(), name, collapsed: false, sessionIds: [] });
@@ -5283,7 +5385,7 @@ var loadResult = async (session, { autoplay = false } = {}) => {
   const assets = sessionAssets(typeof session === "string" ? { id } : session);
   const response = await fetch(assets.result, { cache: "no-store" });
   if (!response.ok) {
-    if (hasServer && confirm("\u89E3\u6790\u30C7\u30FC\u30BF\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u518D\u89E3\u6790\u3057\u307E\u3059\u304B\uFF1F")) {
+    if (hasServer && await showConfirm("\u89E3\u6790\u30C7\u30FC\u30BF\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u518D\u89E3\u6790\u3057\u307E\u3059\u304B\uFF1F", { title: "\u89E3\u6790\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093", confirmLabel: "\u518D\u89E3\u6790" })) {
       await doAnalyze(`https://www.youtube.com/watch?v=${id}`, true);
     }
     return;
@@ -5292,10 +5394,10 @@ var loadResult = async (session, { autoplay = false } = {}) => {
 };
 var deleteResult = async (id, currentList) => {
   if (!hasServer) {
-    alert("\u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u304C\u5FC5\u8981\u3067\u3059");
+    await showAlert("\u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u304C\u5FC5\u8981\u3067\u3059", { title: "\u64CD\u4F5C\u3067\u304D\u307E\u305B\u3093" });
     return;
   }
-  if (!confirm("\u3053\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3068\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F")) return;
+  if (!await showConfirm("\u3053\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3068\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F", { title: "\u30BB\u30C3\u30B7\u30E7\u30F3\u3092\u524A\u9664", confirmLabel: "\u524A\u9664", danger: true })) return;
   try {
     const response = await fetch(`/results/${encodeURIComponent(id)}`, { method: "DELETE" });
     const payload = await response.json().catch(() => ({}));
@@ -5303,17 +5405,17 @@ var deleteResult = async (id, currentList) => {
     selectedSessionIds.delete(id);
     renderSidebar(currentList.filter((item) => item.id !== id));
   } catch (error) {
-    alert(`\u524A\u9664\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${error.message}`);
+    await showAlert(`\u524A\u9664\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${error.message}`, { title: "\u524A\u9664\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
   }
 };
 var deleteSelectedResults = async (currentList) => {
   if (!hasServer) {
-    alert("\u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u304C\u5FC5\u8981\u3067\u3059");
+    await showAlert("\u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u304C\u5FC5\u8981\u3067\u3059", { title: "\u64CD\u4F5C\u3067\u304D\u307E\u305B\u3093" });
     return;
   }
   const ids = getSidebarOrderedSessionIds(currentList).filter((id) => selectedSessionIds.has(id));
   if (!ids.length) return;
-  if (!confirm(`\u9078\u629E\u3057\u305F${ids.length}\u4EF6\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3068\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F`)) return;
+  if (!await showConfirm(`\u9078\u629E\u3057\u305F${ids.length}\u4EF6\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3068\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F`, { title: "\u8907\u6570\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u3092\u524A\u9664", confirmLabel: `${ids.length}\u4EF6\u3092\u524A\u9664`, danger: true })) return;
   SELECTORS.btnDeleteSessionSelection.disabled = true;
   try {
     const response = await fetch("/results", {
@@ -5328,17 +5430,17 @@ var deleteSelectedResults = async (currentList) => {
     lastSelectedSessionId = null;
     renderSidebar(currentList.filter((item) => !deletedIds.has(item.id)));
   } catch (error) {
-    alert(`\u4E00\u62EC\u524A\u9664\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${error.message}`);
+    await showAlert(`\u4E00\u62EC\u524A\u9664\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${error.message}`, { title: "\u524A\u9664\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
   } finally {
     SELECTORS.btnDeleteSessionSelection.disabled = false;
   }
 };
 var renameSession = async (item, currentList) => {
   if (!hasServer) {
-    alert("\u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u304C\u5FC5\u8981\u3067\u3059");
+    await showAlert("\u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u304C\u5FC5\u8981\u3067\u3059", { title: "\u64CD\u4F5C\u3067\u304D\u307E\u305B\u3093" });
     return;
   }
-  const title = prompt("\u30BB\u30C3\u30B7\u30E7\u30F3\u540D", item.title)?.trim();
+  const title = (await showPrompt("\u30BB\u30C3\u30B7\u30E7\u30F3\u540D", item.title, { title: "\u30BB\u30C3\u30B7\u30E7\u30F3\u540D\u3092\u5909\u66F4" }))?.trim();
   if (!title || title === item.title) return;
   const nextList = currentList.map((entry) => entry.id === item.id ? { ...entry, title } : entry);
   renderSidebar(nextList);
@@ -5362,7 +5464,7 @@ var renameSession = async (item, currentList) => {
       currentData = previousData;
       SELECTORS.topbarSong.textContent = previousData.title || item.title;
     }
-    alert(error.message);
+    await showAlert(error.message, { title: "\u540D\u524D\u3092\u5909\u66F4\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
   }
 };
 var queueStemGeneration = async (sessionId, { title = "", silent = false, refreshCurrent = false } = {}) => {

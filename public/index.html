@@ -444,6 +444,25 @@
   </div>
 </div>
 
+<dialog class="app-dialog" id="app-dialog" aria-labelledby="app-dialog-title" aria-describedby="app-dialog-message">
+  <form method="dialog" class="app-dialog-card">
+    <div class="app-dialog-head">
+      <strong id="app-dialog-title">確認</strong>
+      <button class="icon-btn" type="button" id="app-dialog-close" aria-label="閉じる"><i data-lucide="x"></i></button>
+    </div>
+    <div class="app-dialog-body">
+      <p id="app-dialog-message"></p>
+      <label class="app-dialog-input-wrap" id="app-dialog-input-wrap">
+        <input class="app-dialog-input" id="app-dialog-input" type="text" autocomplete="off" aria-labelledby="app-dialog-message">
+      </label>
+    </div>
+    <div class="app-dialog-actions">
+      <button class="mini-btn" id="app-dialog-cancel" type="button">キャンセル</button>
+      <button class="btn-analyze app-dialog-confirm" id="app-dialog-confirm" value="confirm">OK</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog class="section-editor" id="section-editor">
   <form method="dialog" class="section-editor-card">
     <div class="section-editor-head">
