@@ -1,0 +1,20 @@
+{
+  "name": "practice-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild frontend/src/app.js --bundle --format=esm --platform=browser --target=es2022 --outfile=public/app.js",
+    "build:watch": "npm run build -- --watch",
+    "test:unit": "node --test frontend/tests/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "lucide": "0.468.0",
+    "wavesurfer.js": "7.12.11"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "esbuild": "0.28.2"
+  }
+}

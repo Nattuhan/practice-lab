@@ -1,0 +1,77 @@
+import unittest
+
+from practice_lab.timing import normalize_tempo_grid
+
+
+class TempoGridNormalizationTests(unittest.TestCase):
+    def test_promotes_half_time_bpm_when_sustained_double_time_beats_are_present(self):
+        beats = [round(index * 0.68, 3) for index in range(12)]
+        transition = beats[-1]
+        beats.extend(round(transition + 0.34 * index, 3) for index in range(1, 25))
+        data = {
+            "bpm": 88.0,
+            "total_bars": 6,
+            "beats": beats,
+            "downbeats": [beats[2], beats[6], beats[10], beats[18], beats[22], beats[26], beats[30]],
+            "sections": [
+                {"label": "verse", "start_time": 0.0, "end_time": beats[12], "start_bar": 1, "end_bar": 3, "bar_count": 3},
+                {"label": "chorus", "start_time": beats[12], "end_time": beats[-1], "start_bar": 4, "end_bar": 6, "bar_count": 3},
+            ],
+        }
+
+        adjusted = normalize_tempo_grid(data)
+        intervals = [round(adjusted["beats"][index + 1] - adjusted["beats"][index], 2) for index in range(len(adjusted["beats"]) - 1)]
+
+        self.assertEqual(adjusted["bpm"], 176.0)
+        self.assertTrue(all(interval == 0.34 for interval in intervals[1:-1]))
+        self.assertGreater(len(adjusted["beats"]), len(beats))
+        self.assertGreater(adjusted["total_bars"], data["total_bars"])
+
+    def test_keeps_stable_half_time_grid_unchanged(self):
+        data = {
+            "bpm": 88.0,
+            "total_bars": 3,
+            "beats": [round(index * 0.68, 3) for index in range(16)],
+            "downbeats": [0.0, 2.72, 5.44],
+            "sections": [],
+        }
+
+        self.assertIs(normalize_tempo_grid(data), data)
+
+    def test_backfills_sparse_syncopated_intro_from_stable_later_grid(self):
+        sparse_intro = [3.54, 4.44, 5.34, 6.24, 7.12, 7.94, 8.84, 9.71, 10.62, 11.53]
+        stable = [round(11.53 + 0.61 * index, 2) for index in range(1, 25)]
+        beats = sparse_intro + stable
+        data = {
+            "bpm": 98.0,
+            "total_bars": 8,
+            "beats": beats,
+            "downbeats": [6.24, 9.71, 12.75, 15.19, 17.63, 20.07, 22.51, 24.95],
+            "sections": [
+                {"label": "start", "start_time": 0.0, "end_time": 3.04},
+                {"label": "intro", "start_time": 3.04, "end_time": 20.0},
+            ],
+        }
+
+        adjusted = normalize_tempo_grid(data)
+
+        self.assertEqual(adjusted["beats"][:5], [2.99, 3.6, 4.21, 4.82, 5.43])
+        self.assertEqual(adjusted["downbeats"][:4], [2.99, 5.43, 7.87, 10.31])
+        self.assertEqual(adjusted["beats"][14:17], [11.53, 12.14, 12.75])
+        self.assertEqual(adjusted["sections"][1]["start_bar"], 1)
+
+    def test_does_not_flatten_a_short_tempo_change_later_in_song(self):
+        beats = [round(index * 0.9, 2) for index in range(40)]
+        beats.extend(round(beats[-1] + 0.61 * index, 2) for index in range(1, 30))
+        data = {
+            "bpm": 98.0,
+            "beats": beats,
+            "downbeats": beats[::4],
+            "sections": [],
+        }
+
+        self.assertIs(normalize_tempo_grid(data), data)
+
+
+if __name__ == "__main__":
+    unittest.main()

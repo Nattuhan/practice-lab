@@ -1,0 +1,4 @@
+interface:
+  display_name: "PracticeLab R2 差分同期"
+  short_description: "PracticeLabの変更ファイルだけを安全にR2へ同期"
+  default_prompt: "Use $practice-lab-r2-sync to publish only changed PracticeLab files to R2."

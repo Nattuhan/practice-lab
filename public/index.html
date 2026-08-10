@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PracticeLab</title>
+  <link rel="stylesheet" href="styles.css?v=20260805-score-settings">
+</head>
+<body>
+<div class="shell">
+  <button class="sidebar-scrim" id="sidebar-scrim" aria-label="セッション一覧を閉じる" hidden></button>
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-header">
+      <div class="sb-logo"><i aria-hidden="true"></i>Practice<span>Lab</span></div>
+    </div>
+    <div class="sb-session-panel" id="session-panel" hidden>
+      <div class="sb-tools">
+        <span class="sb-label">セッション</span>
+        <div class="sb-tool-actions">
+          <span class="sb-selection-count" id="sidebar-selection-count" hidden></span>
+          <button class="sb-delete-selection icon-btn" id="btn-delete-session-selection" type="button" aria-label="選択したセッションを削除" title="選択したセッションを削除" hidden><i data-lucide="trash-2"></i></button>
+          <button class="sb-clear-selection icon-btn" id="btn-clear-session-selection" type="button" aria-label="選択を解除" title="選択を解除" hidden><i data-lucide="x"></i></button>
+          <button class="sb-add-folder icon-btn" id="btn-storage" type="button" aria-label="容量とキャッシュ" title="容量とキャッシュ"><i data-lucide="hard-drive"></i></button>
+          <button class="sb-add-folder icon-btn" id="btn-add-folder" type="button" aria-label="新しいフォルダー" title="新しいフォルダー"><i data-lucide="folder-plus"></i></button>
+        </div>
+      </div>
+      <div class="library-controls">
+        <input id="session-search" type="search" placeholder="曲名・タグを検索" aria-label="曲名・タグを検索">
+        <div class="library-control-row">
+          <select id="session-filter" aria-label="練習状態で絞り込み">
+            <option value="all">すべて</option>
+            <option value="unpracticed">未練習のみ</option>
+          </select>
+          <select id="session-sort" aria-label="曲の並び順">
+            <option value="manual">フォルダー順</option>
+            <option value="recent">最近練習した順</option>
+            <option value="added">最近追加した順</option>
+            <option value="title">曲名順</option>
+          </select>
+        </div>
+      </div>
+      <div class="sb-scroll" id="sidebar-list"></div>
+    </div>
+    <div class="score-history-panel" id="score-history-panel" hidden>
+      <div class="sb-tools">
+        <span class="sb-label">抽出済み楽譜</span>
+      </div>
+      <div class="score-history-list" id="score-history-list"></div>
+    </div>
+  </aside>
+
+  <div class="content">
+    <div class="topbar">
+      <button class="mobile-library-btn icon-btn" id="btn-mobile-library" type="button" aria-label="セッション一覧を開く" title="セッション一覧を開く"><i data-lucide="panel-left"></i></button>
+      <div class="feature-tabs">
+        <button class="feature-tab active" id="tab-structure">曲構成</button>
+        <button class="feature-tab" id="tab-score">楽譜抽出</button>
+      </div>
+      <span class="topbar-song" id="topbar-song" hidden>-</span>
+      <span id="offline-badge" hidden>オフライン</span>
+      <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><i data-lucide="cloud-upload"></i><span>同期</span></button>
+    </div>
+
+    <main class="main">
+      <section id="structure-panel" class="feature-panel">
+        <div id="input-card">
+          <div class="input-bar">
+            <input type="text" id="url-input" placeholder="YouTubeのURLを貼り付けて解析">
+            <button class="btn-analyze" id="analyze-btn">解析</button>
+            <input type="file" id="audio-file-input" accept=".wav,.m4a,.mp3,.flac,.aac,.ogg,audio/*" hidden>
+            <button class="btn-audio-file" id="btn-audio-file" type="button"><i data-lucide="file-audio"></i><span>音声ファイル</span></button>
+          </div>
+          <div class="analysis-time-settings">
+            <label>
+              <span>解析時間</span>
+              <select id="analysis-time-mode">
+                <option value="full" selected>動画全体</option>
+                <option value="range">時間を指定</option>
+              </select>
+            </label>
+            <div class="analysis-time-range" id="analysis-time-range" hidden>
+              <label><span>開始</span><input type="text" id="analysis-start-time" inputmode="decimal" placeholder="0:00"></label>
+              <label><span>終了</span><input type="text" id="analysis-end-time" inputmode="decimal" placeholder="動画末尾"></label>
+            </div>
+            <small>時間指定では、その区間だけを別セッションとして解析します。</small>
+          </div>
+          <div class="audio-drop-hint" id="audio-drop-hint"><i data-lucide="upload"></i><span>WAV・M4Aなどをここにドロップして解析</span></div>
+          <div class="status" id="status"></div>
+          <div class="job-card" id="job-card" hidden>
+            <div class="job-head">
+              <span class="job-stage" id="job-stage">待機中</span>
+              <span class="job-elapsed" id="job-elapsed">0s</span>
+            </div>
+            <div class="job-message" id="job-message"></div>
+          </div>
+        </div>
+
+        <div class="topbar-actions session-actions" hidden>
+          <div class="session-actions-label"><i data-lucide="music-2"></i><span>楽曲</span></div>
+          <div class="action-group">
+            <button class="btn-top action-primary" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
+            <button class="btn-top icon-only" id="btn-yt" type="button" aria-label="YouTubeで開く" title="YouTubeで開く" hidden><i data-lucide="youtube"></i></button>
+            <button class="btn-top icon-only" id="btn-score-extractor" type="button" aria-label="楽譜を抽出" title="楽譜を抽出" hidden><i data-lucide="music"></i></button>
+            <button class="btn-top icon-only" id="btn-reanalyze" type="button" aria-label="この曲を再解析" title="この曲を再解析" hidden><i data-lucide="refresh-cw"></i></button>
+          </div>
+        </div>
+
+        <div class="structure-workspace" id="structure-workspace" hidden>
+        <section class="player" id="player-card">
+        <div class="transport-bar">
+          <button class="t-btn t-play" id="btn-play" type="button" aria-label="再生／一時停止" title="再生／一時停止"><i data-lucide="play" class="play-icon"></i><i data-lucide="pause" class="pause-icon"></i></button>
+          <button class="t-btn icon-only" id="btn-restart" type="button" aria-label="先頭から再生" title="先頭から再生"><i data-lucide="skip-back"></i></button>
+          <div class="t-sep"></div>
+          <button class="t-btn icon-only" id="btn-loop" type="button" aria-label="ループ" aria-pressed="false" title="選択範囲をループ"><i data-lucide="repeat-2"></i></button>
+          <button class="t-btn mode-btn" id="btn-auto-next" type="button" aria-label="自動で次へ" aria-pressed="false" title="曲が終わると次の曲を再生します。ループ中は無効です。" hidden><i data-lucide="list-end"></i><span>次へ</span></button>
+          <button class="t-btn icon-only" id="btn-metro" type="button" aria-label="クリック" aria-pressed="false" title="クリック"><i data-lucide="music-2"></i></button>
+          <div class="t-spacer"></div>
+          <span class="kbd-hint">スペース 再生／停止 · ←/→ 移動</span>
+        </div>
+
+        <div class="vol-bar">
+          <div class="vol-item music-vol-item">
+            <span class="vol-lbl" title="楽曲音量"><i data-lucide="volume-2"></i><span>楽曲</span></span>
+            <input type="range" id="vol-music" min="0" max="100" value="80">
+            <span class="vol-val" id="vol-music-val">80%</span>
+          </div>
+          <div class="vol-item">
+            <span class="vol-lbl" title="クリック音量"><i data-lucide="music-2"></i><span>クリック</span></span>
+            <input type="range" id="vol-metro" min="0" max="100" value="85">
+            <span class="vol-val" id="vol-metro-val">85%</span>
+          </div>
+          <div class="bpm-item">
+            <span class="stat-lbl">BPM</span>
+            <div class="bpm-actions">
+              <button class="mini-btn" id="btn-bpm-half">÷2</button>
+              <button class="mini-btn" id="btn-bpm-double">×2</button>
+              <button class="mini-btn" id="btn-bpm-reset">戻す</button>
+              <button class="mini-btn" id="btn-bpm-save">保存</button>
+              <button class="mini-btn" id="btn-click-offset">裏拍</button>
+            </div>
+            <span class="stat-val orange" id="meta-bpm">-</span>
+          </div>
+          <div class="vol-item speed-item">
+            <span class="vol-lbl" title="再生速度"><i data-lucide="gauge"></i><span>速度</span></span>
+            <button class="mini-btn icon-only speed-reset" id="btn-speed-reset" type="button" aria-label="再生速度を戻す" title="再生速度を戻す"><i data-lucide="rotate-ccw"></i></button>
+            <input type="range" id="playback-rate" min="0.25" max="1.25" step="0.05" value="1">
+            <span class="vol-val speed-val" id="playback-rate-val">1.00x</span>
+          </div>
+        </div>
+
+        <div class="video-wrap">
+          <video id="video-player" muted playsinline preload="metadata"></video>
+          <button class="video-fullscreen-btn icon-btn" id="btn-video-fullscreen" type="button" aria-label="動画を全画面表示" title="動画を全画面表示"><i data-lucide="maximize"></i></button>
+          <div class="video-fs-hud">
+            <div class="video-fs-controls">
+              <button class="t-btn t-play" id="btn-fs-play" type="button" aria-label="再生／一時停止" title="再生／一時停止"><i data-lucide="play" class="play-icon"></i><i data-lucide="pause" class="pause-icon"></i></button>
+              <button class="t-btn icon-only" id="btn-fs-restart" type="button" aria-label="先頭から再生" title="先頭から再生"><i data-lucide="skip-back"></i></button>
+              <button class="t-btn icon-only" id="btn-fs-loop" type="button" aria-label="ループ" aria-pressed="false" title="選択範囲をループ"><i data-lucide="repeat-2"></i></button>
+              <button class="t-btn mode-btn" id="btn-fs-auto-next" type="button" aria-label="自動で次へ" aria-pressed="false" title="曲が終わると次の曲を再生します。ループ中は無効です。"><i data-lucide="list-end"></i><span>次へ</span></button>
+              <button class="t-btn icon-only" id="btn-fs-metro" type="button" aria-label="クリック" aria-pressed="false" title="クリック"><i data-lucide="music-2"></i></button>
+            </div>
+            <button class="video-fs-exit" id="btn-video-exit" type="button" aria-label="全画面表示を終了"></button>
+          </div>
+          <div class="audio-note" id="video-note" hidden>このセッションには動画がありません。再解析すると同期再生を追加できます。</div>
+        </div>
+
+        <div class="waveform-wrap">
+          <div id="waveform"></div>
+          <div class="waveform-loading" id="waveform-loading" hidden><span class="spin"></span>音声を読み込み中...</div>
+          <div class="audio-note" id="audio-note" hidden>このセッションには音声がありません。解析情報のみ表示します。</div>
+        </div>
+        <div class="time-bar">
+          <span id="time-cur">00:00</span>
+          <span id="time-tot">00:00</span>
+        </div>
+
+          <div class="stats-bar">
+            <div class="stat">
+              <span class="stat-val" id="meta-bars">-</span>
+              <span class="stat-lbl">小節</span>
+            </div>
+            <div class="loop-stat">
+              <span class="loop-info" id="loop-info"></span>
+              <button class="mini-btn clear-range-btn" id="btn-clear-range" hidden>範囲を解除</button>
+            </div>
+          </div>
+
+          <div class="sec-header-row">
+            <span class="sec-hdr-label">セクション</span>
+            <span class="sec-hdr-hint">クリックで移動 · Shift+クリックまたは波形ドラッグでループ</span>
+            <button class="mini-btn" id="btn-edit-sections" type="button">編集</button>
+          </div>
+          <div class="sections" id="sections"></div>
+        </section>
+        <aside class="stem-panel" id="stem-panel">
+          <div class="stem-head">
+            <span class="stem-title">パート分離</span>
+            <div class="stem-head-actions">
+              <button class="mini-btn icon-only" id="btn-reset-stem-mix" type="button" aria-label="パート音量をすべて戻す" title="パート音量をすべて戻す"><i data-lucide="rotate-ccw"></i></button>
+              <button class="mini-btn" id="btn-generate-stems" type="button"><i data-lucide="audio-waveform"></i><span>生成</span></button>
+            </div>
+          </div>
+          <div class="stem-status" id="stem-status"></div>
+          <div class="stem-mixer" id="stem-mixer">
+            <div class="stem-row" data-stem="vocals">
+              <div class="stem-mode-buttons">
+                <button class="stem-mute" id="stem-vocals-enabled" type="button" aria-label="ボーカルをミュート" aria-pressed="false" title="ボーカルをミュート"><i data-lucide="volume-2"></i><i data-lucide="volume-x"></i></button>
+                <button class="stem-solo" id="stem-vocals-solo" type="button" aria-label="ボーカルをソロにする" aria-pressed="false" title="ソロ：ボーカル100%、ほか0%">S</button>
+                <button class="stem-focus" id="stem-vocals-focus" type="button" aria-label="ボーカルを強調する" aria-pressed="false" title="フォーカス：ボーカル100%、ほか20%">F</button>
+              </div>
+              <span class="stem-name">ボーカル</span>
+              <input type="range" id="stem-vocals-volume" min="0" max="100" value="100">
+              <span class="stem-value" id="stem-vocals-value">100%</span>
+            </div>
+            <div class="stem-row" data-stem="drums">
+              <div class="stem-mode-buttons">
+                <button class="stem-mute" id="stem-drums-enabled" type="button" aria-label="ドラムをミュート" aria-pressed="false" title="ドラムをミュート"><i data-lucide="volume-2"></i><i data-lucide="volume-x"></i></button>
+                <button class="stem-solo" id="stem-drums-solo" type="button" aria-label="ドラムをソロにする" aria-pressed="false" title="ソロ：ドラム100%、ほか0%">S</button>
+                <button class="stem-focus" id="stem-drums-focus" type="button" aria-label="ドラムを強調する" aria-pressed="false" title="フォーカス：ドラム100%、ほか20%">F</button>
+              </div>
+              <span class="stem-name">ドラム</span>
+              <input type="range" id="stem-drums-volume" min="0" max="100" value="100">
+              <span class="stem-value" id="stem-drums-value">100%</span>
+            </div>
+            <div class="stem-row" data-stem="bass">
+              <div class="stem-mode-buttons">
+                <button class="stem-mute" id="stem-bass-enabled" type="button" aria-label="ベースをミュート" aria-pressed="false" title="ベースをミュート"><i data-lucide="volume-2"></i><i data-lucide="volume-x"></i></button>
+                <button class="stem-solo" id="stem-bass-solo" type="button" aria-label="ベースをソロにする" aria-pressed="false" title="ソロ：ベース100%、ほか0%">S</button>
+                <button class="stem-focus" id="stem-bass-focus" type="button" aria-label="ベースを強調する" aria-pressed="false" title="フォーカス：ベース100%、ほか20%">F</button>
+              </div>
+              <span class="stem-name">ベース</span>
+              <input type="range" id="stem-bass-volume" min="0" max="100" value="100">
+              <span class="stem-value" id="stem-bass-value">100%</span>
+            </div>
+            <div class="stem-row" data-stem="other">
+              <div class="stem-mode-buttons">
+                <button class="stem-mute" id="stem-other-enabled" type="button" aria-label="その他をミュート" aria-pressed="false" title="その他をミュート"><i data-lucide="volume-2"></i><i data-lucide="volume-x"></i></button>
+                <button class="stem-solo" id="stem-other-solo" type="button" aria-label="その他をソロにする" aria-pressed="false" title="ソロ：その他100%、ほか0%">S</button>
+                <button class="stem-focus" id="stem-other-focus" type="button" aria-label="その他を強調する" aria-pressed="false" title="フォーカス：その他100%、ほか20%">F</button>
+              </div>
+              <span class="stem-name">その他</span>
+              <input type="range" id="stem-other-volume" min="0" max="100" value="100">
+              <span class="stem-value" id="stem-other-value">100%</span>
+            </div>
+          </div>
+          <div class="stem-export-actions" id="stem-export-actions">
+            <select id="stem-export-scope" aria-label="パート書き出し範囲">
+              <option value="full">曲全体</option>
+              <option value="selection">選択範囲</option>
+            </select>
+            <label class="stem-export-click"><input id="stem-export-click" type="checkbox"><span>クリック</span></label>
+            <button class="mini-btn stem-export-btn" id="btn-export-stem-mix" type="button"><i data-lucide="download"></i><span>ミックスを書き出す</span></button>
+          </div>
+        </aside>
+        </div>
+      </section>
+
+      <section class="feature-panel score-app" id="score-panel" hidden>
+        <div class="score-card score-create-card">
+          <div class="score-head">
+            <div>
+              <span class="score-kicker" id="score-form-kicker">新規作成</span>
+              <span class="score-title" id="score-form-title">新しい楽譜を抽出</span>
+            </div>
+            <span class="score-subtitle">動画から印刷用PNGを作成</span>
+          </div>
+          <div class="score-form-section">
+            <div class="score-form-section-title">動画・出力</div>
+          <div class="score-grid">
+            <div class="score-source-fields">
+              <label class="score-field score-url">
+                <span>動画URL</span>
+                <input type="text" id="score-url-input" placeholder="楽譜動画のYouTubeのURLを貼り付け">
+              </label>
+              <label class="score-field">
+                <span>印刷タイトル</span>
+                <input type="text" id="score-title-input" maxlength="200" placeholder="空欄なら動画タイトル">
+              </label>
+            </div>
+            <label class="score-field">
+              <span>範囲</span>
+              <select id="score-region-preset">
+                <option value="bottom">下部</option>
+                <option value="top">上部</option>
+              </select>
+            </label>
+            <label class="score-field">
+              <span>高さ</span>
+              <input type="number" id="score-region-percent" min="5" max="90" step="1" value="30">
+            </label>
+            <label class="score-field">
+              <span>出力形式</span>
+              <select id="score-layout">
+                <option value="a4">A4ページ</option>
+                <option value="a3_2up" selected>A3・2ページ配置</option>
+                <option value="vertical">縦長PNG</option>
+              </select>
+            </label>
+            <button class="btn-analyze score-preview-btn" id="score-preview-btn">プレビュー</button>
+          </div>
+          </div>
+          <div class="score-form-section">
+            <div class="score-form-section-title">楽譜の作り方</div>
+          <div class="score-primary-options">
+            <div class="score-time-settings">
+              <label class="score-field">
+                <span>抽出時間</span>
+                <select id="score-time-mode">
+                  <option value="full" selected>動画全体</option>
+                  <option value="range">時間を指定</option>
+                </select>
+              </label>
+              <div class="score-time-range" id="score-time-range" hidden>
+                <label class="score-field">
+                  <span>開始</span>
+                  <input type="text" id="score-start-time" inputmode="decimal" placeholder="0:00">
+                </label>
+                <label class="score-field">
+                  <span>終了</span>
+                  <input type="text" id="score-end-time" inputmode="decimal" placeholder="動画末尾">
+                </label>
+              </div>
+              <small>空欄なら開始は0:00、終了は動画末尾です。</small>
+            </div>
+            <label class="score-field score-mode-field">
+              <span>再構成</span>
+              <select id="score-processing-mode">
+                <option value="auto" selected>自動再構成（推奨）</option>
+                <option value="simple">元の段組みを維持</option>
+              </select>
+              <small>スクロール・重複・端切れを自動で補正します。</small>
+            </label>
+            <label class="score-field score-content-field">
+              <span>出力内容</span>
+              <select id="score-content">
+                <option value="tab" selected>TABのみ（既定）</option>
+                <option value="paired">五線譜＋TAB</option>
+              </select>
+              <small>縦スクロール追跡では五線譜も内部解析に利用します。</small>
+            </label>
+            <div class="score-field score-info-field">
+              <span>楽譜情報</span>
+              <div class="score-info-toggles">
+                <label class="score-checkbox-control">
+                  <input type="checkbox" id="score-measure-numbers">
+                  <span>小節番号</span>
+                </label>
+                <label class="score-checkbox-control">
+                  <input type="checkbox" id="score-chord-symbols" checked>
+                  <span>コード・度数</span>
+                </label>
+                <label class="score-checkbox-control">
+                  <input type="checkbox" id="score-key-estimate" checked>
+                  <span>推定キー</span>
+                </label>
+                <label class="score-checkbox-control">
+                  <input type="checkbox" id="score-bpm" checked>
+                  <span>BPM</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <details class="score-advanced">
+            <summary>
+              <span>詳細設定</span>
+              <small>通常は自動設定のままがおすすめです</small>
+            </summary>
+            <div class="score-advanced-grid">
+              <label class="score-field">
+                <span>縦スクロール</span>
+                <select id="score-vertical-scroll-mode">
+                  <option value="auto" selected>自動判定</option>
+                  <option value="on">常に補正</option>
+                  <option value="off">補正しない</option>
+                </select>
+              </label>
+              <label class="score-field">
+                <span>横スクロール</span>
+                <select id="score-horizontal-scroll-mode">
+                  <option value="auto" selected>自動判定</option>
+                  <option value="on">常に補正</option>
+                  <option value="off">補正しない</option>
+                </select>
+              </label>
+              <label class="score-field">
+                <span>1行の小節数</span>
+                <input type="number" id="score-measures-per-row" min="1" max="8" step="1" value="4">
+              </label>
+              <label class="score-field">
+                <span>先頭トリム</span>
+                <input type="number" id="score-trim-start" min="0" max="999" step="1" value="0">
+              </label>
+              <label class="score-field">
+                <span>末尾トリム</span>
+                <input type="number" id="score-trim-end" min="0" max="999" step="1" value="0">
+              </label>
+            </div>
+          </details>
+          </div>
+          <div class="score-status" id="score-status"></div>
+        </div>
+        <div class="score-preview" id="score-preview" hidden>
+          <div class="score-preview-stage" id="score-preview-stage">
+            <img id="score-preview-img" alt="楽譜抽出範囲のプレビュー">
+            <div class="score-region-box" id="score-region-box">
+              <span class="score-region-handle nw" data-handle="nw"></span>
+              <span class="score-region-handle n" data-handle="n"></span>
+              <span class="score-region-handle ne" data-handle="ne"></span>
+              <span class="score-region-handle e" data-handle="e"></span>
+              <span class="score-region-handle se" data-handle="se"></span>
+              <span class="score-region-handle s" data-handle="s"></span>
+              <span class="score-region-handle sw" data-handle="sw"></span>
+              <span class="score-region-handle w" data-handle="w"></span>
+            </div>
+          </div>
+          <div class="score-preview-meta" id="score-preview-meta"></div>
+          <div class="score-actions">
+            <button class="btn-analyze score-run" id="score-extract-btn">抽出開始</button>
+          </div>
+        </div>
+        <section class="score-result-card" id="score-result-section" hidden>
+          <div class="score-result-card-head">
+            <div class="score-result-title-wrap">
+              <span class="score-kicker">抽出済み楽譜</span>
+              <label class="score-result-title-field">
+                <span>印刷タイトル</span>
+                <input type="text" id="score-result-title-input" maxlength="200" aria-label="印刷タイトル">
+              </label>
+            </div>
+            <div class="score-result-actions">
+              <button class="btn-analyze score-edit-settings-btn" id="score-edit-settings-btn" type="button">
+                <i data-lucide="settings-2"></i><span>設定を変えて再生成</span>
+              </button>
+              <button class="btn-analyze score-regenerate-btn" id="score-regenerate-btn" type="button">
+                <i data-lucide="refresh-cw"></i><span>同じ設定で再生成</span>
+              </button>
+            </div>
+          </div>
+          <div class="score-status score-result-status" id="score-result-status"></div>
+          <div class="score-result" id="score-result"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+</div>
+
+<dialog class="section-editor" id="section-editor">
+  <form method="dialog" class="section-editor-card">
+    <div class="section-editor-head">
+      <div><strong>セクション編集</strong><small>小節範囲は重複や空白なく並べます</small></div>
+      <button class="icon-btn" value="cancel" aria-label="閉じる"><i data-lucide="x"></i></button>
+    </div>
+    <div class="section-editor-rows" id="section-editor-rows"></div>
+    <div class="section-editor-error" id="section-editor-error"></div>
+    <div class="section-editor-actions">
+      <button class="mini-btn" id="btn-restore-sections" type="button">自動解析へ戻す</button>
+      <span></span>
+      <button class="mini-btn" value="cancel">キャンセル</button>
+      <button class="btn-analyze section-save" id="btn-save-sections" type="button">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="storage-dialog" id="storage-dialog">
+  <form method="dialog" class="storage-card">
+    <div class="section-editor-head">
+      <div><strong>容量とキャッシュ</strong><small id="storage-total">計算中...</small></div>
+      <button class="icon-btn" value="cancel" aria-label="閉じる"><i data-lucide="x"></i></button>
+    </div>
+    <div class="storage-list" id="storage-list"></div>
+    <div class="storage-note">元音声・動画・stems・解析JSON・楽譜成果物は、この画面から削除しません。</div>
+  </form>
+</dialog>
+
+<div class="context-menu" id="context-menu" hidden></div>
+<aside class="queue-dock" id="queue-dock" hidden>
+  <div class="queue-head">
+    <span>処理一覧</span>
+    <span class="queue-count" id="queue-count">0</span>
+  </div>
+  <div class="queue-list" id="queue-list"></div>
+</aside>
+
+<script type="module" src="app.js?v=20260805-score-settings"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+"""PracticeLab application package."""
