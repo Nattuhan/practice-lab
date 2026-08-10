@@ -33,6 +33,10 @@ test("入力ポップアップをアプリ内の画面として表示する", as
   await page.getByRole("button", { name: "新しいフォルダー" }).click();
   const dialog = page.getByRole("dialog", { name: "フォルダーを追加" });
   await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  const viewport = page.viewportSize();
+  expect(Math.abs((box.x + box.width / 2) - viewport.width / 2)).toBeLessThan(3);
+  expect(Math.abs((box.y + box.height / 2) - viewport.height / 2)).toBeLessThan(3);
   await expect(dialog.getByRole("textbox", { name: "フォルダー名" })).toHaveValue("新しいフォルダー");
   await dialog.getByRole("button", { name: "キャンセル" }).click();
   await expect(dialog).toBeHidden();

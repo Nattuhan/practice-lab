@@ -1655,6 +1655,13 @@ body.video-fullscreen-mode .video-fs-hud {
 }
 
 .section-editor::backdrop { background: rgba(3, 6, 12, .7); }
+.app-dialog,
+.section-editor,
+.storage-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+}
 .app-dialog {
   width: min(440px, calc(100vw - 28px));
   padding: 0;
