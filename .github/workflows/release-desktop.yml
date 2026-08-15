@@ -1,0 +1,68 @@
+name: Release Windows desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-nvidia:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install Python dependencies
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --upgrade pip
+          .venv\Scripts\python.exe -m pip install -r requirements\app-py310.txt -r requirements\desktop-build.txt
+      - name: Install and test frontend
+        run: |
+          npm ci
+          npm run build
+          npm run test:unit
+      - name: Use the tag as the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          npm version $version --no-git-tag-version
+      - name: Test backend
+        run: .venv\Scripts\python.exe -m pytest -q
+      - name: Build bundled backend
+        run: npm run desktop:backend
+      - name: Collect Node and FFmpeg
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          npm run desktop:prepare
+      - name: Build and publish installer
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm run desktop:dist -- --publish=always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - name: Build installer without publishing
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: npm run desktop:dist -- --publish=never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PracticeLab-Windows
+          path: |
+            desktop/dist/installer/*.exe
+            desktop/dist/installer/*.yml
+            desktop/dist/installer/*.blockmap

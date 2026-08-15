@@ -1,10 +1,14 @@
 import os
+import shutil
 from pathlib import Path
 
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+SOURCE_ROOT = Path(os.environ.get("PRACTICE_LAB_RESOURCE_DIR", Path(__file__).resolve().parent.parent)).resolve()
+ROOT_DIR = Path(os.environ.get("PRACTICE_LAB_HOME", SOURCE_ROOT)).resolve()
+PUBLIC_SOURCE_DIR = SOURCE_ROOT / "public"
 PUBLIC_DIR = ROOT_DIR / "public"
 DATA_DIR = ROOT_DIR / "data"
+RUNTIME_DIR = ROOT_DIR / "runtime"
 DATA_AUDIO_DIR = DATA_DIR / "audio"
 DATA_VIDEO_DIR = DATA_DIR / "video"
 DATA_SCORE_DIR = DATA_DIR / "score"
@@ -47,10 +51,30 @@ def load_env_files() -> None:
 load_env_files()
 
 
+def default_wsl_python() -> Path:
+    configured = os.environ.get("PRACTICE_LAB_WSL_PYTHON")
+    if configured:
+        return Path(configured)
+
+    # Source development can share the verified desktop CUDA runtime instead
+    # of keeping a second multi-gigabyte WSL environment in the repository.
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if ROOT_DIR == SOURCE_ROOT and local_app_data:
+        shared_runtime = Path(local_app_data) / "PracticeLab" / "runtime" / "wsl"
+        shared_python = shared_runtime / ".venv" / "bin" / "python"
+        if os.path.lexists(shared_python) and (shared_runtime / ".verified").is_file():
+            return shared_python
+
+    if ROOT_DIR == SOURCE_ROOT:
+        return SOURCE_ROOT / ".venv-wsl" / "bin" / "python"
+    return RUNTIME_DIR / "wsl" / ".venv" / "bin" / "python"
+
+
 def ensure_directories() -> None:
     for path in (
         PUBLIC_DIR,
         DATA_DIR,
+        RUNTIME_DIR,
         DATA_AUDIO_DIR,
         DATA_VIDEO_DIR,
         DATA_SCORE_DIR,
@@ -64,6 +88,16 @@ def ensure_directories() -> None:
         PUBLIC_RESULTS_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
+
+    # Installed builds keep immutable UI assets beside the executable and all
+    # writable state under the user's application-data directory. Refreshing
+    # these three files on startup makes app updates visible without touching
+    # sessions, audio, scores, or credentials.
+    if PUBLIC_SOURCE_DIR != PUBLIC_DIR:
+        for name in ("index.html", "app.js", "styles.css"):
+            source = PUBLIC_SOURCE_DIR / name
+            if source.is_file():
+                shutil.copy2(source, PUBLIC_DIR / name)
 
     if not MANIFEST_FILE.exists():
         MANIFEST_FILE.write_text("[]", encoding="utf-8")

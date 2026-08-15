@@ -95,6 +95,16 @@ def _client(config: R2Config):
     )
 
 
+def test_r2_connection(config: R2Config) -> dict[str, str | bool | None]:
+    _client(config).head_bucket(Bucket=config.bucket)
+    viewer_url = f"{config.public_base_url}/index.html" if config.public_base_url else None
+    return {
+        "connected": True,
+        "bucket": config.bucket,
+        "viewerUrl": viewer_url,
+    }
+
+
 def upload_file(config: R2Config, source: Path, key: str) -> None:
     if not source.exists():
         raise FileNotFoundError(source)

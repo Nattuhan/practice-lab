@@ -457,7 +457,7 @@ class BeatRepairTests(unittest.TestCase):
         self.assertEqual(adjusted["total_bars"], 4)
         self.assertEqual(
             [(section["start_bar"], section["end_bar"], section["bar_count"]) for section in adjusted["sections"]],
-            [(1, 2, 2), (3, 3, 1)],
+            [(1, 2, 2), (3, 4, 2)],
         )
 
     def test_leaves_stable_beat_grid_unchanged(self):

@@ -178,6 +178,19 @@ python -m uvicorn main:app --reload
 Apple Silicon Macでは `Start PracticeLab.command` をダブルクリックします。ターミナルからは
 `bash scripts/start_macos.sh` でも起動できます。
 
+## Windowsデスクトップ版
+
+Windows＋NVIDIAを最初のデスクトップ配布対象にしています。GitHub Releasesの
+`PracticeLab-Setup-<version>.exe`からインストールすると、専用ウィンドウで起動し、
+Python、Node.js、FFmpegを個別に起動する必要はありません。
+
+初回起動時には、NVIDIA GPU、WSL2、WSL内CUDA、解析ライブラリを順番に診断します。
+不足している場合は画面の「NVIDIAセットアップ」から準備できます。解析用CUDA環境は
+初回のみユーザーのアプリデータ領域へインストールされ、通常のアプリ更新では再取得しません。
+曲、解析結果、設定もアプリ本体とは別のユーザーデータ領域に保存されます。
+
+リリースと署名、自動更新の構成は [`docs/desktop-release.md`](docs/desktop-release.md) を参照してください。
+
 ## ライブラリと復旧の仕様
 
 - 音声の再生開始を「練習済み」とし、練習回数と最終練習日時を端末内の解析JSONへ保存します。

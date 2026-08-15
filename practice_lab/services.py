@@ -18,15 +18,16 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .analyzer_backend import analyzer_command, resolve_backend, stem_command
-from .config import DATA_AUDIO_DIR, DATA_DIR, DATA_RESULTS_DIR, DATA_STEMS_DIR, DATA_VIDEO_DIR, DATA_WORK_DIR, FOLDERS_FILE, MANIFEST_FILE, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_DIR, PUBLIC_STEMS_DIR, PUBLIC_VIDEO_DIR
+from .config import DATA_AUDIO_DIR, DATA_DIR, DATA_RESULTS_DIR, DATA_STEMS_DIR, DATA_VIDEO_DIR, DATA_WORK_DIR, FOLDERS_FILE, MANIFEST_FILE, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_DIR, PUBLIC_STEMS_DIR, PUBLIC_VIDEO_DIR, SOURCE_ROOT, default_wsl_python
 from .cloud_storage import build_r2_session_assets, configure_bucket_cors, delete_session_assets, get_r2_config, upload_file, upload_folders, upload_manifest, upload_session_assets, upload_static_app
+from .cloud_sync import sync_cloud_incremental
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
-from .timing import normalize_tempo_grid
+from .timing import normalize_section_bar_ranges, normalize_tempo_grid
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-ANALYZE_SCRIPT = REPO_ROOT / "scripts" / "analyze_audio.py"
-SPLIT_STEMS_SCRIPT = REPO_ROOT / "scripts" / "split_stems.py"
-WSL_PYTHON = REPO_ROOT / ".venv-wsl" / "bin" / "python"
+REPO_ROOT = SOURCE_ROOT
+ANALYZE_SCRIPT = SOURCE_ROOT / "scripts" / "analyze_audio.py"
+SPLIT_STEMS_SCRIPT = SOURCE_ROOT / "scripts" / "split_stems.py"
+WSL_PYTHON = default_wsl_python()
 JOB_LOCK = threading.Lock()
 JOBS: dict[str, dict] = {}
 JOB_QUEUE: queue.Queue["QueuedJob"] = queue.Queue()
@@ -35,6 +36,7 @@ RUNNING_PROCESSES: dict[str, subprocess.Popen] = {}
 JOB_STORE_FILE = DATA_DIR / "jobs.json"
 JOB_STORE_LOADED = False
 RANGED_AV_FORMAT = "b[ext=mp4]/b"
+FULL_VIDEO_FALLBACK_FORMAT = "b[ext=mp4][height<=720]/b[height<=720]/b"
 FULL_VIDEO_FORMAT = (
     "bv*[vcodec^=avc1][height<=1080][ext=mp4]+ba[ext=m4a]/"
     "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"
@@ -414,9 +416,13 @@ def yt_dlp_command(*args: str) -> list[str]:
 
 
 def yt_dlp_error(stderr: str, fallback: str) -> str:
-    message = (stderr or fallback).strip()
+    lines = [
+        line for line in (stderr or fallback).splitlines()
+        if not line.startswith("Deprecated Feature: Support for Python version")
+    ]
+    message = "\n".join(lines).strip() or fallback
     if "HTTP Error 403" in message or "Forbidden" in message:
-        return f"{message}\n\nYouTube returned 403. yt-dlp was updated locally; retry the job. If it still fails, the video may require browser cookies or may be temporarily blocked by YouTube."
+        return f"{message}\n\nYouTube temporarily rejected the video stream. PracticeLab retried with a fresh URL and a compatible MP4 format, but YouTube still returned 403."
     return message
 
 
@@ -474,32 +480,51 @@ def download_video(
 ) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     format_selector = _download_format(start_sec, end_sec, video=True)
+    format_candidates = [format_selector]
+    if start_sec is None and end_sec is None and format_selector != FULL_VIDEO_FALLBACK_FORMAT:
+        format_candidates.append(FULL_VIDEO_FALLBACK_FORMAT)
+    last_error = "yt-dlp video download failed"
     with tempfile.TemporaryDirectory() as temp_dir:
-        result = subprocess.run(
-            yt_dlp_command(
-                "-f",
-                format_selector,
-                "--merge-output-format",
-                "mp4",
-                "-o",
-                os.path.join(temp_dir, "video.%(ext)s"),
-                "--no-playlist",
-                "--js-runtimes",
-                "node",
-                *_download_section_args(start_sec, end_sec, force_keyframes=True),
-                url,
-            ),
-            capture_output=True,
-            text=True,
-            timeout=240,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(yt_dlp_error(result.stderr, "yt-dlp video download failed"))
-
-        files = list(Path(temp_dir).glob("*.mp4"))
-        if not files:
-            raise RuntimeError("mp4 not found")
-        shutil.move(str(files[0]), str(destination))
+        for format_index, candidate in enumerate(format_candidates):
+            attempts = 2 if format_index == 0 else 1
+            for attempt in range(attempts):
+                output_base = f"video-{format_index}-{attempt}"
+                result = subprocess.run(
+                    yt_dlp_command(
+                        "-f",
+                        candidate,
+                        "--merge-output-format",
+                        "mp4",
+                        "--retries",
+                        "3",
+                        "--fragment-retries",
+                        "3",
+                        "--retry-sleep",
+                        "1",
+                        "-o",
+                        os.path.join(temp_dir, f"{output_base}.%(ext)s"),
+                        "--no-playlist",
+                        "--js-runtimes",
+                        "node",
+                        *_download_section_args(start_sec, end_sec, force_keyframes=True),
+                        url,
+                    ),
+                    capture_output=True,
+                    text=True,
+                    timeout=240,
+                )
+                if result.returncode == 0:
+                    files = list(Path(temp_dir).glob(f"{output_base}*.mp4"))
+                    if not files:
+                        raise RuntimeError("mp4 not found")
+                    shutil.move(str(files[0]), str(destination))
+                    return
+                last_error = yt_dlp_error(result.stderr, "yt-dlp video download failed")
+                if "403" not in last_error and "Forbidden" not in last_error:
+                    raise RuntimeError(last_error)
+                if attempt + 1 < attempts:
+                    time.sleep(1)
+    raise RuntimeError(last_error)
 
 
 def publish_video(source: Path, destination: Path) -> None:
@@ -1112,7 +1137,7 @@ def bars_from_sections(sections: list[dict], downbeats: list[float]) -> list[dic
         adjusted["end_bar"] = end_bar
         adjusted["bar_count"] = end_bar - start_bar + 1
         adjusted_sections.append(adjusted)
-    return adjusted_sections
+    return normalize_section_bar_ranges(adjusted_sections, len(downbeats))
 
 
 def repair_double_time_beats(data: dict) -> dict:
@@ -1383,52 +1408,13 @@ def sync_cloud_library(job_id: str = "cloud:sync") -> dict:
     if config is None:
         raise RuntimeError("R2_ENABLED=1 と R2接続設定が必要です")
 
-    set_job_status(job_id, "exporting", "Exporting static assets")
-    export_static_assets()
-
-    if config.configure_cors:
-        set_job_status(job_id, "uploading", "Updating R2 CORS")
-        configure_bucket_cors(config)
-
-    uploaded: list[str] = []
-    skipped: list[str] = []
-    manifest = load_manifest()
-    for entry in manifest:
-        raise_if_job_canceled(job_id)
-        video_id = entry["id"]
-        result_file = MANIFEST_FILE.parent / f"{video_id}.json"
-        audio_file = PUBLIC_AUDIO_DIR / f"{video_id}.mp3"
-        video_file = PUBLIC_VIDEO_DIR / f"{video_id}.mp4"
-        if not result_file.exists() or not audio_file.exists():
-            skipped.append(video_id)
-            continue
-
-        set_job_status(job_id, "uploading", f"Uploading {video_id}")
-        data = json.loads(result_file.read_text(encoding="utf-8"))
-        cloud_assets = build_r2_session_assets(video_id, config, include_video=video_file.exists())
-        if cloud_assets:
-            data["assets"] = {**data.get("assets", {}), **cloud_assets}
-            save_json(result_file, data)
-            update_manifest(build_manifest_entry(data, entry_date=entry.get("date") or date.today().isoformat()))
-            export_static_assets()
-
-        upload_session_assets(
-            video_id,
-            result_file=result_file,
-            audio_file=audio_file,
-            video_file=video_file if video_file.exists() else None,
-            config=config,
-        )
-        uploaded.append(video_id)
-
-    raise_if_job_canceled(job_id)
-    set_job_status(job_id, "uploading", "Uploading manifest")
-    upload_manifest(config, MANIFEST_FILE)
-    set_job_status(job_id, "uploading", "Uploading folders")
-    upload_folders(config, FOLDERS_FILE)
-    set_job_status(job_id, "uploading", "Uploading static app")
-    upload_static_app(config, PUBLIC_DIR)
-    return {"uploaded": uploaded, "skipped": skipped}
+    set_job_status(job_id, "exporting", "公開ライブラリを準備しています")
+    result = sync_cloud_incremental(
+        config,
+        progress=lambda message: set_job_status(job_id, "uploading", message),
+        check_canceled=lambda: raise_if_job_canceled(job_id),
+    )
+    return result
 
 
 def save_bpm_correction(video_id: str, factor: float) -> dict:

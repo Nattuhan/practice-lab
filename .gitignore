@@ -22,5 +22,9 @@ public/stems/
 node_modules/
 test-results/
 playwright-report/
+desktop/bin/
+desktop/build/
+desktop/dist/
+desktop/.electron-dist-*/
 .DS_Store
 Thumbs.db

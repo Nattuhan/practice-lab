@@ -3,6 +3,21 @@
 R2 sync is optional. When `R2_ENABLED` is not set, the app keeps using local
 `public/audio`, `public/video`, and `public/results` files.
 
+## Desktop app
+
+The packaged desktop app does not include a shared bucket or developer
+credentials. Each user opens **Settings > Cloud integration** and connects
+their own Cloudflare R2 bucket. Non-secret values are stored under that OS
+user's PracticeLab application-data directory. The secret access key is kept
+separately with Electron `safeStorage` (DPAPI on Windows and Keychain-backed
+storage on macOS).
+
+After setup, the top-bar action syncs only changed files to that user's bucket.
+Without a configured bucket it opens the cloud-integration settings instead.
+
+The environment-variable setup below remains available for source development
+and automation scripts.
+
 ## Required environment
 
 For day-to-day use, create `.env.local` and fill in the real values.

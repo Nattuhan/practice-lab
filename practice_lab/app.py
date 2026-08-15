@@ -1,8 +1,10 @@
+import os
 import re
+import secrets
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -30,6 +32,8 @@ from .score_extractor import cleanup_canceled_score_job, extract_score, prepare_
 from .services import analyze_local_audio, analyze_url, build_analysis_session_id, cancel_job, cleanup_canceled_analysis, cleanup_canceled_stems, cleanup_stem_mix_export, cleanup_uploaded_analysis, create_stem_mix_export, create_stems, delete_result, delete_results, extract_video_id, get_job_status, get_resumable_job_spec, initialize_job_store, list_job_statuses, normalize_analysis_range, publish_folders_to_cloud, rename_result, save_bpm_correction, save_sections, save_uploaded_audio, set_job_status, submit_queued_job, sync_cloud_library, update_library_metadata
 from .storage import bootstrap_public_data, export_static_assets, load_folders, save_folders
 from .storage_usage import cleanup_storage, storage_report
+from .system_status import get_system_status, launch_nvidia_setup
+from .cloud_storage import get_r2_config, test_r2_connection
 
 
 def submit_job_spec(spec: dict) -> dict:
@@ -150,7 +154,22 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz")
     async def healthz():
-        return {"ok": True}
+        instance_id = os.environ.get("PRACTICE_LAB_INSTANCE_ID")
+        return {"ok": True, **({"instanceId": instance_id} if instance_id else {})}
+
+    @app.get("/system/status")
+    async def system_status():
+        return await run_in_threadpool(get_system_status)
+
+    @app.post("/system/setup-nvidia")
+    async def setup_nvidia(x_practice_lab_desktop_token: str | None = Header(default=None)):
+        expected_token = os.environ.get("PRACTICE_LAB_DESKTOP_TOKEN")
+        if not expected_token or not x_practice_lab_desktop_token or not secrets.compare_digest(expected_token, x_practice_lab_desktop_token):
+            raise HTTPException(status_code=403, detail="デスクトップアプリから実行してください")
+        try:
+            return await run_in_threadpool(launch_nvidia_setup)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/storage")
     async def get_storage_report():
@@ -352,8 +371,34 @@ def create_app() -> FastAPI:
             filename=result.get("filename", "stem-mix.mp3"),
         )
 
+    def require_desktop_token(token: str | None) -> None:
+        expected_token = os.environ.get("PRACTICE_LAB_DESKTOP_TOKEN")
+        if not expected_token or not token or not secrets.compare_digest(expected_token, token):
+            raise HTTPException(status_code=403, detail="デスクトップアプリから実行してください")
+
+    @app.get("/cloud/status")
+    async def cloud_status():
+        config = get_r2_config()
+        return {
+            "configured": config is not None,
+            "bucket": config.bucket if config else None,
+            "viewerUrl": f"{config.public_base_url}/index.html" if config and config.public_base_url else None,
+        }
+
+    @app.post("/cloud/test")
+    async def cloud_test(x_practice_lab_desktop_token: str | None = Header(default=None)):
+        require_desktop_token(x_practice_lab_desktop_token)
+        config = get_r2_config()
+        if config is None:
+            raise HTTPException(status_code=409, detail="クラウド連携が設定されていません")
+        try:
+            return await run_in_threadpool(test_r2_connection, config)
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail=f"R2へ接続できませんでした: {exc}") from exc
+
     @app.post("/cloud/sync", response_model=JobSubmissionResponse)
-    async def sync_cloud():
+    async def sync_cloud(x_practice_lab_desktop_token: str | None = Header(default=None)):
+        require_desktop_token(x_practice_lab_desktop_token)
         job_id = "cloud:sync"
         return JobSubmissionResponse(**submit_job_spec({
             "type": "cloud_sync",
