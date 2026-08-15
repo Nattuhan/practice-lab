@@ -96,6 +96,8 @@ test("可視操作を小さく潰さず文字を切らない", async ({ page }) 
 
 test("同期ラベルをボタン中央に配置する", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("#btn-cloud-sync")).toBeVisible();
+  await expect(page.locator("#btn-cloud-sync .topbar-sync-content svg")).toBeVisible();
   const centers = await page.locator("#btn-cloud-sync").evaluate(button => {
     const content = button.querySelector(".topbar-sync-content");
     const icon = content.querySelector("svg");
@@ -127,6 +129,9 @@ test("パート書き出し操作を右パネル内に収める", async ({ page 
   const panel = page.locator("#stem-panel");
   const scope = page.locator("#stem-export-scope");
   const exportButton = page.locator("#btn-export-stem-mix");
+  await expect(panel).toBeVisible();
+  await expect(scope).toBeVisible();
+  await expect(exportButton).toBeVisible();
   const panelBox = await panel.boundingBox();
   const scopeBox = await scope.boundingBox();
   const exportBox = await exportButton.boundingBox();
@@ -172,6 +177,8 @@ test("新しい解析と再解析をプレイヤーを押し下げないモー�
   await page.route("**/audio/analysis-modal.mp3", route => route.abort());
 
   await page.goto("/");
+  await expect(page.locator("#player-card")).toBeVisible();
+  await expect(page.getByRole("button", { name: "この曲を再解析" })).toBeVisible();
   const playerBefore = await page.locator("#player-card").boundingBox();
   await page.getByRole("button", { name: "新しい解析", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "練習したい曲を追加" });
