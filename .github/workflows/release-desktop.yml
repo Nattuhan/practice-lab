@@ -44,12 +44,15 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           npm version $version --no-git-tag-version
+      - name: Collect Node and FFmpeg
+        shell: pwsh
+        run: |
+          npm run desktop:prepare
+          "${{ github.workspace }}\desktop\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Test backend
         run: .venv\Scripts\python.exe -m pytest -q
       - name: Build bundled backend
         run: npm run desktop:backend
-      - name: Collect Node and FFmpeg
-        run: npm run desktop:prepare
       - name: Require Windows signing credentials for releases
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -124,6 +127,10 @@ jobs:
           npm ci
           npm run build
           npm run test:unit
+      - name: Prepare bundled tools
+        run: |
+          npm run desktop:prepare:mac
+          echo "$GITHUB_WORKSPACE/desktop/bin" >> "$GITHUB_PATH"
       - name: Test backend
         run: .venv/bin/python -m pytest -q
       - name: Verify Apple Silicon runtime
@@ -148,9 +155,7 @@ jobs:
           test -n "$APPLE_APP_SPECIFIC_PASSWORD"
           test -n "$APPLE_TEAM_ID"
       - name: Prepare bundled tools and backend
-        run: |
-          npm run desktop:prepare:mac
-          npm run desktop:backend:mac
+        run: npm run desktop:backend:mac
       - name: Build and publish signed DMG and update archive
         if: startsWith(github.ref, 'refs/tags/')
         run: npm run desktop:dist:mac -- --publish=always

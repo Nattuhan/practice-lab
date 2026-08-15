@@ -31,9 +31,9 @@ class StemExportTests(unittest.TestCase):
 
             command = run.call_args.args[0]
             self.assertEqual(command.count("-i"), 2)
-            self.assertIn(str(stem_dir / "vocals.mp3"), command)
-            self.assertIn(str(stem_dir / "bass.mp3"), command)
-            self.assertNotIn(str(stem_dir / "drums.mp3"), command)
+            self.assertIn(str((stem_dir / "vocals.mp3").resolve()), command)
+            self.assertIn(str((stem_dir / "bass.mp3").resolve()), command)
+            self.assertNotIn(str((stem_dir / "drums.mp3").resolve()), command)
             self.assertEqual(command.count("-ss"), 2)
             self.assertEqual(command.count("7.500000"), 2)
             filter_graph = command[command.index("-filter_complex") + 1]
