@@ -39,6 +39,10 @@ const baselineResult = {
 };
 
 test.beforeEach(async ({ page }) => {
+  await page.route("**/cloud/status", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ configured: true, bucket: "e2e-bucket" }),
+  }));
   await page.route("**/results/manifest.json", route => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify([baselineSession]),
