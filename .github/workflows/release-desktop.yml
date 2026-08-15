@@ -21,6 +21,7 @@ jobs:
           cache-dependency-path: |
             requirements/app-py310.txt
             requirements/desktop-build.txt
+            requirements/test.txt
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22"
@@ -29,12 +30,14 @@ jobs:
         run: |
           python -m venv .venv
           .venv\Scripts\python.exe -m pip install --upgrade pip
-          .venv\Scripts\python.exe -m pip install -r requirements\app-py310.txt -r requirements\desktop-build.txt
+          .venv\Scripts\python.exe -m pip install -r requirements\app-py310.txt -r requirements\desktop-build.txt -r requirements\test.txt
       - name: Install and test frontend
         run: |
           npm ci
           npm run build
           npm run test:unit
+          npx playwright install chromium
+          npm run test:e2e
       - name: Use the tag as the app version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -103,6 +106,7 @@ jobs:
           cache-dependency-path: |
             requirements/app.txt
             requirements/desktop-build.txt
+            requirements/test.txt
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22"
@@ -111,7 +115,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -r requirements/app.txt -r requirements/desktop-build.txt
+          .venv/bin/python -m pip install -r requirements/app.txt -r requirements/desktop-build.txt -r requirements/test.txt
           .venv/bin/python -m pip install "torch==2.6.0"
           .venv/bin/python -m pip install "natten==0.17.5" --no-build-isolation
           .venv/bin/python -m pip install "all-in-one-fix==2.0.4" --no-build-isolation
