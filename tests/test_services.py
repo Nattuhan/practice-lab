@@ -27,6 +27,22 @@ class CliLogTests(unittest.TestCase):
         self.assertIn(r"\u2588", rendered)
 
 
+class CloudPublicationSafetyTests(unittest.TestCase):
+    def test_session_changes_do_not_publish_until_manual_sync(self):
+        with (
+            patch.dict(os.environ, {"R2_AUTO_PUBLISH": "0"}, clear=False),
+            patch.object(services, "get_r2_config") as get_config,
+        ):
+            services.publish_session_to_cloud(
+                "session-id",
+                {},
+                Path("session.json"),
+                Path("audio.mp3"),
+                None,
+            )
+        get_config.assert_not_called()
+
+
 class AudioConversionTests(unittest.TestCase):
     def test_loudnorm_output_is_decoded_as_utf8(self):
         analysis = MagicMock()

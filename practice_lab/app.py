@@ -4,10 +4,10 @@ import secrets
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .config import DATA_WORK_DIR, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_DIR, PUBLIC_SCORE_DIR, PUBLIC_STEMS_DIR, PUBLIC_VIDEO_DIR, ensure_directories
 from .models import (
@@ -151,6 +151,27 @@ def create_app() -> FastAPI:
     export_static_assets()
 
     app = FastAPI(title="PracticeLab")
+
+    @app.middleware("http")
+    async def protect_desktop_backend(request: Request, call_next):
+        expected_token = os.environ.get("PRACTICE_LAB_DESKTOP_TOKEN")
+        expected_origin = os.environ.get("PRACTICE_LAB_BACKEND_ORIGIN")
+        if expected_token and request.url.path != "/healthz":
+            if expected_origin:
+                expected_host = expected_origin.removeprefix("http://").removeprefix("https://")
+                if request.headers.get("host") != expected_host:
+                    return JSONResponse(status_code=421, content={"detail": "接続先が一致しません"})
+                origin = request.headers.get("origin")
+                if origin and origin != expected_origin:
+                    return JSONResponse(status_code=403, content={"detail": "この画面からは操作できません"})
+            supplied_token = request.headers.get("x-practice-lab-desktop-token")
+            if not supplied_token or not secrets.compare_digest(expected_token, supplied_token):
+                return JSONResponse(status_code=403, content={"detail": "デスクトップアプリから実行してください"})
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        return response
 
     @app.get("/healthz")
     async def healthz():

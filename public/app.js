@@ -2988,6 +2988,14 @@ var escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
   '"': "&quot;",
   "'": "&#39;"
 })[char]);
+var safeAssetUrl = (value) => {
+  try {
+    const url = new URL(String(value || ""), window.location.href);
+    if (url.origin === window.location.origin || url.protocol === "https:") return url.href;
+  } catch {
+  }
+  return "";
+};
 var hideContextMenu = () => {
   if (!SELECTORS.contextMenu) return;
   SELECTORS.contextMenu.hidden = true;
@@ -3591,7 +3599,9 @@ var renderScoreOutputs = (data) => {
   const previewOutputs = Array.isArray(data.outputs) && data.outputs.length ? data.outputs : data.pageOutputs;
   const outputUnit = data.layout === "a3_2up" ? "\u679A" : "\u30DA\u30FC\u30B8";
   const outputFormat = data.layout === "a3_2up" ? "A3" : data.layout === "a4" ? "A4" : "\u7E26\u9577";
-  const download = data.zipUrl ? `<a class="btn-analyze" href="${data.zipUrl}" download>PNG\u3092\u307E\u3068\u3081\u3066\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9</a>` : "";
+  const zipUrl = safeAssetUrl(data.zipUrl);
+  const safePreviewOutputs = (Array.isArray(previewOutputs) ? previewOutputs : []).map(safeAssetUrl).filter(Boolean);
+  const download = zipUrl ? `<a class="btn-analyze" href="${escapeHtml(zipUrl)}" download>PNG\u3092\u307E\u3068\u3081\u3066\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9</a>` : "";
   const actions = download ? `<div class="score-download">${download}</div>` : "";
   const badges = [
     `${outputFormat}\u51FA\u529B`,
@@ -3607,13 +3617,13 @@ var renderScoreOutputs = (data) => {
   const summary = badges.length ? `<div class="score-result-summary">${badges.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}</div>` : "";
   SELECTORS.scoreResultSection.hidden = false;
   SELECTORS.scoreResultTitleInput.value = data.title || data.videoId || "";
-  SELECTORS.scoreResult.innerHTML = `${summary}${actions}${previewOutputs.map((url, index) => `
+  SELECTORS.scoreResult.innerHTML = `${summary}${actions}${safePreviewOutputs.map((url, index) => `
     <div class="score-output">
       <div class="score-output-head">
-        <span>${index + 1}/${previewOutputs.length}${outputUnit} \xB7 ${outputFormat} \xB7 \u63A1\u7528 ${data.keptFrames} \xB7 \u9664\u5916 ${data.skippedFrames}</span>
-        <a href="${url}" target="_blank">PNG\u3092\u958B\u304F</a>
+        <span>${index + 1}/${safePreviewOutputs.length}${outputUnit} \xB7 ${escapeHtml(outputFormat)} \xB7 \u63A1\u7528 ${Number(data.keptFrames || 0)} \xB7 \u9664\u5916 ${Number(data.skippedFrames || 0)}</span>
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">PNG\u3092\u958B\u304F</a>
       </div>
-      <img src="${url}?t=${Date.now()}" alt="\u62BD\u51FA\u6E08\u307F\u697D\u8B5C ${index + 1}\u30DA\u30FC\u30B8\u76EE">
+      <img src="${escapeHtml(url)}${url.includes("?") ? "&" : "?"}t=${Date.now()}" alt="\u62BD\u51FA\u6E08\u307F\u697D\u8B5C ${index + 1}\u30DA\u30FC\u30B8\u76EE">
     </div>
   `).join("")}`;
   SELECTORS.scoreResultStatus.className = "score-status score-result-status ok";
@@ -4559,8 +4569,7 @@ var verifySavedCloudSettings = async () => {
   localStorage.removeItem("practice_lab_settings_saved");
   if (action !== "test-cloud") return;
   try {
-    const token = await window.practiceLabDesktop?.getToken();
-    const response = await fetch("/cloud/test", { method: "POST", headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {} });
+    const response = await fetch("/cloud/test", { method: "POST" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || "R2\u3078\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
     await refreshCloudStatus();
@@ -4584,10 +4593,8 @@ var syncCloudLibrary = async () => {
   if (!approved) return;
   SELECTORS.btnCloudSync.disabled = true;
   try {
-    const token = await window.practiceLabDesktop?.getToken();
     const response = await fetch("/cloud/sync", {
-      method: "POST",
-      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {}
+      method: "POST"
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u540C\u671F\u306B\u5931\u6557\u3057\u307E\u3057\u305F (${response.status})`);
@@ -5288,10 +5295,10 @@ var showResult = (data, id, { autoplay = false } = {}) => {
     row.innerHTML = `
       <span class="sec-num">${String(index + 1).padStart(2, "0")}</span>
       <span class="sec-dot" style="background:${color}"></span>
-      <span class="sec-label">${localizeSectionLabel(section.label)}</span>
-      <span class="sec-bars"><span class="subtle">${section.bar_count}\u5C0F\u7BC0</span></span>
-      <div class="sec-vis"><div class="sec-vis-fill" style="width:${Math.round(section.bar_count / maxBars * 100)}%;background:${color}"></div></div>
-      <span class="sec-time">${section.start_time_str}</span>
+      <span class="sec-label">${escapeHtml(localizeSectionLabel(section.label))}</span>
+      <span class="sec-bars"><span class="subtle">${Number(section.bar_count || 0)}\u5C0F\u7BC0</span></span>
+      <div class="sec-vis"><div class="sec-vis-fill" style="width:${Math.round(Number(section.bar_count || 0) / maxBars * 100)}%;background:${color}"></div></div>
+      <span class="sec-time">${escapeHtml(section.start_time_str)}</span>
     `;
     row.onclick = (event) => {
       if (event.shiftKey && selectedIdxs.size > 0) {
@@ -6245,10 +6252,8 @@ var startDesktopNvidiaSetup = async () => {
       await refreshDesktopSystemStatus();
       return;
     }
-    const token = await window.practiceLabDesktop?.getToken();
     const response = await fetch("/system/setup-nvidia", {
-      method: "POST",
-      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {}
+      method: "POST"
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7\u3092\u958B\u59CB\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");

@@ -1323,6 +1323,8 @@ def analyze_local_audio(
 
 
 def publish_session_to_cloud(video_id: str, data: dict, result_file: Path, audio_file: Path, video_file: Path | None) -> None:
+    if os.environ.get("R2_AUTO_PUBLISH") != "1":
+        return
     config = get_r2_config()
     if config is None:
         return
@@ -1393,6 +1395,8 @@ def create_stems(video_id: str, job_id: str | None = None) -> dict:
 
 
 def publish_folders_to_cloud() -> None:
+    if os.environ.get("R2_AUTO_PUBLISH") != "1":
+        return
     config = get_r2_config()
     if config is None or not FOLDERS_FILE.exists():
         return
@@ -1472,7 +1476,7 @@ def rename_result(video_id: str, title: str) -> dict:
     entry_date = next((item.get("date") for item in load_manifest() if item.get("id") == video_id), date.today().isoformat())
     replace_manifest_entry_preserving_order(build_manifest_entry(renamed, entry_date=entry_date))
     export_static_assets()
-    config = get_r2_config()
+    config = get_r2_config() if os.environ.get("R2_AUTO_PUBLISH") == "1" else None
     if config is not None:
         cloud_assets = build_r2_session_assets(video_id, config)
         if cloud_assets:
@@ -1642,7 +1646,7 @@ def delete_results(video_ids: list[str]) -> list[str]:
                 save_json(FOLDERS_FILE, folders)
         export_static_assets()
 
-        config = get_r2_config()
+        config = get_r2_config() if os.environ.get("R2_AUTO_PUBLISH") == "1" else None
         if config is not None:
             delete_session_assets(ids, config)
             upload_manifest(config, MANIFEST_FILE)

@@ -252,6 +252,7 @@ async function startBackend() {
   let lastError = null;
   for (let startAttempt = 1; startAttempt <= 4; startAttempt += 1) {
     const port = await findFreePort();
+    const url = `http://127.0.0.1:${port}`;
     const instanceId = randomBytes(16).toString("hex");
     const env = {
       ...process.env,
@@ -261,6 +262,7 @@ async function startBackend() {
       PRACTICE_LAB_RESOURCE_DIR: runtime.resourceDir,
       PRACTICE_LAB_PORT: String(port),
       PRACTICE_LAB_HOST: "127.0.0.1",
+      PRACTICE_LAB_BACKEND_ORIGIN: url,
       PRACTICE_LAB_DESKTOP_TOKEN: desktopToken,
       PRACTICE_LAB_INSTANCE_ID: instanceId,
       ANALYZER_EXECUTOR: process.platform === "win32" ? "wsl" : "auto",
@@ -285,10 +287,16 @@ async function startBackend() {
     backend = child;
     child.stdout.on("data", writeBackendLog);
     child.stderr.on("data", writeBackendLog);
-    const url = `http://127.0.0.1:${port}`;
     try {
       await waitForBackend(url, child, instanceId);
       backendUrl = url;
+      mainWindow?.webContents.session.webRequest.onBeforeSendHeaders(
+        { urls: [`${url}/*`] },
+        (details, callback) => {
+          details.requestHeaders["X-Practice-Lab-Desktop-Token"] = desktopToken;
+          callback({ requestHeaders: details.requestHeaders });
+        },
+      );
       return url;
     } catch (error) {
       lastError = error;
@@ -450,6 +458,8 @@ async function createWindow() {
     },
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  mainWindow.webContents.on("will-attach-webview", event => event.preventDefault());
   const url = await startBackend();
   configureApplicationMenu();
   mainWindow.webContents.setWindowOpenHandler(details => {
@@ -462,7 +472,7 @@ async function createWindow() {
         },
       };
     }
-    if (target.protocol === "https:" || target.protocol === "http:") shell.openExternal(details.url);
+    if (target.protocol === "https:") shell.openExternal(details.url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
@@ -472,29 +482,58 @@ async function createWindow() {
   configureUpdates();
 }
 
-ipcMain.handle("desktop:get-version", () => app.getVersion());
-ipcMain.handle("desktop:get-token", () => desktopToken);
+function requireTrustedIpc(event) {
+  const senderUrl = event.senderFrame?.url || event.sender?.getURL?.() || "";
+  let senderOrigin = "";
+  try {
+    senderOrigin = new URL(senderUrl).origin;
+  } catch {}
+  if (!backendUrl || senderOrigin !== backendUrl) throw new Error("許可されていない画面からの操作です");
+}
+
+ipcMain.handle("desktop:get-version", event => {
+  requireTrustedIpc(event);
+  return app.getVersion();
+});
 ipcMain.on("desktop:get-player-settings", event => {
+  try {
+    requireTrustedIpc(event);
+  } catch (error) {
+    event.returnValue = { error: error.message };
+    return;
+  }
   event.returnValue = readPlayerSettings();
 });
 ipcMain.on("desktop:save-player-settings", (event, payload) => {
   try {
+    requireTrustedIpc(event);
     event.returnValue = { ok: true, settings: writePlayerSettings(payload) };
   } catch (error) {
     event.returnValue = { ok: false, message: error.message };
   }
 });
-ipcMain.handle("desktop:get-settings", () => settingsForRenderer());
-ipcMain.handle("desktop:save-settings", (_event, payload) => {
+ipcMain.handle("desktop:get-settings", event => {
+  requireTrustedIpc(event);
+  return settingsForRenderer();
+});
+ipcMain.handle("desktop:save-settings", (event, payload) => {
+  requireTrustedIpc(event);
   const saved = writeDesktopSettings(payload);
   setTimeout(() => restartBackend().catch(error => {
     dialog.showErrorBox("設定を反映できませんでした", error.stack || error.message);
   }), 350);
   return saved;
 });
-ipcMain.handle("desktop:open-data-folder", () => shell.openPath(app.getPath("userData")));
-ipcMain.handle("desktop:check-for-updates", () => checkForUpdates());
-ipcMain.handle("desktop:install-update", () => {
+ipcMain.handle("desktop:open-data-folder", event => {
+  requireTrustedIpc(event);
+  return shell.openPath(app.getPath("userData"));
+});
+ipcMain.handle("desktop:check-for-updates", event => {
+  requireTrustedIpc(event);
+  return checkForUpdates();
+});
+ipcMain.handle("desktop:install-update", event => {
+  requireTrustedIpc(event);
   if (updateDownloaded) autoUpdater.quitAndInstall(false, true);
   return updateDownloaded;
 });

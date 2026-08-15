@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("practiceLabDesktop", {
   getVersion: () => ipcRenderer.invoke("desktop:get-version"),
-  getToken: () => ipcRenderer.invoke("desktop:get-token"),
   getPlayerSettings: () => ipcRenderer.sendSync("desktop:get-player-settings"),
   savePlayerSettings: settings => ipcRenderer.sendSync("desktop:save-player-settings", settings),
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),

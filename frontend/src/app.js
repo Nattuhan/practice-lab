@@ -739,6 +739,14 @@ const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, char => ({
   "'": "&#39;",
 }[char]));
 
+const safeAssetUrl = value => {
+  try {
+    const url = new URL(String(value || ""), window.location.href);
+    if (url.origin === window.location.origin || url.protocol === "https:") return url.href;
+  } catch {}
+  return "";
+};
+
 const hideContextMenu = () => {
   if (!SELECTORS.contextMenu) return;
   SELECTORS.contextMenu.hidden = true;
@@ -1409,8 +1417,10 @@ const renderScoreOutputs = data => {
     : data.pageOutputs;
   const outputUnit = data.layout === "a3_2up" ? "枚" : "ページ";
   const outputFormat = data.layout === "a3_2up" ? "A3" : data.layout === "a4" ? "A4" : "縦長";
-  const download = data.zipUrl
-    ? `<a class="btn-analyze" href="${data.zipUrl}" download>PNGをまとめてダウンロード</a>`
+  const zipUrl = safeAssetUrl(data.zipUrl);
+  const safePreviewOutputs = (Array.isArray(previewOutputs) ? previewOutputs : []).map(safeAssetUrl).filter(Boolean);
+  const download = zipUrl
+    ? `<a class="btn-analyze" href="${escapeHtml(zipUrl)}" download>PNGをまとめてダウンロード</a>`
     : "";
   const actions = download ? `<div class="score-download">${download}</div>` : "";
   const badges = [
@@ -1434,13 +1444,13 @@ const renderScoreOutputs = data => {
     : "";
   SELECTORS.scoreResultSection.hidden = false;
   SELECTORS.scoreResultTitleInput.value = data.title || data.videoId || "";
-  SELECTORS.scoreResult.innerHTML = `${summary}${actions}${previewOutputs.map((url, index) => `
+  SELECTORS.scoreResult.innerHTML = `${summary}${actions}${safePreviewOutputs.map((url, index) => `
     <div class="score-output">
       <div class="score-output-head">
-        <span>${index + 1}/${previewOutputs.length}${outputUnit} · ${outputFormat} · 採用 ${data.keptFrames} · 除外 ${data.skippedFrames}</span>
-        <a href="${url}" target="_blank">PNGを開く</a>
+        <span>${index + 1}/${safePreviewOutputs.length}${outputUnit} · ${escapeHtml(outputFormat)} · 採用 ${Number(data.keptFrames || 0)} · 除外 ${Number(data.skippedFrames || 0)}</span>
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">PNGを開く</a>
       </div>
-      <img src="${url}?t=${Date.now()}" alt="抽出済み楽譜 ${index + 1}ページ目">
+      <img src="${escapeHtml(url)}${url.includes("?") ? "&" : "?"}t=${Date.now()}" alt="抽出済み楽譜 ${index + 1}ページ目">
     </div>
   `).join("")}`;
   SELECTORS.scoreResultStatus.className = "score-status score-result-status ok";
@@ -2476,8 +2486,7 @@ const verifySavedCloudSettings = async () => {
   localStorage.removeItem("practice_lab_settings_saved");
   if (action !== "test-cloud") return;
   try {
-    const token = await window.practiceLabDesktop?.getToken();
-    const response = await fetch("/cloud/test", { method: "POST", headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {} });
+    const response = await fetch("/cloud/test", { method: "POST" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || "R2へ接続できませんでした");
     await refreshCloudStatus();
@@ -2501,10 +2510,8 @@ const syncCloudLibrary = async () => {
   if (!approved) return;
   SELECTORS.btnCloudSync.disabled = true;
   try {
-    const token = await window.practiceLabDesktop?.getToken();
     const response = await fetch("/cloud/sync", {
       method: "POST",
-      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {},
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `同期に失敗しました (${response.status})`);
@@ -3264,10 +3271,10 @@ const showResult = (data, id, { autoplay = false } = {}) => {
     row.innerHTML = `
       <span class="sec-num">${String(index + 1).padStart(2, "0")}</span>
       <span class="sec-dot" style="background:${color}"></span>
-      <span class="sec-label">${localizeSectionLabel(section.label)}</span>
-      <span class="sec-bars"><span class="subtle">${section.bar_count}小節</span></span>
-      <div class="sec-vis"><div class="sec-vis-fill" style="width:${Math.round(section.bar_count / maxBars * 100)}%;background:${color}"></div></div>
-      <span class="sec-time">${section.start_time_str}</span>
+      <span class="sec-label">${escapeHtml(localizeSectionLabel(section.label))}</span>
+      <span class="sec-bars"><span class="subtle">${Number(section.bar_count || 0)}小節</span></span>
+      <div class="sec-vis"><div class="sec-vis-fill" style="width:${Math.round(Number(section.bar_count || 0) / maxBars * 100)}%;background:${color}"></div></div>
+      <span class="sec-time">${escapeHtml(section.start_time_str)}</span>
     `;
     row.onclick = event => {
       if (event.shiftKey && selectedIdxs.size > 0) {
@@ -4283,10 +4290,8 @@ const startDesktopNvidiaSetup = async () => {
       await refreshDesktopSystemStatus();
       return;
     }
-    const token = await window.practiceLabDesktop?.getToken();
     const response = await fetch("/system/setup-nvidia", {
       method: "POST",
-      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {},
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || "セットアップを開始できませんでした");

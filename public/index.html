@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
   <link rel="stylesheet" href="styles.css?v=20260816-playhead-scrub">
 </head>
@@ -521,7 +522,7 @@
         <section class="settings-section" data-settings-panel="cloud">
           <div class="settings-group cloud-intro">
             <h3>自分のCloudflare R2と連携</h3>
-            <p>データは共通サーバーではなく、あなた自身のR2バケットへ同期されます。認証情報はこのPCで暗号化して保存します。</p>
+            <p>データは共通サーバーではなく、あなた自身のR2バケットへ同期されます。認証情報はこのPCで暗号化して保存します。解析や編集だけでは公開されず、画面上部の「同期」を押したときだけアップロードします。</p>
             <label class="settings-toggle"><span><strong>クラウド連携を有効にする</strong><small>未連携のままでもローカル機能はすべて利用できます。</small></span><input id="settings-cloud-enabled" type="checkbox"></label>
           </div>
           <div class="cloud-fields" id="settings-cloud-fields">
