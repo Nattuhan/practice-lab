@@ -18,6 +18,42 @@ const silentWav = (seconds = 1, sampleRate = 8000) => {
   return buffer;
 };
 
+const baselineStems = Object.fromEntries(
+  ["vocals", "drums", "bass", "other"].map(name => [name, `/stems/e2e-baseline/${name}.wav`]),
+);
+const baselineSession = {
+  id: "e2e-baseline",
+  title: "E2E Baseline",
+  bpm: 120,
+  date: "2026-08-16",
+  assets: { stems: baselineStems },
+};
+const baselineResult = {
+  ...baselineSession,
+  total_bars: 1,
+  duration: 1,
+  sections: [{ label: "verse", start_bar: 1, end_bar: 1, bar_count: 1, start_time: 0, end_time: 1, start_time_str: "00:00" }],
+  beats: [0],
+  downbeats: [0],
+  assets: { stems: baselineStems },
+};
+
+test.beforeEach(async ({ page }) => {
+  await page.route("**/results/manifest.json", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify([baselineSession]),
+  }));
+  await page.route("**/results/e2e-baseline.json", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(baselineResult),
+  }));
+  await page.route("**/audio/e2e-baseline.mp3", route => route.abort());
+  await page.route("**/stems/e2e-baseline/*.wav", route => route.fulfill({
+    contentType: "audio/wav",
+    body: silentWav(),
+  }));
+});
+
 test("主要画面をネットワークCDNなしで開ける", async ({ page }) => {
   const dependencyRequests = [];
   page.on("request", request => {
