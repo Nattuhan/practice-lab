@@ -1,10 +1,13 @@
-# Windowsデスクトップ版のリリース
+# デスクトップ版のリリース
 
 ## 配布物
 
 Windows版はElectronの専用ウィンドウ、PyInstallerで固めたFastAPIバックエンド、Node.js、
 FFmpegをNSISインストーラーへまとめます。音源解析とstems分離は同梱バックエンドではなく、
 WSL2上のCUDAランタイムで実行します。
+
+Apple Silicon Mac版は同じUIとFastAPIバックエンドに、PyTorch MPS、NATTEN、
+all-in-one-fix、Demucsを含むmacOSネイティブ解析環境を同梱します。Intel Macは対象外です。
 
 アプリ本体と利用者データは分離されています。
 
@@ -37,6 +40,9 @@ npm run desktop:dist -- --publish=never
 - `PracticeLab-Setup-1.2.3.exe`
 - `latest.yml`
 - 差分更新用の`.blockmap`
+- `PracticeLab-1.2.3-arm64.dmg`
+- `PracticeLab-1.2.3-arm64.zip`
+- `latest-mac.yml`
 
 デスクトップアプリは起動後にGitHub Releasesを確認し、新版を取得します。ダウンロード完了後、
 画面上の更新ボタンから再起動して適用できます。
@@ -49,6 +55,25 @@ npm run desktop:dist -- --publish=never
 - `WINDOWS_CERTIFICATE_PASSWORD`: 証明書のパスワード
 
 未登録でも開発用インストーラーは生成できますが、Windowsに発行元不明の警告が表示されます。
+
+## macOS署名とNotarization
+
+正式タグではApple Developer ProgramのDeveloper ID Application証明書とNotarizationを必須にします。
+GitHub ActionsのRepository secretsへ次を登録します。
+
+- `MACOS_CERTIFICATE`: Developer ID Application証明書を含む`.p12`のBase64値
+- `MACOS_CERTIFICATE_PASSWORD`: `.p12`のパスワード
+- `APPLE_ID`: Apple Developer ProgramのApple ID
+- `APPLE_APP_SPECIFIC_PASSWORD`: App用パスワード
+- `APPLE_TEAM_ID`: Developer Team ID
+
+正式タグで一つでも不足するとリリースを停止します。ビルド後は`codesign`、Gatekeeperの`spctl`、
+Notarization ticketの`stapler`を検証します。
+
+要件の根拠:
+
+- [Apple: Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+- [electron-builder: macOS Notarization](https://www.electron.build/docs/notarization/)
 
 ## NVIDIA初回セットアップ
 

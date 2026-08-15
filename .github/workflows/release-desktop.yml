@@ -1,4 +1,4 @@
-name: Release Windows desktop app
+name: Release desktop apps
 
 on:
   workflow_dispatch:
@@ -13,12 +13,12 @@ jobs:
   windows-nvidia:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.10"
           cache: pip
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -43,26 +43,155 @@ jobs:
       - name: Build bundled backend
         run: npm run desktop:backend
       - name: Collect Node and FFmpeg
+        run: npm run desktop:prepare
+      - name: Require Windows signing credentials for releases
+        if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          if (-not (Get-Command ffmpeg.exe -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg -y --no-progress
-          }
-          npm run desktop:prepare
+          if (-not $env:WINDOWS_CERTIFICATE) { throw "WINDOWS_CERTIFICATE is required" }
+          if (-not $env:WINDOWS_CERTIFICATE_PASSWORD) { throw "WINDOWS_CERTIFICATE_PASSWORD is required" }
       - name: Build and publish installer
         if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
         run: npm run desktop:dist -- --publish=always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - name: Verify Windows installer signature
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $installer = Get-Item desktop/dist/installer/PracticeLab-Setup-*.exe
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          if ($signature.Status -ne 'Valid') { throw "Installer signature is $($signature.Status)" }
       - name: Build installer without publishing
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: npm run desktop:dist -- --publish=never
-      - uses: actions/upload-artifact@v4
+      - name: Generate dependency inventories
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          npm sbom --sbom-format cyclonedx | Set-Content -Encoding utf8 desktop/dist/installer/PracticeLab-node-sbom-windows.cdx.json
+          .venv\Scripts\python.exe -m pip inspect | Set-Content -Encoding utf8 desktop/dist/installer/PracticeLab-python-dependencies-windows.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: PracticeLab-Windows
           path: |
             desktop/dist/installer/*.exe
             desktop/dist/installer/*.yml
             desktop/dist/installer/*.blockmap
+            desktop/dist/installer/*sbom*.json
+            desktop/dist/installer/*dependencies*.json
+
+  macos-apple-silicon:
+    needs: windows-nvidia
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install application and analysis dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements/app.txt -r requirements/desktop-build.txt
+          .venv/bin/python -m pip install "torch==2.6.0"
+          .venv/bin/python -m pip install "natten==0.17.5" --no-build-isolation
+          .venv/bin/python -m pip install "all-in-one-fix==2.0.4" --no-build-isolation
+      - name: Install and test frontend
+        run: |
+          npm ci
+          npm run build
+          npm run test:unit
+      - name: Test backend
+        run: .venv/bin/python -m pytest -q
+      - name: Verify Apple Silicon runtime
+        run: |
+          test "$(uname -m)" = "arm64"
+          .venv/bin/python -c "import allin1fix, demucs_infer, natten, torch; assert torch.backends.mps.is_built()"
+      - name: Use the tag as the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+      - name: Require signing and notarization credentials for releases
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$MACOS_CERTIFICATE"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+      - name: Prepare bundled tools and backend
+        run: |
+          npm run desktop:prepare:mac
+          npm run desktop:backend:mac
+      - name: Build and publish signed DMG and update archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm run desktop:dist:mac -- --publish=always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Build unsigned test DMG
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: npm run desktop:dist:mac -- --publish=never
+      - name: Verify signed and notarized application
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          codesign --verify --deep --strict --verbose=2 desktop/dist/installer/mac-arm64/PracticeLab.app
+          spctl --assess --type execute --verbose=2 desktop/dist/installer/mac-arm64/PracticeLab.app
+          xcrun stapler validate desktop/dist/installer/mac-arm64/PracticeLab.app
+      - name: Generate dependency inventories
+        run: |
+          npm sbom --sbom-format cyclonedx > desktop/dist/installer/PracticeLab-node-sbom-macos.cdx.json
+          .venv/bin/python -m pip inspect > desktop/dist/installer/PracticeLab-python-dependencies-macos.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: PracticeLab-macOS-Apple-Silicon
+          path: |
+            desktop/dist/installer/*.dmg
+            desktop/dist/installer/*.zip
+            desktop/dist/installer/latest-mac.yml
+            desktop/dist/installer/*.blockmap
+            desktop/dist/installer/*sbom*.json
+            desktop/dist/installer/*dependencies*.json
+
+  release-metadata:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows-nvidia, macos-apple-silicon]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: PracticeLab-*
+          path: release-artifacts
+          merge-multiple: true
+      - name: Generate SHA-256 checksums
+        working-directory: release-artifacts
+        run: find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\0' | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+      - name: Upload checksums and dependency inventories
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/SHA256SUMS.txt --clobber
+          gh release upload "$GITHUB_REF_NAME" release-artifacts/*sbom*.json release-artifacts/*dependencies*.json --clobber

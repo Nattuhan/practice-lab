@@ -26,5 +26,6 @@ desktop/bin/
 desktop/build/
 desktop/dist/
 desktop/.electron-dist-*/
+desktop/assets/*.icns
 .DS_Store
 Thumbs.db

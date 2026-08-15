@@ -214,7 +214,11 @@ function pathsForRuntime() {
   }
   return {
     resourceDir: path.join(process.resourcesPath, "app"),
-    executable: path.join(process.resourcesPath, "backend", "practice-lab-backend.exe"),
+    executable: path.join(
+      process.resourcesPath,
+      "backend",
+      process.platform === "win32" ? "practice-lab-backend.exe" : "practice-lab-backend",
+    ),
     args: [],
     binDir: path.join(process.resourcesPath, "bin"),
   };
