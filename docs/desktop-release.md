@@ -6,8 +6,8 @@ Windows版はElectronの専用ウィンドウ、PyInstallerで固めたFastAPI�
 FFmpegをNSISインストーラーへまとめます。音源解析とstems分離は同梱バックエンドではなく、
 WSL2上のCUDAランタイムで実行します。
 
-Apple Silicon Mac版は同じUIとFastAPIバックエンドに、PyTorch MPS、NATTEN、
-all-in-one-fix、Demucsを含むmacOSネイティブ解析環境を同梱します。Intel Macは対象外です。
+Apple Silicon Mac版は同じUIとFastAPIバックエンドに、PyTorch、NATTEN、all-in-one-fix、
+Demucsを含むmacOSネイティブCPU解析環境を同梱します。Intel Macは対象外です。
 
 アプリ本体と利用者データは分離されています。
 

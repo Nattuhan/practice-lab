@@ -11,10 +11,13 @@ PracticeLabはMITライセンスで公開しますが、配布物には各プロ
 | FastAPI / Uvicorn | ローカルAPI | 各プロジェクトの配布ライセンス |
 | yt-dlp | 動画取得 | [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) |
 | PyTorch | 解析実行 | [BSD-style](https://github.com/pytorch/pytorch/blob/main/LICENSE) |
-| NATTEN | 音楽構成解析依存 | [BSD 3-Clause](https://github.com/SHI-Labs/NATTEN/blob/main/LICENSE) |
+| NATTEN | 音楽構成解析依存 | [MIT](https://github.com/SHI-Labs/NATTEN/blob/main/LICENSE) |
 | all-in-one-fix | 音楽構成解析 | 配布パッケージのライセンス |
 | Demucs | パート分離 | [MIT](https://github.com/facebookresearch/demucs/blob/main/LICENSE) |
 | WaveSurfer.js / Lucide | UI | 各プロジェクトの配布ライセンス |
+
+Apple Silicon版では、NATTEN 0.17.5がCUDAのない環境でTriton対応判定を行う際の例外を避けるため、
+CUDA利用可否を先に確認する1行の互換修正を適用しています。NATTEN本体のMITライセンス条件は維持されます。
 
 正式リリースにはNodeのCycloneDX SBOMとPython依存関係一覧を添付します。依存パッケージの完全な
 一覧とバージョンは、各リリースの`*sbom*.json`および`*dependencies*.json`を参照してください。

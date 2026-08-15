@@ -47,7 +47,7 @@ fi
 
 if [[ -x .venv/bin/python ]]; then
   step "既存環境がそのまま使えるか確認しています"
-  if ANALYZER_EXECUTOR=native ANALYZER_DEVICE=auto .venv/bin/python scripts/check_env.py >/dev/null 2>&1; then
+  if ANALYZER_EXECUTOR=native ANALYZER_DEVICE=cpu .venv/bin/python scripts/check_env.py >/dev/null 2>&1; then
     echo "既存環境は正常です。依存パッケージを変更せずに利用します。"
     exit 0
   fi
@@ -69,9 +69,10 @@ step "Apple Silicon用の解析環境をインストールしています"
 .venv/bin/python -m pip install "torch==2.6.0"
 .venv/bin/python -m pip install "natten==0.17.5" --no-build-isolation
 .venv/bin/python -m pip install "https://github.com/openmirlab/all-in-one-fix/archive/9ba8cac49d441f54e2d89aaefbd44acde8ee2c38.zip" --no-build-isolation
+.venv/bin/python scripts/patch_natten_cpu.py
 
 step "環境を確認しています"
-ANALYZER_EXECUTOR=native ANALYZER_DEVICE=auto .venv/bin/python scripts/check_env.py
+ANALYZER_EXECUTOR=native ANALYZER_DEVICE=cpu .venv/bin/python scripts/check_env.py
 
 echo
 echo "セットアップが完了しました。"
