@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=20260805-score-settings">
+  <link rel="stylesheet" href="styles.css?v=20260816-playhead-scrub">
 </head>
 <body>
 <div class="shell">
@@ -21,6 +21,7 @@
           <button class="sb-delete-selection icon-btn" id="btn-delete-session-selection" type="button" aria-label="選択したセッションを削除" title="選択したセッションを削除" hidden><i data-lucide="trash-2"></i></button>
           <button class="sb-clear-selection icon-btn" id="btn-clear-session-selection" type="button" aria-label="選択を解除" title="選択を解除" hidden><i data-lucide="x"></i></button>
           <button class="sb-add-folder icon-btn" id="btn-storage" type="button" aria-label="容量とキャッシュ" title="容量とキャッシュ"><i data-lucide="hard-drive"></i></button>
+          <button class="sb-add-folder icon-btn" id="btn-settings" type="button" aria-label="設定" title="設定"><i data-lucide="settings-2"></i></button>
           <button class="sb-add-folder icon-btn" id="btn-add-folder" type="button" aria-label="新しいフォルダー" title="新しいフォルダー"><i data-lucide="folder-plus"></i></button>
         </div>
       </div>
@@ -57,16 +58,41 @@
         <button class="feature-tab" id="tab-score">楽譜抽出</button>
       </div>
       <span class="topbar-song" id="topbar-song" hidden>-</span>
+      <div class="topbar-actions session-actions" hidden>
+        <button class="btn-top icon-only" id="btn-yt" type="button" aria-label="YouTubeで開く" title="YouTubeで開く" hidden><i data-lucide="youtube"></i></button>
+        <button class="btn-top icon-only" id="btn-score-extractor" type="button" aria-label="この曲から楽譜を抽出" title="この曲から楽譜を抽出" hidden><i data-lucide="music"></i></button>
+        <button class="btn-top icon-only" id="btn-reanalyze" type="button" aria-label="この曲を再解析" title="この曲を再解析" hidden><i data-lucide="refresh-cw"></i></button>
+      </div>
       <span id="offline-badge" hidden>オフライン</span>
-      <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><i data-lucide="cloud-upload"></i><span>同期</span></button>
+      <button class="desktop-update" id="desktop-update" type="button" hidden></button>
+      <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><span class="topbar-sync-content"><i data-lucide="cloud-upload"></i><span>同期</span></span></button>
+      <button class="btn-top topbar-settings" id="btn-top-settings" type="button" hidden><i data-lucide="settings-2"></i><span>設定</span></button>
+      <button class="btn-top action-primary topbar-new-analysis" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
     </div>
 
     <main class="main">
+      <section class="desktop-status" id="desktop-status" hidden>
+        <div>
+          <strong id="desktop-status-title">NVIDIA解析環境を確認しています</strong>
+          <p id="desktop-status-message">GPU、WSL2、CUDA解析ライブラリを順番に確認します。</p>
+        </div>
+        <button id="desktop-status-action" type="button" hidden>NVIDIAセットアップ</button>
+      </section>
       <section id="structure-panel" class="feature-panel">
+        <dialog class="analysis-dialog" id="analysis-dialog" aria-labelledby="analysis-dialog-title">
         <div id="input-card">
+          <div class="input-card-heading">
+            <div class="input-card-icon" aria-hidden="true"><i data-lucide="music"></i></div>
+            <div class="input-card-heading-copy">
+              <span class="input-card-eyebrow" id="analysis-dialog-eyebrow">新しい解析</span>
+              <h1 id="analysis-dialog-title">練習したい曲を追加</h1>
+              <p id="analysis-dialog-description">YouTubeのURL、または手元の音声ファイルから解析を始めます。</p>
+            </div>
+            <button class="icon-btn analysis-dialog-close" id="analysis-dialog-close" type="button" aria-label="解析画面を閉じる"><i data-lucide="x"></i></button>
+          </div>
           <div class="input-bar">
             <input type="text" id="url-input" placeholder="YouTubeのURLを貼り付けて解析">
-            <button class="btn-analyze" id="analyze-btn">解析</button>
+            <button class="btn-analyze" id="analyze-btn">解析を開始</button>
             <input type="file" id="audio-file-input" accept=".wav,.m4a,.mp3,.flac,.aac,.ogg,audio/*" hidden>
             <button class="btn-audio-file" id="btn-audio-file" type="button"><i data-lucide="file-audio"></i><span>音声ファイル</span></button>
           </div>
@@ -94,16 +120,7 @@
             <div class="job-message" id="job-message"></div>
           </div>
         </div>
-
-        <div class="topbar-actions session-actions" hidden>
-          <div class="session-actions-label"><i data-lucide="music-2"></i><span>楽曲</span></div>
-          <div class="action-group">
-            <button class="btn-top action-primary" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
-            <button class="btn-top icon-only" id="btn-yt" type="button" aria-label="YouTubeで開く" title="YouTubeで開く" hidden><i data-lucide="youtube"></i></button>
-            <button class="btn-top icon-only" id="btn-score-extractor" type="button" aria-label="楽譜を抽出" title="楽譜を抽出" hidden><i data-lucide="music"></i></button>
-            <button class="btn-top icon-only" id="btn-reanalyze" type="button" aria-label="この曲を再解析" title="この曲を再解析" hidden><i data-lucide="refresh-cw"></i></button>
-          </div>
-        </div>
+        </dialog>
 
         <div class="structure-workspace" id="structure-workspace" hidden>
         <section class="player" id="player-card">
@@ -148,7 +165,7 @@
           </div>
         </div>
 
-        <div class="video-wrap">
+        <div class="video-wrap" id="video-wrap">
           <video id="video-player" muted playsinline preload="metadata"></video>
           <button class="video-fullscreen-btn icon-btn" id="btn-video-fullscreen" type="button" aria-label="動画を全画面表示" title="動画を全画面表示"><i data-lucide="maximize"></i></button>
           <div class="video-fs-hud">
@@ -161,7 +178,7 @@
             </div>
             <button class="video-fs-exit" id="btn-video-exit" type="button" aria-label="全画面表示を終了"></button>
           </div>
-          <div class="audio-note" id="video-note" hidden>このセッションには動画がありません。再解析すると同期再生を追加できます。</div>
+          <div class="audio-note" id="video-note" hidden><i data-lucide="video-off"></i><span>動画なし · 音声と曲構成で練習できます。再解析すると動画を追加できます。</span></div>
         </div>
 
         <div class="waveform-wrap">
@@ -463,13 +480,144 @@
   </form>
 </dialog>
 
+<dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+  <div class="settings-card">
+    <aside class="settings-nav">
+      <div class="settings-brand"><i data-lucide="settings"></i><span>設定</span></div>
+      <button class="settings-nav-item active" type="button" data-settings-section="general"><i data-lucide="sliders-horizontal"></i><span>一般</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="analysis"><i data-lucide="cpu"></i><span>解析環境</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="cloud"><i data-lucide="cloud"></i><span>クラウド連携</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="storage"><i data-lucide="hard-drive"></i><span>ストレージ</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="updates"><i data-lucide="refresh-cw"></i><span>アップデート</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="about"><i data-lucide="info"></i><span>このアプリについて</span></button>
+    </aside>
+    <div class="settings-content">
+      <header class="settings-head">
+        <div><span class="settings-kicker">PracticeLab</span><h2 id="settings-title">一般設定</h2></div>
+        <button class="icon-btn" id="settings-close" type="button" aria-label="設定を閉じる"><i data-lucide="x"></i></button>
+      </header>
+
+      <div class="settings-sections">
+        <section class="settings-section active" data-settings-panel="general">
+          <div class="settings-group">
+            <h3>アプリの動作</h3>
+            <label class="settings-toggle"><span><strong>自動アップデート</strong><small>起動時に新しいバージョンを確認します。</small></span><input id="settings-auto-update" type="checkbox" checked></label>
+          </div>
+          <div class="settings-group">
+            <h3>データ保存場所</h3>
+            <div class="settings-path" id="settings-data-path">確認中...</div>
+            <button class="settings-secondary" id="settings-open-data" type="button"><i data-lucide="folder-open"></i>保存場所を開く</button>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="analysis">
+          <div class="settings-group">
+            <h3>解析環境</h3>
+            <div class="settings-status-card" id="settings-analysis-status"><span class="spin"></span>GPUと解析ライブラリを確認しています</div>
+            <button class="settings-secondary" id="settings-nvidia-setup" type="button"><i data-lucide="wrench"></i>NVIDIA環境をセットアップ・修復</button>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="cloud">
+          <div class="settings-group cloud-intro">
+            <h3>自分のCloudflare R2と連携</h3>
+            <p>データは共通サーバーではなく、あなた自身のR2バケットへ同期されます。認証情報はこのPCで暗号化して保存します。</p>
+            <label class="settings-toggle"><span><strong>クラウド連携を有効にする</strong><small>未連携のままでもローカル機能はすべて利用できます。</small></span><input id="settings-cloud-enabled" type="checkbox"></label>
+          </div>
+          <div class="cloud-fields" id="settings-cloud-fields">
+            <label class="settings-field"><span>Cloudflare アカウントID</span><input id="settings-cloud-account" type="text" autocomplete="off" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"></label>
+            <label class="settings-field"><span>R2 バケット名</span><input id="settings-cloud-bucket" type="text" autocomplete="off" placeholder="practice-lab"></label>
+            <label class="settings-field"><span>アクセスキーID</span><input id="settings-cloud-access-key" type="text" autocomplete="off"></label>
+            <label class="settings-field"><span>シークレットアクセスキー</span><input id="settings-cloud-secret" type="password" autocomplete="new-password" placeholder="保存済みのキーは表示されません"></label>
+            <label class="settings-field"><span>公開URL</span><input id="settings-cloud-public-url" type="url" autocomplete="off" placeholder="https://assets.example.com"><small>R2のカスタムドメイン、または公開用ドメインを入力します。</small></label>
+            <label class="settings-field"><span>保存先プレフィックス</span><input id="settings-cloud-prefix" type="text" autocomplete="off" value="sessions"></label>
+            <details class="settings-advanced"><summary>詳細設定</summary><label class="settings-field"><span>S3互換エンドポイント</span><input id="settings-cloud-endpoint" type="url" autocomplete="off" placeholder="通常は空欄で構いません"></label></details>
+          </div>
+          <div class="settings-cloud-state" id="settings-cloud-state"></div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="storage">
+          <div class="settings-group">
+            <h3>ストレージ管理</h3>
+            <p>解析結果や元データを残したまま、再生成できるキャッシュだけを整理できます。</p>
+            <button class="settings-secondary" id="settings-open-storage" type="button"><i data-lucide="hard-drive"></i>使用容量とキャッシュを確認</button>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="updates">
+          <div class="settings-group">
+            <h3>アップデート</h3>
+            <p id="settings-version">PracticeLab</p>
+            <button class="settings-secondary" id="settings-check-update" type="button"><i data-lucide="refresh-cw"></i><span id="settings-check-update-label">アップデートを確認</span></button>
+            <p class="settings-update-status" id="settings-update-status" role="status" aria-live="polite" hidden></p>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="about">
+          <div class="settings-about-mark"><span>PL</span></div>
+          <h3>PracticeLab</h3>
+          <p>曲を解析し、構成・クリック・パート分離を使って練習するためのデスクトップアプリです。</p>
+          <p class="settings-muted">各利用者の音源・動画・クラウドデータは、それぞれのPCと連携先に保存されます。</p>
+        </section>
+      </div>
+
+      <footer class="settings-footer">
+        <span id="settings-save-status"></span>
+        <button class="settings-secondary" id="settings-cancel" type="button">キャンセル</button>
+        <button class="btn-analyze" id="settings-save" type="button">設定を保存</button>
+      </footer>
+    </div>
+  </div>
+</dialog>
+
 <dialog class="section-editor" id="section-editor">
   <form method="dialog" class="section-editor-card">
     <div class="section-editor-head">
-      <div><strong>セクション編集</strong><small>小節範囲は重複や空白なく並べます</small></div>
+      <div><strong>セクション編集</strong><small>名前と小節範囲を確認して保存します</small></div>
       <button class="icon-btn" value="cancel" aria-label="閉じる"><i data-lucide="x"></i></button>
     </div>
-    <div class="section-editor-rows" id="section-editor-rows"></div>
+    <div class="section-editor-workspace">
+      <div class="section-editor-player" aria-label="曲をプレビュー">
+        <button class="section-editor-player-toggle" id="section-editor-player-toggle" type="button" aria-label="再生"><i data-lucide="play"></i></button>
+        <div class="section-editor-player-time"><span id="section-editor-current-time">00:00</span><span>/</span><span id="section-editor-duration">00:00</span></div>
+        <span class="section-editor-player-note">波形をクリック・ドラッグして再生位置を移動</span>
+      </div>
+      <div class="section-editor-guide">
+        <span>区間を選択</span>
+        <span>境界をドラッグすると小節単位でスナップします</span>
+      </div>
+      <div class="section-editor-stage">
+        <canvas id="section-editor-waveform" aria-hidden="true"></canvas>
+        <div class="section-editor-selected-range" id="section-editor-selected-range" aria-hidden="true"></div>
+        <div class="section-editor-playhead" id="section-editor-playhead" role="slider" tabindex="0" aria-label="再生インジケーター" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>
+        <div class="section-editor-timeline" id="section-editor-rows" aria-label="セクション構成を編集"></div>
+        <div class="section-editor-scrub" id="section-editor-scrub" role="slider" tabindex="0" aria-label="曲の再生位置" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"></div>
+      </div>
+      <div class="section-editor-inspector">
+        <div class="section-editor-selection">
+          <span class="section-editor-selection-number" id="section-editor-selection-number">01</span>
+          <label class="section-editor-name-field">
+            <span>セクション名</span>
+            <input id="section-editor-label" aria-label="選択中のセクション名">
+          </label>
+          <label class="section-editor-bar-field">
+            <span>開始小節</span>
+            <input id="section-editor-start" type="number" min="1" aria-label="選択中の開始小節">
+          </label>
+          <span class="section-editor-range-mark">–</span>
+          <label class="section-editor-bar-field">
+            <span>終了小節</span>
+            <input id="section-editor-end" type="number" min="1" aria-label="選択中の終了小節">
+          </label>
+        </div>
+        <div class="section-editor-tools">
+          <button class="section-editor-preview" id="section-editor-preview" type="button"><i data-lucide="play"></i><span>選択だけ再生</span></button>
+          <button type="button" data-section-action="split">中央で分割</button>
+          <button type="button" data-section-action="merge">次と結合</button>
+          <button class="section-editor-delete" type="button" data-section-action="delete">削除</button>
+        </div>
+      </div>
+    </div>
     <div class="section-editor-error" id="section-editor-error"></div>
     <div class="section-editor-actions">
       <button class="mini-btn" id="btn-restore-sections" type="button">自動解析へ戻す</button>
@@ -500,6 +648,6 @@
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=20260805-score-settings"></script>
+<script type="module" src="app.js?v=20260816-playhead-scrub"></script>
 </body>
 </html>

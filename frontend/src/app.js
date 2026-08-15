@@ -1,8 +1,9 @@
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, sortLibraryItems } from "./library.js";
-import { mutateSectionDraft } from "./section-editor.js";
+import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
+import { extractWaveformPeaks } from "./waveform-peaks.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -43,6 +44,8 @@ const SELECTORS = {
   queueCount: document.getElementById("queue-count"),
   btnAddFolder: document.getElementById("btn-add-folder"),
   btnStorage: document.getElementById("btn-storage"),
+  btnSettings: document.getElementById("btn-settings"),
+  btnTopSettings: document.getElementById("btn-top-settings"),
   appDialog: document.getElementById("app-dialog"),
   appDialogTitle: document.getElementById("app-dialog-title"),
   appDialogMessage: document.getElementById("app-dialog-message"),
@@ -54,9 +57,40 @@ const SELECTORS = {
   storageDialog: document.getElementById("storage-dialog"),
   storageTotal: document.getElementById("storage-total"),
   storageList: document.getElementById("storage-list"),
+  settingsDialog: document.getElementById("settings-dialog"),
+  settingsTitle: document.getElementById("settings-title"),
+  settingsClose: document.getElementById("settings-close"),
+  settingsCancel: document.getElementById("settings-cancel"),
+  settingsSave: document.getElementById("settings-save"),
+  settingsSaveStatus: document.getElementById("settings-save-status"),
+  settingsAutoUpdate: document.getElementById("settings-auto-update"),
+  settingsDataPath: document.getElementById("settings-data-path"),
+  settingsOpenData: document.getElementById("settings-open-data"),
+  settingsAnalysisStatus: document.getElementById("settings-analysis-status"),
+  settingsNvidiaSetup: document.getElementById("settings-nvidia-setup"),
+  settingsCloudEnabled: document.getElementById("settings-cloud-enabled"),
+  settingsCloudFields: document.getElementById("settings-cloud-fields"),
+  settingsCloudAccount: document.getElementById("settings-cloud-account"),
+  settingsCloudBucket: document.getElementById("settings-cloud-bucket"),
+  settingsCloudAccessKey: document.getElementById("settings-cloud-access-key"),
+  settingsCloudSecret: document.getElementById("settings-cloud-secret"),
+  settingsCloudPublicUrl: document.getElementById("settings-cloud-public-url"),
+  settingsCloudPrefix: document.getElementById("settings-cloud-prefix"),
+  settingsCloudEndpoint: document.getElementById("settings-cloud-endpoint"),
+  settingsCloudState: document.getElementById("settings-cloud-state"),
+  settingsOpenStorage: document.getElementById("settings-open-storage"),
+  settingsVersion: document.getElementById("settings-version"),
+  settingsCheckUpdate: document.getElementById("settings-check-update"),
+  settingsCheckUpdateLabel: document.getElementById("settings-check-update-label"),
+  settingsUpdateStatus: document.getElementById("settings-update-status"),
   sidebarSelectionCount: document.getElementById("sidebar-selection-count"),
   btnDeleteSessionSelection: document.getElementById("btn-delete-session-selection"),
   btnClearSessionSelection: document.getElementById("btn-clear-session-selection"),
+  analysisDialog: document.getElementById("analysis-dialog"),
+  analysisDialogEyebrow: document.getElementById("analysis-dialog-eyebrow"),
+  analysisDialogTitle: document.getElementById("analysis-dialog-title"),
+  analysisDialogDescription: document.getElementById("analysis-dialog-description"),
+  analysisDialogClose: document.getElementById("analysis-dialog-close"),
   inputCard: document.getElementById("input-card"),
   structureWorkspace: document.getElementById("structure-workspace"),
   playerCard: document.getElementById("player-card"),
@@ -72,6 +106,11 @@ const SELECTORS = {
   topbarSong: document.getElementById("topbar-song"),
   topbarActions: document.querySelector(".topbar-actions"),
   offlineBadge: document.getElementById("offline-badge"),
+  desktopUpdate: document.getElementById("desktop-update"),
+  desktopStatus: document.getElementById("desktop-status"),
+  desktopStatusTitle: document.getElementById("desktop-status-title"),
+  desktopStatusMessage: document.getElementById("desktop-status-message"),
+  desktopStatusAction: document.getElementById("desktop-status-action"),
   analyzeBtn: document.getElementById("analyze-btn"),
   btnAudioFile: document.getElementById("btn-audio-file"),
   audioFileInput: document.getElementById("audio-file-input"),
@@ -87,6 +126,7 @@ const SELECTORS = {
   jobMessage: document.getElementById("job-message"),
   urlInput: document.getElementById("url-input"),
   waveformWrap: document.querySelector(".waveform-wrap"),
+  videoWrap: document.getElementById("video-wrap"),
   videoPlayer: document.getElementById("video-player"),
   btnVideoFullscreen: document.getElementById("btn-video-fullscreen"),
   btnVideoExit: document.getElementById("btn-video-exit"),
@@ -116,6 +156,18 @@ const SELECTORS = {
   sectionEditor: document.getElementById("section-editor"),
   sectionEditorRows: document.getElementById("section-editor-rows"),
   sectionEditorError: document.getElementById("section-editor-error"),
+  sectionEditorSelectionNumber: document.getElementById("section-editor-selection-number"),
+  sectionEditorLabel: document.getElementById("section-editor-label"),
+  sectionEditorStart: document.getElementById("section-editor-start"),
+  sectionEditorEnd: document.getElementById("section-editor-end"),
+  sectionEditorPreview: document.getElementById("section-editor-preview"),
+  sectionEditorPlayerToggle: document.getElementById("section-editor-player-toggle"),
+  sectionEditorScrub: document.getElementById("section-editor-scrub"),
+  sectionEditorWaveform: document.getElementById("section-editor-waveform"),
+  sectionEditorSelectedRange: document.getElementById("section-editor-selected-range"),
+  sectionEditorPlayhead: document.getElementById("section-editor-playhead"),
+  sectionEditorCurrentTime: document.getElementById("section-editor-current-time"),
+  sectionEditorDuration: document.getElementById("section-editor-duration"),
   btnSaveSections: document.getElementById("btn-save-sections"),
   btnRestoreSections: document.getElementById("btn-restore-sections"),
   metaBpm: document.getElementById("meta-bpm"),
@@ -228,8 +280,11 @@ const setScoreFeatureVisible = visible => {
 let ws = null;
 let hasServer = false;
 let staticLibraryMode = APP_CONFIG.mode === "static";
+let cloudStatus = { configured: false, bucket: null, viewerUrl: null };
+let desktopSettings = null;
 let currentData = null;
 let currentId = null;
+let analysisForce = false;
 let currentSidebarItems = [];
 const practicedThisPage = new Set();
 let currentPlaybackGroup = null;
@@ -292,7 +347,10 @@ const openMobileSidebar = () => {
   SELECTORS.sidebarScrim.hidden = false;
 };
 
-const cfg = () => {
+let desktopCfgCache;
+let desktopCfgFlushTimer = null;
+
+const localCfg = () => {
   try {
     const current = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
     if (Object.keys(current).length > 0) return current;
@@ -307,11 +365,48 @@ const cfg = () => {
   }
 };
 
+const flushDesktopCfg = () => {
+  if (!window.practiceLabDesktop?.savePlayerSettings || !desktopCfgCache) return;
+  if (desktopCfgFlushTimer) {
+    clearTimeout(desktopCfgFlushTimer);
+    desktopCfgFlushTimer = null;
+  }
+  const result = window.practiceLabDesktop.savePlayerSettings(desktopCfgCache);
+  if (result?.ok === false) console.warn("再生設定を保存できませんでした", result.message);
+};
+
+const scheduleDesktopCfgFlush = () => {
+  if (!window.practiceLabDesktop?.savePlayerSettings) return;
+  if (desktopCfgFlushTimer) clearTimeout(desktopCfgFlushTimer);
+  desktopCfgFlushTimer = setTimeout(flushDesktopCfg, 120);
+};
+
+const cfg = () => {
+  const browserSettings = localCfg();
+  if (!window.practiceLabDesktop?.getPlayerSettings) return browserSettings;
+  if (desktopCfgCache === undefined) {
+    const saved = window.practiceLabDesktop.getPlayerSettings();
+    desktopCfgCache = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+    if (Object.keys(desktopCfgCache).length === 0 && Object.keys(browserSettings).length > 0) {
+      desktopCfgCache = { ...browserSettings };
+      flushDesktopCfg();
+    }
+  }
+  return desktopCfgCache;
+};
+
 const saveCfg = (key, value) => {
   const valueMap = cfg();
   valueMap[key] = value;
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(valueMap));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(valueMap));
+  } catch {
+    // Desktop settings still persist when browser storage is unavailable.
+  }
+  scheduleDesktopCfgFlush();
 };
+
+window.addEventListener("beforeunload", flushDesktopCfg);
 
 const bpmCorrectionKey = id => `bpmFactor:${id}`;
 const clickOffsetKey = id => `clickOffsetHalfBeat:${id}`;
@@ -823,6 +918,47 @@ const sessionAssets = session => {
   };
 };
 
+const closeAnalysisDialog = () => {
+  if (SELECTORS.analysisDialog?.open) SELECTORS.analysisDialog.close();
+};
+
+const setAnalysisRangeInputs = ({ startSec = null, endSec = null } = {}) => {
+  const hasRange = startSec !== null || endSec !== null;
+  SELECTORS.analysisTimeMode.value = hasRange ? "range" : "full";
+  SELECTORS.analysisTimeRange.hidden = !hasRange;
+  SELECTORS.analysisStartTime.value = hasRange && startSec !== null ? fmt(startSec) : "";
+  SELECTORS.analysisEndTime.value = hasRange && endSec !== null ? fmt(endSec) : "";
+};
+
+const openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
+  if (!hasServer || !SELECTORS.analysisDialog) return;
+  analysisForce = reanalyze;
+  SELECTORS.inputCard.hidden = false;
+  SELECTORS.status.className = "status";
+  SELECTORS.status.textContent = "";
+  SELECTORS.jobCard.hidden = true;
+  SELECTORS.analysisDialogEyebrow.textContent = reanalyze ? "再解析" : "新しい解析";
+  SELECTORS.analysisDialogTitle.textContent = reanalyze ? "この曲を再解析" : "練習したい曲を追加";
+  SELECTORS.analysisDialogDescription.textContent = reanalyze
+    ? "解析範囲を確認して、現在の曲をもう一度解析します。"
+    : "YouTubeのURL、または手元の音声ファイルから解析を始めます。";
+  SELECTORS.analyzeBtn.textContent = reanalyze ? "再解析を開始" : "解析を開始";
+  if (reanalyze) {
+    const sourceVideoId = currentData?.sourceVideoId || currentId;
+    SELECTORS.urlInput.value = sourceVideoId ? `https://www.youtube.com/watch?v=${sourceVideoId}` : "";
+    setAnalysisRangeInputs({
+      startSec: currentData?.analysisStartSec ?? null,
+      endSec: currentData?.analysisEndSec ?? null,
+    });
+  } else {
+    SELECTORS.urlInput.value = "";
+    setAnalysisRangeInputs();
+  }
+  if (!SELECTORS.analysisDialog.open) SELECTORS.analysisDialog.showModal();
+  if (openAudioPicker) SELECTORS.audioFileInput.click();
+  else SELECTORS.urlInput.focus({ preventScroll: true });
+};
+
 const MIN_PLAYBACK_RATE = 0.25;
 const MAX_PLAYBACK_RATE = 1.25;
 const PLAYBACK_RATE_STEP = 0.05;
@@ -1122,6 +1258,7 @@ const setActiveTab = tab => {
   SELECTORS.scoreHistoryPanel.hidden = !scoreActive;
   SELECTORS.topbarSong.hidden = scoreActive || !currentId;
   SELECTORS.topbarActions.hidden = scoreActive || !currentId;
+  SELECTORS.btnNewUrl.hidden = scoreActive || !hasServer;
 };
 
 const getScoreHistory = () => {
@@ -1164,7 +1301,7 @@ const renderScoreHistory = () => {
       <div class="score-history-date">${escapeHtml(date)}</div>
     </div>`;
   }).join("");
-  window.lucide?.createIcons();
+  lucide.createIcons();
 };
 
 const saveScoreHistory = result => {
@@ -1308,7 +1445,7 @@ const renderScoreOutputs = data => {
   `).join("")}`;
   SELECTORS.scoreResultStatus.className = "score-status score-result-status ok";
   SELECTORS.scoreResultStatus.textContent = `完了 · 範囲 ${region.x},${region.y},${region.width}x${region.height}`;
-  window.lucide?.createIcons();
+  lucide.createIcons();
 };
 
 const editScoreSettings = async (data = currentScoreResult) => {
@@ -1611,23 +1748,38 @@ const extractVideoId = url => {
   return null;
 };
 
-const secColor = label => COLORS[Object.keys(COLORS).find(key => label.toLowerCase().includes(key))] ?? "#94a3b8";
+const sectionColorKey = label => {
+  const normalized = String(label || "").toLowerCase();
+  const aliases = [
+    ["pre-chorus", "pre-chorus"], ["bメロ", "pre-chorus"],
+    ["intro", "intro"], ["イントロ", "intro"],
+    ["verse", "verse"], ["aメロ", "verse"],
+    ["chorus", "chorus"], ["サビ", "chorus"],
+    ["bridge", "bridge"], ["cメロ", "bridge"],
+    ["outro", "outro"], ["アウトロ", "outro"],
+    ["interlude", "intro"], ["instrumental", "intro"], ["inst", "intro"], ["間奏", "intro"],
+  ];
+  return aliases.find(([alias]) => normalized.includes(alias))?.[1];
+};
+const secColor = label => COLORS[sectionColorKey(label)] ?? "#94a3b8";
 const localizeSectionLabel = label => {
   const raw = String(label || "");
   const normalized = raw.toLowerCase();
   const labels = [
-    ["pre-chorus", "プレコーラス"],
-    ["post-chorus", "ポストコーラス"],
+    ["pre-chorus", "Bメロ"],
+    ["post-chorus", "後サビ"],
     ["intro", "イントロ"],
-    ["verse", "ヴァース"],
-    ["chorus", "コーラス"],
-    ["bridge", "ブリッジ"],
+    ["verse", "Aメロ"],
+    ["chorus", "サビ"],
+    ["bridge", "Cメロ"],
     ["interlude", "間奏"],
     ["instrumental", "間奏"],
+    ["inst", "間奏"],
     ["solo", "ソロ"],
     ["start", "開始"],
     ["outro", "アウトロ"],
     ["ending", "エンディング"],
+    ["end", "アウトロ"],
   ];
   const match = labels.find(([key]) => normalized.includes(key));
   return match ? raw.replace(new RegExp(match[0], "i"), match[1]) : raw;
@@ -2187,11 +2339,173 @@ const restoreInterruptedJobs = async () => {
   } catch {}
 };
 
+const SETTINGS_SECTION_TITLES = {
+  general: "一般設定",
+  analysis: "解析環境",
+  cloud: "クラウド連携",
+  storage: "ストレージ",
+  updates: "アップデート",
+  about: "このアプリについて",
+};
+
+const selectSettingsSection = section => {
+  const selected = SETTINGS_SECTION_TITLES[section] ? section : "general";
+  document.querySelectorAll("[data-settings-section]").forEach(button => {
+    button.classList.toggle("active", button.dataset.settingsSection === selected);
+  });
+  document.querySelectorAll("[data-settings-panel]").forEach(panel => {
+    panel.classList.toggle("active", panel.dataset.settingsPanel === selected);
+  });
+  SELECTORS.settingsTitle.textContent = SETTINGS_SECTION_TITLES[selected];
+};
+
+const syncCloudFieldsState = () => {
+  SELECTORS.settingsCloudFields?.classList.toggle("disabled", !SELECTORS.settingsCloudEnabled?.checked);
+};
+
+const renderCloudStatus = status => {
+  cloudStatus = status || { configured: false };
+  if (!SELECTORS.btnCloudSync || staticLibraryMode) return;
+  if (cloudStatus.configured) {
+    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud-upload"></i><span>同期</span></span>`;
+    SELECTORS.btnCloudSync.title = cloudStatus.bucket ? `${cloudStatus.bucket}へ同期` : "自分のクラウドへ同期";
+  } else {
+    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud"></i><span>クラウド連携</span></span>`;
+    SELECTORS.btnCloudSync.title = "自分のCloudflare R2を連携";
+  }
+  lucide.createIcons();
+};
+
+const refreshCloudStatus = async () => {
+  if (!hasServer || staticLibraryMode) return;
+  try {
+    const response = await fetch("/cloud/status", { cache: "no-store" });
+    if (response.ok) renderCloudStatus(await response.json());
+  } catch {}
+};
+
+const refreshSettingsAnalysisStatus = async () => {
+  if (!SELECTORS.settingsAnalysisStatus) return;
+  SELECTORS.settingsAnalysisStatus.className = "settings-status-card";
+  SELECTORS.settingsAnalysisStatus.innerHTML = `<span class="spin"></span>GPUと解析ライブラリを確認しています`;
+  try {
+    const response = await fetch("/system/status", { cache: "no-store" });
+    const status = await response.json();
+    if (!response.ok) throw new Error("解析環境を確認できませんでした");
+    SELECTORS.settingsAnalysisStatus.className = `settings-status-card${status.ready ? " ok" : ""}`;
+    SELECTORS.settingsAnalysisStatus.textContent = status.ready
+      ? `${status.nvidia?.name || "GPU"} · WSL2 CUDA · 解析ライブラリ確認済み`
+      : (status.message || "NVIDIA解析環境のセットアップが必要です");
+  } catch (error) {
+    SELECTORS.settingsAnalysisStatus.textContent = error.message;
+  }
+};
+
+const openSettings = async (section = "general") => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.getSettings) {
+    await showAlert("設定はデスクトップアプリで利用できます。", { title: "設定" });
+    return;
+  }
+  desktopSettings = await desktop.getSettings();
+  const cloud = desktopSettings.cloud || {};
+  SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
+  SELECTORS.settingsDataPath.textContent = desktopSettings.dataPath || "";
+  SELECTORS.settingsVersion.textContent = `PracticeLab ${desktopSettings.version || ""}`;
+  SELECTORS.settingsCloudEnabled.checked = !!cloud.enabled;
+  SELECTORS.settingsCloudAccount.value = cloud.accountId || "";
+  SELECTORS.settingsCloudBucket.value = cloud.bucket || "";
+  SELECTORS.settingsCloudAccessKey.value = cloud.accessKeyId || "";
+  SELECTORS.settingsCloudSecret.value = "";
+  SELECTORS.settingsCloudSecret.placeholder = cloud.hasSecret ? "保存済み（変更する場合だけ入力）" : "シークレットアクセスキー";
+  SELECTORS.settingsCloudPublicUrl.value = cloud.publicBaseUrl || "";
+  SELECTORS.settingsCloudPrefix.value = cloud.prefix || "sessions";
+  SELECTORS.settingsCloudEndpoint.value = cloud.endpointUrl || "";
+  SELECTORS.settingsCloudState.className = `settings-cloud-state${cloudStatus.configured ? " ok" : ""}`;
+  SELECTORS.settingsCloudState.textContent = cloudStatus.configured
+    ? `${cloudStatus.bucket || "R2"}と連携済み${cloudStatus.viewerUrl ? ` · ${cloudStatus.viewerUrl}` : ""}`
+    : "未連携です。設定は利用者ごとにこのPCへ保存されます。";
+  SELECTORS.settingsSaveStatus.textContent = "";
+  syncCloudFieldsState();
+  selectSettingsSection(section);
+  SELECTORS.settingsDialog.showModal();
+  lucide.createIcons();
+  if (section === "analysis") void refreshSettingsAnalysisStatus();
+};
+
+const closeSettings = () => SELECTORS.settingsDialog?.close();
+
+const saveSettings = async () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.saveSettings) return;
+  const enabled = SELECTORS.settingsCloudEnabled.checked;
+  if (enabled && !SELECTORS.settingsCloudSecret.value && !desktopSettings?.cloud?.hasSecret) {
+    SELECTORS.settingsSaveStatus.textContent = "シークレットアクセスキーを入力してください。";
+    return;
+  }
+  SELECTORS.settingsSave.disabled = true;
+  SELECTORS.settingsSaveStatus.textContent = "設定を保存しています...";
+  try {
+    localStorage.setItem("practice_lab_settings_saved", enabled ? "test-cloud" : "saved");
+    await desktop.saveSettings({
+      autoUpdate: SELECTORS.settingsAutoUpdate.checked,
+      cloud: {
+        enabled,
+        accountId: SELECTORS.settingsCloudAccount.value,
+        bucket: SELECTORS.settingsCloudBucket.value,
+        accessKeyId: SELECTORS.settingsCloudAccessKey.value,
+        secretAccessKey: SELECTORS.settingsCloudSecret.value,
+        publicBaseUrl: SELECTORS.settingsCloudPublicUrl.value,
+        prefix: SELECTORS.settingsCloudPrefix.value,
+        endpointUrl: SELECTORS.settingsCloudEndpoint.value,
+      },
+    });
+    SELECTORS.settingsSaveStatus.textContent = "保存しました。設定を反映します...";
+    setTimeout(closeSettings, 150);
+  } catch (error) {
+    SELECTORS.settingsSaveStatus.textContent = error.message;
+    localStorage.removeItem("practice_lab_settings_saved");
+  } finally {
+    SELECTORS.settingsSave.disabled = false;
+  }
+};
+
+const verifySavedCloudSettings = async () => {
+  const action = localStorage.getItem("practice_lab_settings_saved");
+  if (!action) return;
+  localStorage.removeItem("practice_lab_settings_saved");
+  if (action !== "test-cloud") return;
+  try {
+    const token = await window.practiceLabDesktop?.getToken();
+    const response = await fetch("/cloud/test", { method: "POST", headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {} });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || "R2へ接続できませんでした");
+    await refreshCloudStatus();
+    await showAlert(`${payload.bucket}への接続を確認しました。`, { title: "クラウド連携完了" });
+  } catch (error) {
+    await showAlert(`${error.message}\n設定画面から入力内容を確認してください。`, { title: "クラウドへ接続できませんでした" });
+  }
+};
+
 const syncCloudLibrary = async () => {
   if (!hasServer || staticLibraryMode) return;
+  if (!cloudStatus.configured) {
+    await openSettings("cloud");
+    return;
+  }
+  const destination = cloudStatus.bucket ? `「${cloudStatus.bucket}」` : "自分のR2";
+  const approved = await showConfirm(
+    `解析済みの曲・音声・動画・パート音声を${destination}へ同期します。続けますか？`,
+    { title: "公開ライブラリを更新", confirmLabel: "同期する" },
+  );
+  if (!approved) return;
   SELECTORS.btnCloudSync.disabled = true;
   try {
-    const response = await fetch("/cloud/sync", { method: "POST" });
+    const token = await window.practiceLabDesktop?.getToken();
+    const response = await fetch("/cloud/sync", {
+      method: "POST",
+      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {},
+    });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `同期に失敗しました (${response.status})`);
     trackQueuedJob(submitted.jobId, { label: "クラウド同期" });
@@ -2426,10 +2740,12 @@ const initVideoPlayer = videoUrl => {
   }
   video.onclick = handleVideoClick;
   video.ondblclick = event => event.preventDefault();
+  video.onerror = null;
   video.removeAttribute("src");
   video.load();
   videoAvailable = !!videoUrl;
   lastVideoSyncAt = 0;
+  SELECTORS.videoWrap.classList.toggle("no-video", !videoUrl);
   SELECTORS.videoNote.hidden = !!videoUrl;
   SELECTORS.btnVideoFullscreen.hidden = !videoUrl;
   if (!videoUrl) return;
@@ -2441,6 +2757,7 @@ const initVideoPlayer = videoUrl => {
     setVideoFullscreen(false);
     video.removeAttribute("src");
     video.load();
+    SELECTORS.videoWrap.classList.add("no-video");
     SELECTORS.videoNote.hidden = false;
     SELECTORS.btnVideoFullscreen.hidden = true;
   };
@@ -2660,6 +2977,11 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
       });
     }
     renderFourBarGrid();
+    if (SELECTORS.sectionEditor?.open) {
+      drawSectionEditorWaveform();
+      syncSectionEditorPlaybackAvailability();
+      updateSectionEditorPlayer();
+    }
   });
 
   ws.on("timeupdate", time => {
@@ -2667,7 +2989,8 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     updatePlayingRow(time);
     syncVideoToAudio(time);
     syncStemPlayers(time);
-    if (loopOn && ws.isPlaying()) {
+    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(time);
+    if (loopOn && ws.isPlaying() && !SELECTORS.sectionEditor?.open) {
       const loopRange = getLoopRange();
       if (loopRange && (time < loopRange.start || time >= loopRange.end)) {
         seekAudio(loopRange.start);
@@ -2676,13 +2999,14 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   ws.on("play", () => {
-    markCurrentSessionPracticed();
+    if (!SELECTORS.sectionEditor?.open) markCurrentSessionPracticed();
     applyCurrentPlaybackRate();
     syncVideoToAudio(ws.getCurrentTime(), { force: true });
     playVideo();
     playStems();
     if (metroOn) startMetro();
     updatePlayButton();
+    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer();
   });
 
   ws.on("pause", () => {
@@ -2690,6 +3014,7 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     pauseStems();
     stopMetro();
     updatePlayButton();
+    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer();
   });
 
   ws.on("seeking", () => {
@@ -2749,21 +3074,8 @@ const setupControls = () => {
     else stopMetro();
   };
   SELECTORS.btnFsMetro.onclick = SELECTORS.btnMetro.onclick;
-  SELECTORS.btnReanalyze.onclick = async () => {
-    const sourceVideoId = currentData?.sourceVideoId || currentId;
-    if (sourceVideoId && hasServer) await doAnalyze(
-      `https://www.youtube.com/watch?v=${sourceVideoId}`,
-      true,
-      {
-        startSec: currentData?.analysisStartSec ?? null,
-        endSec: currentData?.analysisEndSec ?? null,
-      },
-    );
-  };
-  SELECTORS.btnNewUrl.onclick = () => {
-    SELECTORS.inputCard.hidden = !SELECTORS.inputCard.hidden;
-    if (!SELECTORS.inputCard.hidden) SELECTORS.urlInput.focus();
-  };
+  SELECTORS.btnReanalyze.onclick = () => openAnalysisDialog({ reanalyze: true });
+  SELECTORS.btnNewUrl.onclick = () => openAnalysisDialog();
   SELECTORS.btnAutoNext.onclick = () => {
     autoNextOn = !autoNextOn;
     saveCfg(autoNextKey, autoNextOn);
@@ -3007,52 +3319,277 @@ const showResult = (data, id, { autoplay = false } = {}) => {
 };
 
 let sectionEditorDraft = [];
+let sectionEditorSelectedIndex = 0;
+let sectionEditorBoundaryDrag = null;
+let sectionEditorPreviewTimer = null;
+let sectionEditorPreviewEndTime = null;
+let sectionEditorScrubPointerId = null;
+let sectionEditorPlayheadPointerId = null;
 
-const readSectionEditorDraft = () => {
-  sectionEditorDraft = [...SELECTORS.sectionEditorRows.querySelectorAll(".section-edit-row")].map(row => ({
-    label: row.querySelector("[data-section-field='label']").value.trim(),
-    startBar: Number(row.querySelector("[data-section-field='start']").value),
-    endBar: Number(row.querySelector("[data-section-field='end']").value),
-  }));
+const updateSectionEditorPlayer = (time = ws?.getCurrentTime?.() || 0) => {
+  if (!SELECTORS.sectionEditorPlayerToggle) return;
+  const duration = ws?.getDuration?.() || currentData?.duration || 0;
+  const progress = duration > 0 ? Math.max(0, Math.min(1, time / duration)) : 0;
+  SELECTORS.sectionEditorCurrentTime.textContent = fmt(time);
+  SELECTORS.sectionEditorDuration.textContent = fmt(duration);
+  SELECTORS.sectionEditorPlayhead.style.left = `${progress * 100}%`;
+  SELECTORS.sectionEditorScrub.setAttribute("aria-valuemax", String(Math.round(duration * 100) / 100));
+  SELECTORS.sectionEditorScrub.setAttribute("aria-valuenow", String(Math.round(time * 100) / 100));
+  SELECTORS.sectionEditorPlayhead.setAttribute("aria-valuemax", String(Math.round(duration * 100) / 100));
+  SELECTORS.sectionEditorPlayhead.setAttribute("aria-valuenow", String(Math.round(time * 100) / 100));
+  const playing = !!ws?.isPlaying?.();
+  if (SELECTORS.sectionEditorPlayerToggle.dataset.playing !== String(playing)) {
+    SELECTORS.sectionEditorPlayerToggle.dataset.playing = String(playing);
+    SELECTORS.sectionEditorPlayerToggle.setAttribute("aria-label", playing ? "一時停止" : "再生");
+    SELECTORS.sectionEditorPlayerToggle.innerHTML = playing
+      ? '<i data-lucide="pause"></i>'
+      : '<i data-lucide="play"></i>';
+    lucide.createIcons();
+  }
+};
+
+const drawSectionEditorWaveform = () => {
+  const canvas = SELECTORS.sectionEditorWaveform;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+  const peaks = extractWaveformPeaks(ws?.getDecodedData?.(), Math.floor(rect.width));
+  const middle = rect.height / 2;
+  context.strokeStyle = "rgba(226, 232, 240, .76)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let x = 0; x < peaks.length; x += 1) {
+    const amplitude = Math.max(1, peaks[x] * (middle - 5));
+    context.moveTo(x + .5, middle - amplitude);
+    context.lineTo(x + .5, middle + amplitude);
+  }
+  context.stroke();
+};
+
+const updateSectionEditorSelectedRange = () => {
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  const duration = ws?.getDuration?.() || currentData?.duration || 0;
+  if (!section || duration <= 0) {
+    SELECTORS.sectionEditorSelectedRange.hidden = true;
+    return;
+  }
+  const start = sectionEditorTimeAtBoundary(section.startBar - 1);
+  const end = sectionEditorTimeAtBoundary(section.endBar);
+  SELECTORS.sectionEditorSelectedRange.hidden = false;
+  SELECTORS.sectionEditorSelectedRange.style.left = `${Math.max(0, Math.min(1, start / duration)) * 100}%`;
+  SELECTORS.sectionEditorSelectedRange.style.width = `${Math.max(0, Math.min(1, (end - start) / duration)) * 100}%`;
+};
+
+const seekSectionEditorFromClientX = clientX => {
+  if (!canPlayAudio()) return;
+  const rect = SELECTORS.sectionEditorScrub.getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  stopSectionEditorPreview({ pause: false });
+  seekAudio((ws?.getDuration?.() || currentData?.duration || 0) * ratio, { respectLoopRange: false });
+  updateSectionEditorPlayer();
+};
+
+const toggleSectionEditorPlayback = () => {
+  if (!canPlayAudio()) return;
+  stopSectionEditorPreview({ pause: false });
+  if (ws.isPlaying()) ws.pause();
+  else ws.play();
+};
+
+const syncSectionEditorPlaybackAvailability = () => {
+  const disabled = !canPlayAudio();
+  SELECTORS.sectionEditorPlayerToggle.disabled = disabled;
+  SELECTORS.sectionEditorPreview.disabled = disabled;
+};
+
+const setSectionEditorPreviewState = playing => {
+  if (!SELECTORS.sectionEditorPreview) return;
+  SELECTORS.sectionEditorPreview.classList.toggle("active", playing);
+  SELECTORS.sectionEditorPreview.innerHTML = playing
+    ? '<i data-lucide="square"></i><span>停止</span>'
+    : '<i data-lucide="play"></i><span>選択だけ再生</span>';
+  lucide.createIcons();
+};
+
+const stopSectionEditorPreview = ({ pause = true } = {}) => {
+  if (sectionEditorPreviewTimer) window.clearInterval(sectionEditorPreviewTimer);
+  sectionEditorPreviewTimer = null;
+  sectionEditorPreviewEndTime = null;
+  if (pause && ws?.isPlaying()) ws.pause();
+  setSectionEditorPreviewState(false);
+};
+
+const sectionEditorTimeAtBoundary = boundaryBar => {
+  const sourceSections = currentData?.sections || [];
+  const source = sourceSections.find(section => boundaryBar >= section.start_bar - 1 && boundaryBar <= section.end_bar);
+  if (source) {
+    const count = Math.max(1, source.end_bar - source.start_bar + 1);
+    const progress = Math.max(0, Math.min(1, (boundaryBar - (source.start_bar - 1)) / count));
+    return source.start_time + (source.end_time - source.start_time) * progress;
+  }
+  return (currentData?.duration || 0) * boundaryBar / sectionEditorTotalBars();
+};
+
+const previewSelectedSection = () => {
+  if (!canPlayAudio()) return;
+  if (sectionEditorPreviewTimer && ws.isPlaying()) {
+    stopSectionEditorPreview();
+    return;
+  }
+  syncSectionEditorSelectionFromFields();
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  if (!section) return;
+  const start = sectionEditorTimeAtBoundary(section.startBar - 1);
+  const end = sectionEditorTimeAtBoundary(section.endBar);
+  stopSectionEditorPreview({ pause: false });
+  sectionEditorPreviewEndTime = end;
+  playFromTime(start);
+  setSectionEditorPreviewState(true);
+  sectionEditorPreviewTimer = window.setInterval(() => {
+    if (!ws?.isPlaying() || ws.getCurrentTime() >= sectionEditorPreviewEndTime - 0.02) {
+      stopSectionEditorPreview();
+    }
+  }, 40);
+};
+
+const syncSectionEditorSelectionFromFields = () => {
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  if (!section) return;
+  section.label = SELECTORS.sectionEditorLabel.value.trim() || section.label;
+};
+
+const sectionEditorTotalBars = () => Math.max(1, ...sectionEditorDraft.map(section => section.endBar));
+
+const renderSectionEditorInspector = () => {
+  sectionEditorSelectedIndex = Math.min(Math.max(0, sectionEditorSelectedIndex), sectionEditorDraft.length - 1);
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  if (!section) return;
+  SELECTORS.sectionEditorSelectionNumber.textContent = String(sectionEditorSelectedIndex + 1).padStart(2, "0");
+  SELECTORS.sectionEditorLabel.value = localizeSectionLabel(section.label);
+  SELECTORS.sectionEditorStart.value = String(section.startBar);
+  SELECTORS.sectionEditorEnd.value = String(section.endBar);
+  SELECTORS.sectionEditorStart.disabled = sectionEditorSelectedIndex === 0;
+  SELECTORS.sectionEditorEnd.disabled = sectionEditorSelectedIndex === sectionEditorDraft.length - 1;
+  SELECTORS.sectionEditorStart.min = String(sectionEditorSelectedIndex > 0 ? sectionEditorDraft[sectionEditorSelectedIndex - 1].startBar + 1 : 1);
+  SELECTORS.sectionEditorStart.max = String(section.endBar);
+  SELECTORS.sectionEditorEnd.min = String(section.startBar);
+  SELECTORS.sectionEditorEnd.max = String(sectionEditorSelectedIndex < sectionEditorDraft.length - 1
+    ? sectionEditorDraft[sectionEditorSelectedIndex + 1].endBar - 1
+    : sectionEditorTotalBars());
+  const tools = SELECTORS.sectionEditor.querySelector(".section-editor-tools");
+  tools.querySelector("[data-section-action='split']").disabled = section.startBar >= section.endBar;
+  tools.querySelector("[data-section-action='merge']").disabled = sectionEditorSelectedIndex === sectionEditorDraft.length - 1;
+  tools.querySelector("[data-section-action='delete']").disabled = sectionEditorDraft.length === 1;
+  syncSectionEditorPlaybackAvailability();
+  updateSectionEditorSelectedRange();
 };
 
 const renderSectionEditor = () => {
-  SELECTORS.sectionEditorRows.innerHTML = sectionEditorDraft.map((section, index) => `
-    <div class="section-edit-row" data-section-index="${index}">
-      <input data-section-field="label" value="${escapeHtml(section.label)}" aria-label="セクション名 ${index + 1}">
-      <input data-section-field="start" type="number" min="1" value="${section.startBar}" aria-label="開始小節 ${index + 1}">
-      <input data-section-field="end" type="number" min="1" value="${section.endBar}" aria-label="終了小節 ${index + 1}">
-      <div class="section-edit-tools">
-        <button type="button" data-section-action="split" title="中央で分割" ${section.startBar >= section.endBar ? "disabled" : ""}>分割</button>
-        <button type="button" data-section-action="merge" title="次と結合" ${index === sectionEditorDraft.length - 1 ? "disabled" : ""}>結合</button>
-        <button type="button" data-section-action="delete" title="削除" ${sectionEditorDraft.length === 1 ? "disabled" : ""}>削除</button>
-      </div>
-    </div>
+  const totalBars = sectionEditorTotalBars();
+  const segments = sectionEditorDraft.map((section, index) => {
+    const startPercent = (section.startBar - 1) / totalBars * 100;
+    const widthPercent = (section.endBar - section.startBar + 1) / totalBars * 100;
+    const color = secColor(section.label);
+    return `
+      <button class="section-editor-segment${index === sectionEditorSelectedIndex ? " selected" : ""}"
+        type="button" data-section-index="${index}"
+        style="--section-left:${startPercent}%;--section-width:${widthPercent}%;--section-color:${color}"
+        aria-label="${escapeHtml(localizeSectionLabel(section.label))} ${section.startBar}小節から${section.endBar}小節">
+        <strong>${escapeHtml(localizeSectionLabel(section.label))}</strong>
+        <small>${section.startBar}–${section.endBar}小節</small>
+      </button>
+    `;
+  }).join("");
+  const boundaries = sectionEditorDraft.slice(0, -1).map((section, index) => `
+    <button class="section-editor-boundary" type="button" data-boundary-index="${index}"
+      style="--boundary-left:${section.endBar / totalBars * 100}%"
+      aria-label="${section.endBar}小節と${section.endBar + 1}小節の境界">
+      <span></span>
+    </button>
   `).join("");
+  const ruler = Array.from({ length: Math.ceil(totalBars / 4) + 1 }, (_, index) => {
+    const bar = Math.min(index * 4 + 1, totalBars);
+    const left = (bar - 1) / totalBars * 100;
+    return `<span style="left:${left}%">${bar}</span>`;
+  }).join("");
+  SELECTORS.sectionEditorRows.innerHTML = `
+    <div class="section-editor-grid section-editor-grid-minor" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
+    <div class="section-editor-grid section-editor-grid-major" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
+    ${segments}${boundaries}
+    <div class="section-editor-ruler" aria-hidden="true">${ruler}</div>
+  `;
+  renderSectionEditorInspector();
+};
+
+const updateSectionEditorBoundary = (boundaryIndex, endBar) => {
+  const left = sectionEditorDraft[boundaryIndex];
+  const right = sectionEditorDraft[boundaryIndex + 1];
+  if (!left || !right) return;
+  const snappedBar = Math.max(left.startBar, Math.min(right.endBar - 1, Math.round(endBar)));
+  left.endBar = snappedBar;
+  right.startBar = snappedBar + 1;
+};
+
+const updateSectionEditorSelectedBounds = (edge, value) => {
+  const index = sectionEditorSelectedIndex;
+  const section = sectionEditorDraft[index];
+  if (!section || !Number.isFinite(value)) return;
+  if (edge === "start" && index > 0) {
+    const previous = sectionEditorDraft[index - 1];
+    const startBar = Math.max(previous.startBar + 1, Math.min(section.endBar, Math.round(value)));
+    previous.endBar = startBar - 1;
+    section.startBar = startBar;
+  } else if (edge === "end" && index < sectionEditorDraft.length - 1) {
+    const next = sectionEditorDraft[index + 1];
+    const endBar = Math.max(section.startBar, Math.min(next.endBar - 1, Math.round(value)));
+    section.endBar = endBar;
+    next.startBar = endBar + 1;
+  }
+  renderSectionEditor();
 };
 
 const openSectionEditor = () => {
   if (!hasServer || !currentData?.sections?.length) return;
-  sectionEditorDraft = currentData.sections.map(section => ({
-    label: section.label,
+  stopSectionEditorPreview();
+  sectionEditorDraft = normalizeSectionDraft(currentData.sections.map(section => ({
+    label: localizeSectionLabel(section.label),
     startBar: section.start_bar,
     endBar: section.end_bar,
-  }));
+  })), currentData.total_bars);
+  sectionEditorSelectedIndex = 0;
+  sectionEditorBoundaryDrag = null;
   SELECTORS.sectionEditorError.textContent = "";
   SELECTORS.btnRestoreSections.disabled = !currentData.automaticSections?.length;
   renderSectionEditor();
   SELECTORS.sectionEditor.showModal();
   lucide.createIcons();
+  window.requestAnimationFrame(() => {
+    drawSectionEditorWaveform();
+    syncSectionEditorPlaybackAvailability();
+    updateSectionEditorPlayer();
+    updateSectionEditorSelectedRange();
+  });
 };
 
 const applySectionDraftAction = (index, action) => {
-  readSectionEditorDraft();
+  stopSectionEditorPreview();
+  syncSectionEditorSelectionFromFields();
   sectionEditorDraft = mutateSectionDraft(sectionEditorDraft, index, action);
+  if (action === "split") sectionEditorSelectedIndex = Math.min(index + 1, sectionEditorDraft.length - 1);
+  else sectionEditorSelectedIndex = Math.min(index, sectionEditorDraft.length - 1);
   renderSectionEditor();
 };
 
 const saveSectionEditor = async () => {
-  readSectionEditorDraft();
+  syncSectionEditorSelectionFromFields();
   SELECTORS.sectionEditorError.textContent = "";
   SELECTORS.btnSaveSections.disabled = true;
   try {
@@ -3573,6 +4110,7 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
     if (!response.ok) throw new Error(submitted.detail || `サーバーエラー (${response.status})`);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = `✓ ${force ? "再解析" : "解析"}を追加しました`;
+    closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
       label: `${force ? "再解析" : "解析"} · ${videoId || submitted.jobId}${range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : ""}`,
       onDone: async data => {
@@ -3624,6 +4162,7 @@ const doAnalyzeFile = async file => {
     if (!response.ok) throw new Error(submitted.detail || `サーバーエラー (${response.status})`);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "✓ 音声ファイルの解析を追加しました";
+    closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
       label: `音声解析 · ${file.name}`,
       onDone: async data => {
@@ -3693,6 +4232,145 @@ const detectServer = async () => {
 
   SELECTORS.btnCloudSync.hidden = false;
   SELECTORS.btnStorage.hidden = false;
+  SELECTORS.btnNewUrl.hidden = currentFeature === "score";
+};
+
+const renderDesktopSystemStatus = status => {
+  if (!status?.desktop || !SELECTORS.desktopStatus) return;
+  if (status.ready) {
+    SELECTORS.desktopStatus.hidden = true;
+    return;
+  }
+  SELECTORS.desktopStatus.hidden = false;
+  SELECTORS.desktopStatus.classList.remove("ready");
+  SELECTORS.desktopStatus.classList.toggle("error", !status.nvidia?.available);
+  SELECTORS.desktopStatusAction.hidden = !status.setupSupported;
+  if (!status.nvidia?.available) {
+    SELECTORS.desktopStatusTitle.textContent = "NVIDIA GPUを確認できません";
+    SELECTORS.desktopStatusMessage.textContent = "NVIDIAドライバーをインストールまたは更新してから、もう一度確認してください。";
+    SELECTORS.desktopStatusAction.textContent = "もう一度確認";
+    return;
+  }
+  if (!status.wsl?.available) {
+    SELECTORS.desktopStatusTitle.textContent = "WSL2のセットアップが必要です";
+    SELECTORS.desktopStatusMessage.textContent = `${status.nvidia.name}を検出しました。解析用のUbuntu環境を準備します。`;
+  } else if (!status.wsl.cudaAvailable) {
+    SELECTORS.desktopStatusTitle.textContent = "WSL2からGPUを利用できません";
+    SELECTORS.desktopStatusMessage.textContent = "NVIDIAドライバーとWindowsを更新し、再起動後にもう一度確認してください。";
+  } else {
+    SELECTORS.desktopStatusTitle.textContent = "CUDA解析ライブラリを準備してください";
+    SELECTORS.desktopStatusMessage.textContent = `${status.nvidia.name}とWSL2 CUDAは利用できます。初回のみ解析環境をインストールします。`;
+  }
+  SELECTORS.desktopStatusAction.textContent = "NVIDIAセットアップ";
+};
+
+const refreshDesktopSystemStatus = async () => {
+  if (!hasServer) return;
+  try {
+    const response = await fetch("/system/status");
+    if (!response.ok) return;
+    renderDesktopSystemStatus(await response.json());
+  } catch {
+    // The browser/static version does not require desktop diagnostics.
+  }
+};
+
+const startDesktopNvidiaSetup = async () => {
+  SELECTORS.desktopStatusAction.disabled = true;
+  try {
+    const current = await fetch("/system/status").then(response => response.json());
+    if (!current.nvidia?.available) {
+      await refreshDesktopSystemStatus();
+      return;
+    }
+    const token = await window.practiceLabDesktop?.getToken();
+    const response = await fetch("/system/setup-nvidia", {
+      method: "POST",
+      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {},
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "セットアップを開始できませんでした");
+    SELECTORS.desktopStatusTitle.textContent = "NVIDIAセットアップを起動しました";
+    SELECTORS.desktopStatusMessage.textContent = "別ウィンドウの案内に従ってください。完了後にPracticeLabを再起動します。";
+  } catch (error) {
+    await showAlert(error.message, { title: "NVIDIAセットアップ" });
+  } finally {
+    SELECTORS.desktopStatusAction.disabled = false;
+  }
+};
+
+const initDesktopUpdates = () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop || !SELECTORS.desktopUpdate) return;
+  let updateReady = false;
+  const renderSettingsUpdateStatus = status => {
+    if (!SELECTORS.settingsCheckUpdate || !SELECTORS.settingsUpdateStatus) return;
+    const state = status?.state || "idle";
+    SELECTORS.settingsCheckUpdate.disabled = ["checking", "available", "downloading"].includes(state);
+    SELECTORS.settingsUpdateStatus.hidden = state === "idle";
+    SELECTORS.settingsUpdateStatus.classList.toggle("ok", ["current", "downloaded"].includes(state));
+    SELECTORS.settingsUpdateStatus.classList.toggle("error", state === "error");
+    if (SELECTORS.settingsCheckUpdateLabel) {
+      SELECTORS.settingsCheckUpdateLabel.textContent = state === "downloaded" ? "再起動して更新" : "アップデートを確認";
+    }
+    if (state === "checking") SELECTORS.settingsUpdateStatus.textContent = "アップデートを確認しています…";
+    else if (state === "current") SELECTORS.settingsUpdateStatus.textContent = "現在のバージョンが最新です。";
+    else if (state === "available") SELECTORS.settingsUpdateStatus.textContent = `バージョン ${status.version} をダウンロードしています…`;
+    else if (state === "downloading") SELECTORS.settingsUpdateStatus.textContent = `アップデートをダウンロードしています… ${status.percent || 0}%`;
+    else if (state === "downloaded") SELECTORS.settingsUpdateStatus.textContent = `バージョン ${status.version} の準備ができました。`;
+    else if (state === "unsupported") SELECTORS.settingsUpdateStatus.textContent = status.message || "開発版ではアップデートを確認できません。";
+    else if (state === "error") {
+      const message = String(status.message || "");
+      SELECTORS.settingsUpdateStatus.textContent = /404|latest[^\s]*\.yml|no published|release/i.test(message)
+        ? "公開済みのアップデートはまだありません。"
+        : "アップデートを確認できませんでした。時間をおいて再度お試しください。";
+    }
+  };
+  desktop.onUpdateStatus(status => {
+    updateReady = status.state === "downloaded" ? true : updateReady;
+    renderSettingsUpdateStatus(status);
+    if (status.state === "available" || status.state === "downloading") {
+      SELECTORS.desktopUpdate.hidden = false;
+      SELECTORS.desktopUpdate.disabled = true;
+      SELECTORS.desktopUpdate.textContent = status.state === "downloading"
+        ? `更新を取得中 ${status.percent || 0}%`
+        : `v${status.version}を取得中`;
+    } else if (status.state === "downloaded") {
+      SELECTORS.desktopUpdate.hidden = false;
+      SELECTORS.desktopUpdate.disabled = false;
+      SELECTORS.desktopUpdate.textContent = `v${status.version}へ再起動して更新`;
+    } else if (status.state === "error") {
+      console.warn("Desktop update check failed", status.message);
+    }
+  });
+  SELECTORS.desktopUpdate.addEventListener("click", () => desktop.installUpdate());
+  SELECTORS.settingsCheckUpdate?.addEventListener("click", async () => {
+    if (updateReady) {
+      await desktop.installUpdate();
+      return;
+    }
+    renderSettingsUpdateStatus({ state: "checking" });
+    const result = await desktop.checkForUpdates();
+    if (["error", "unsupported", "current", "downloaded"].includes(result?.state)) renderSettingsUpdateStatus(result);
+  });
+};
+
+const initDesktopCommands = () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.onCommand) return;
+  desktop.onCommand(command => {
+    if (command === "new-analysis") {
+      setActiveTab("structure");
+      openAnalysisDialog();
+    } else if (command === "open-audio") {
+      setActiveTab("structure");
+      openAnalysisDialog({ openAudioPicker: true });
+    } else if (command === "open-settings") {
+      void openSettings("general");
+    } else if (command === "about") {
+      void openSettings("about");
+    }
+  });
 };
 
 document.addEventListener("keydown", event => {
@@ -3729,7 +4407,8 @@ document.addEventListener("keydown", event => {
 document.addEventListener("click", hideContextMenu);
 SELECTORS.contextMenu?.addEventListener("click", event => event.stopPropagation());
 
-SELECTORS.analyzeBtn.addEventListener("click", () => doAnalyze(SELECTORS.urlInput.value.trim()));
+SELECTORS.analyzeBtn.addEventListener("click", () => doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce));
+SELECTORS.analysisDialogClose?.addEventListener("click", closeAnalysisDialog);
 SELECTORS.analysisTimeMode.addEventListener("change", () => {
   SELECTORS.analysisTimeRange.hidden = SELECTORS.analysisTimeMode.value !== "range";
 });
@@ -3760,6 +4439,24 @@ SELECTORS.inputCard.addEventListener("drop", event => {
 SELECTORS.scoreProcessingMode?.addEventListener("change", syncScoreOptionAvailability);
 SELECTORS.btnCloudSync?.addEventListener("click", syncCloudLibrary);
 SELECTORS.btnStorage?.addEventListener("click", openStorageDialog);
+SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
+SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
+SELECTORS.settingsClose?.addEventListener("click", closeSettings);
+SELECTORS.settingsCancel?.addEventListener("click", closeSettings);
+SELECTORS.settingsSave?.addEventListener("click", saveSettings);
+SELECTORS.settingsCloudEnabled?.addEventListener("change", syncCloudFieldsState);
+SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach(button => {
+  button.addEventListener("click", () => {
+    selectSettingsSection(button.dataset.settingsSection);
+    if (button.dataset.settingsSection === "analysis") void refreshSettingsAnalysisStatus();
+  });
+});
+SELECTORS.settingsOpenData?.addEventListener("click", () => window.practiceLabDesktop?.openDataFolder());
+SELECTORS.settingsOpenStorage?.addEventListener("click", () => {
+  closeSettings();
+  openStorageDialog();
+});
+SELECTORS.settingsNvidiaSetup?.addEventListener("click", startDesktopNvidiaSetup);
 SELECTORS.storageList?.addEventListener("click", event => {
   const button = event.target.closest("[data-storage-clean]");
   if (button) cleanStorageCategory(button.dataset.storageClean);
@@ -3767,12 +4464,109 @@ SELECTORS.storageList?.addEventListener("click", event => {
 SELECTORS.btnEditSections?.addEventListener("click", openSectionEditor);
 SELECTORS.btnSaveSections?.addEventListener("click", saveSectionEditor);
 SELECTORS.btnRestoreSections?.addEventListener("click", restoreAutomaticSections);
-SELECTORS.sectionEditorRows?.addEventListener("click", event => {
-  const button = event.target.closest("[data-section-action]");
-  const row = button?.closest("[data-section-index]");
-  if (!button || !row) return;
-  applySectionDraftAction(Number(row.dataset.sectionIndex), button.dataset.sectionAction);
+SELECTORS.sectionEditorPreview?.addEventListener("click", previewSelectedSection);
+SELECTORS.sectionEditorPlayerToggle?.addEventListener("click", toggleSectionEditorPlayback);
+SELECTORS.sectionEditorScrub?.addEventListener("pointerdown", event => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  sectionEditorScrubPointerId = event.pointerId;
+  SELECTORS.sectionEditorScrub.setPointerCapture?.(event.pointerId);
+  seekSectionEditorFromClientX(event.clientX);
 });
+SELECTORS.sectionEditorScrub?.addEventListener("pointermove", event => {
+  if (sectionEditorScrubPointerId !== event.pointerId) return;
+  seekSectionEditorFromClientX(event.clientX);
+});
+const finishSectionEditorScrub = event => {
+  if (sectionEditorScrubPointerId !== event.pointerId) return;
+  sectionEditorScrubPointerId = null;
+  SELECTORS.sectionEditorScrub.releasePointerCapture?.(event.pointerId);
+};
+SELECTORS.sectionEditorScrub?.addEventListener("pointerup", finishSectionEditorScrub);
+SELECTORS.sectionEditorScrub?.addEventListener("pointercancel", finishSectionEditorScrub);
+const handleSectionEditorScrubKey = event => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !canPlayAudio()) return;
+  event.preventDefault();
+  const duration = ws?.getDuration?.() || 0;
+  const next = event.key === "Home" ? 0
+    : event.key === "End" ? duration
+      : (ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5));
+  stopSectionEditorPreview({ pause: false });
+  seekAudio(Math.max(0, Math.min(duration, next)), { respectLoopRange: false });
+};
+SELECTORS.sectionEditorScrub?.addEventListener("keydown", handleSectionEditorScrubKey);
+SELECTORS.sectionEditorPlayhead?.addEventListener("keydown", handleSectionEditorScrubKey);
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointerdown", event => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  sectionEditorPlayheadPointerId = event.pointerId;
+  SELECTORS.sectionEditorPlayhead.classList.add("dragging");
+  SELECTORS.sectionEditorPlayhead.setPointerCapture?.(event.pointerId);
+  seekSectionEditorFromClientX(event.clientX);
+});
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointermove", event => {
+  if (sectionEditorPlayheadPointerId !== event.pointerId) return;
+  seekSectionEditorFromClientX(event.clientX);
+});
+const finishSectionEditorPlayheadDrag = event => {
+  if (sectionEditorPlayheadPointerId !== event.pointerId) return;
+  sectionEditorPlayheadPointerId = null;
+  SELECTORS.sectionEditorPlayhead.classList.remove("dragging");
+  SELECTORS.sectionEditorPlayhead.releasePointerCapture?.(event.pointerId);
+};
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointerup", finishSectionEditorPlayheadDrag);
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointercancel", finishSectionEditorPlayheadDrag);
+SELECTORS.sectionEditor?.addEventListener("close", () => {
+  sectionEditorScrubPointerId = null;
+  sectionEditorPlayheadPointerId = null;
+  SELECTORS.sectionEditorPlayhead?.classList.remove("dragging");
+  stopSectionEditorPreview();
+});
+SELECTORS.sectionEditor?.addEventListener("click", event => {
+  const segment = event.target.closest("[data-section-index]");
+  if (segment && !event.target.closest("[data-boundary-index]")) {
+    stopSectionEditorPreview({ pause: false });
+    syncSectionEditorSelectionFromFields();
+    sectionEditorSelectedIndex = Number(segment.dataset.sectionIndex);
+    renderSectionEditor();
+    return;
+  }
+  const button = event.target.closest("[data-section-action]");
+  if (!button) return;
+  applySectionDraftAction(sectionEditorSelectedIndex, button.dataset.sectionAction);
+});
+SELECTORS.sectionEditorLabel?.addEventListener("change", () => {
+  syncSectionEditorSelectionFromFields();
+  renderSectionEditor();
+});
+SELECTORS.sectionEditorStart?.addEventListener("change", () => updateSectionEditorSelectedBounds("start", Number(SELECTORS.sectionEditorStart.value)));
+SELECTORS.sectionEditorEnd?.addEventListener("change", () => updateSectionEditorSelectedBounds("end", Number(SELECTORS.sectionEditorEnd.value)));
+SELECTORS.sectionEditorRows?.addEventListener("pointerdown", event => {
+  const handle = event.target.closest("[data-boundary-index]");
+  if (!handle) return;
+  event.preventDefault();
+  stopSectionEditorPreview({ pause: false });
+  syncSectionEditorSelectionFromFields();
+  sectionEditorBoundaryDrag = { pointerId: event.pointerId, boundaryIndex: Number(handle.dataset.boundaryIndex) };
+  SELECTORS.sectionEditorRows.setPointerCapture?.(event.pointerId);
+  SELECTORS.sectionEditorRows.classList.add("dragging-boundary");
+});
+SELECTORS.sectionEditorRows?.addEventListener("pointermove", event => {
+  if (!sectionEditorBoundaryDrag || sectionEditorBoundaryDrag.pointerId !== event.pointerId) return;
+  const rect = SELECTORS.sectionEditorRows.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  updateSectionEditorBoundary(sectionEditorBoundaryDrag.boundaryIndex, ratio * sectionEditorTotalBars());
+  renderSectionEditor();
+});
+const finishSectionEditorBoundaryDrag = event => {
+  if (!sectionEditorBoundaryDrag || sectionEditorBoundaryDrag.pointerId !== event.pointerId) return;
+  sectionEditorBoundaryDrag = null;
+  SELECTORS.sectionEditorRows.releasePointerCapture?.(event.pointerId);
+  SELECTORS.sectionEditorRows.classList.remove("dragging-boundary");
+};
+SELECTORS.sectionEditorRows?.addEventListener("pointerup", finishSectionEditorBoundaryDrag);
+SELECTORS.sectionEditorRows?.addEventListener("pointercancel", finishSectionEditorBoundaryDrag);
 SELECTORS.sessionSearch?.addEventListener("input", () => renderSidebar(currentSidebarItems));
 SELECTORS.sessionFilter?.addEventListener("change", () => renderSidebar(currentSidebarItems));
 SELECTORS.sessionSort?.addEventListener("change", () => renderSidebar(currentSidebarItems));
@@ -3844,13 +4638,26 @@ SELECTORS.scoreHistoryList?.addEventListener("keydown", event => {
   row.click();
 });
 SELECTORS.urlInput.addEventListener("keydown", event => {
-  if (event.key === "Enter") doAnalyze(SELECTORS.urlInput.value.trim());
+  if (event.key === "Enter") doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce);
 });
+SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopNvidiaSetup);
 
 lucide.createIcons();
 syncScoreOptionAvailability();
 renderScoreHistory();
 await detectServer();
-await restoreInterruptedJobs();
+if (SELECTORS.btnTopSettings) {
+  SELECTORS.btnTopSettings.hidden = !window.practiceLabDesktop?.getSettings || staticLibraryMode;
+}
+initDesktopUpdates();
+initDesktopCommands();
+await refreshCloudStatus();
 await loadSharedFolders();
-await restoreLastStructureSession(await loadHistory());
+const initialHistory = await loadHistory();
+// Render the user's library before slower desktop/GPU diagnostics. A cold WSL
+// start can otherwise leave the sidebar empty long enough to look like data
+// loss even though the manifest is already available.
+void refreshDesktopSystemStatus();
+void restoreInterruptedJobs();
+await restoreLastStructureSession(initialHistory);
+void verifySavedCloudSettings();

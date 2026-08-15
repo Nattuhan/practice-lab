@@ -309,6 +309,13 @@ var SkipBack = [
   ]
 ];
 
+// node_modules/lucide/dist/esm/icons/square.js
+var Square = [
+  "svg",
+  defaultAttributes,
+  [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }]]
+];
+
 // node_modules/lucide/dist/esm/icons/trash-2.js
 var Trash2 = [
   "svg",
@@ -2112,6 +2119,7 @@ var icons = {
   RotateCcw,
   Settings2,
   SkipBack,
+  Square,
   Trash2,
   Upload,
   Volume2,
@@ -2247,6 +2255,20 @@ var mutateSectionDraft = (draft, index, action) => {
   }
   return next;
 };
+var normalizeSectionDraft = (draft, totalBars) => {
+  const limit = Math.max(0, Math.round(Number(totalBars) || 0));
+  if (!draft.length || limit < 1 || draft.length > limit) return draft.map((section) => ({ ...section }));
+  let nextStart = 1;
+  return draft.map((section, index) => {
+    const remaining = draft.length - index - 1;
+    const maxEnd = limit - remaining;
+    const rawEnd = Math.round(Number(section.endBar) || nextStart);
+    const endBar = index === draft.length - 1 ? limit : Math.max(nextStart, Math.min(maxEnd, rawEnd));
+    const normalized = { ...section, startBar: nextStart, endBar };
+    nextStart = endBar + 1;
+    return normalized;
+  });
+};
 
 // frontend/src/storage.js
 var formatBytes = (bytes) => {
@@ -2260,6 +2282,32 @@ var formatBytes = (bytes) => {
     unit += 1;
   }
   return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unit]}`;
+};
+
+// frontend/src/waveform-peaks.js
+var extractWaveformPeaks = (audioBuffer, width) => {
+  const pixelCount = Math.max(1, Math.floor(width));
+  const channels = Number(audioBuffer?.numberOfChannels || 0);
+  const samples = Number(audioBuffer?.length || 0);
+  if (!channels || !samples || typeof audioBuffer.getChannelData !== "function") return new Float32Array(pixelCount);
+  const channelData = Array.from({ length: channels }, (_, index) => audioBuffer.getChannelData(index));
+  const peaks = new Float32Array(pixelCount);
+  let strongest = 0;
+  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
+    const start = Math.floor(pixel / pixelCount * samples);
+    const end = Math.max(start + 1, Math.floor((pixel + 1) / pixelCount * samples));
+    const step = Math.max(1, Math.floor((end - start) / 96));
+    let peak = 0;
+    for (let sample = start; sample < end; sample += step) {
+      for (const data of channelData) peak = Math.max(peak, Math.abs(data[sample] || 0));
+    }
+    peaks[pixel] = peak;
+    strongest = Math.max(strongest, peak);
+  }
+  if (strongest > 0) {
+    for (let index = 0; index < peaks.length; index += 1) peaks[index] /= strongest;
+  }
+  return peaks;
 };
 
 // frontend/src/app.js
@@ -2300,6 +2348,8 @@ var SELECTORS = {
   queueCount: document.getElementById("queue-count"),
   btnAddFolder: document.getElementById("btn-add-folder"),
   btnStorage: document.getElementById("btn-storage"),
+  btnSettings: document.getElementById("btn-settings"),
+  btnTopSettings: document.getElementById("btn-top-settings"),
   appDialog: document.getElementById("app-dialog"),
   appDialogTitle: document.getElementById("app-dialog-title"),
   appDialogMessage: document.getElementById("app-dialog-message"),
@@ -2311,9 +2361,40 @@ var SELECTORS = {
   storageDialog: document.getElementById("storage-dialog"),
   storageTotal: document.getElementById("storage-total"),
   storageList: document.getElementById("storage-list"),
+  settingsDialog: document.getElementById("settings-dialog"),
+  settingsTitle: document.getElementById("settings-title"),
+  settingsClose: document.getElementById("settings-close"),
+  settingsCancel: document.getElementById("settings-cancel"),
+  settingsSave: document.getElementById("settings-save"),
+  settingsSaveStatus: document.getElementById("settings-save-status"),
+  settingsAutoUpdate: document.getElementById("settings-auto-update"),
+  settingsDataPath: document.getElementById("settings-data-path"),
+  settingsOpenData: document.getElementById("settings-open-data"),
+  settingsAnalysisStatus: document.getElementById("settings-analysis-status"),
+  settingsNvidiaSetup: document.getElementById("settings-nvidia-setup"),
+  settingsCloudEnabled: document.getElementById("settings-cloud-enabled"),
+  settingsCloudFields: document.getElementById("settings-cloud-fields"),
+  settingsCloudAccount: document.getElementById("settings-cloud-account"),
+  settingsCloudBucket: document.getElementById("settings-cloud-bucket"),
+  settingsCloudAccessKey: document.getElementById("settings-cloud-access-key"),
+  settingsCloudSecret: document.getElementById("settings-cloud-secret"),
+  settingsCloudPublicUrl: document.getElementById("settings-cloud-public-url"),
+  settingsCloudPrefix: document.getElementById("settings-cloud-prefix"),
+  settingsCloudEndpoint: document.getElementById("settings-cloud-endpoint"),
+  settingsCloudState: document.getElementById("settings-cloud-state"),
+  settingsOpenStorage: document.getElementById("settings-open-storage"),
+  settingsVersion: document.getElementById("settings-version"),
+  settingsCheckUpdate: document.getElementById("settings-check-update"),
+  settingsCheckUpdateLabel: document.getElementById("settings-check-update-label"),
+  settingsUpdateStatus: document.getElementById("settings-update-status"),
   sidebarSelectionCount: document.getElementById("sidebar-selection-count"),
   btnDeleteSessionSelection: document.getElementById("btn-delete-session-selection"),
   btnClearSessionSelection: document.getElementById("btn-clear-session-selection"),
+  analysisDialog: document.getElementById("analysis-dialog"),
+  analysisDialogEyebrow: document.getElementById("analysis-dialog-eyebrow"),
+  analysisDialogTitle: document.getElementById("analysis-dialog-title"),
+  analysisDialogDescription: document.getElementById("analysis-dialog-description"),
+  analysisDialogClose: document.getElementById("analysis-dialog-close"),
   inputCard: document.getElementById("input-card"),
   structureWorkspace: document.getElementById("structure-workspace"),
   playerCard: document.getElementById("player-card"),
@@ -2329,6 +2410,11 @@ var SELECTORS = {
   topbarSong: document.getElementById("topbar-song"),
   topbarActions: document.querySelector(".topbar-actions"),
   offlineBadge: document.getElementById("offline-badge"),
+  desktopUpdate: document.getElementById("desktop-update"),
+  desktopStatus: document.getElementById("desktop-status"),
+  desktopStatusTitle: document.getElementById("desktop-status-title"),
+  desktopStatusMessage: document.getElementById("desktop-status-message"),
+  desktopStatusAction: document.getElementById("desktop-status-action"),
   analyzeBtn: document.getElementById("analyze-btn"),
   btnAudioFile: document.getElementById("btn-audio-file"),
   audioFileInput: document.getElementById("audio-file-input"),
@@ -2344,6 +2430,7 @@ var SELECTORS = {
   jobMessage: document.getElementById("job-message"),
   urlInput: document.getElementById("url-input"),
   waveformWrap: document.querySelector(".waveform-wrap"),
+  videoWrap: document.getElementById("video-wrap"),
   videoPlayer: document.getElementById("video-player"),
   btnVideoFullscreen: document.getElementById("btn-video-fullscreen"),
   btnVideoExit: document.getElementById("btn-video-exit"),
@@ -2373,6 +2460,18 @@ var SELECTORS = {
   sectionEditor: document.getElementById("section-editor"),
   sectionEditorRows: document.getElementById("section-editor-rows"),
   sectionEditorError: document.getElementById("section-editor-error"),
+  sectionEditorSelectionNumber: document.getElementById("section-editor-selection-number"),
+  sectionEditorLabel: document.getElementById("section-editor-label"),
+  sectionEditorStart: document.getElementById("section-editor-start"),
+  sectionEditorEnd: document.getElementById("section-editor-end"),
+  sectionEditorPreview: document.getElementById("section-editor-preview"),
+  sectionEditorPlayerToggle: document.getElementById("section-editor-player-toggle"),
+  sectionEditorScrub: document.getElementById("section-editor-scrub"),
+  sectionEditorWaveform: document.getElementById("section-editor-waveform"),
+  sectionEditorSelectedRange: document.getElementById("section-editor-selected-range"),
+  sectionEditorPlayhead: document.getElementById("section-editor-playhead"),
+  sectionEditorCurrentTime: document.getElementById("section-editor-current-time"),
+  sectionEditorDuration: document.getElementById("section-editor-duration"),
   btnSaveSections: document.getElementById("btn-save-sections"),
   btnRestoreSections: document.getElementById("btn-restore-sections"),
   metaBpm: document.getElementById("meta-bpm"),
@@ -2482,8 +2581,11 @@ var setScoreFeatureVisible = (visible) => {
 var ws = null;
 var hasServer = false;
 var staticLibraryMode = APP_CONFIG.mode === "static";
+var cloudStatus = { configured: false, bucket: null, viewerUrl: null };
+var desktopSettings = null;
 var currentData = null;
 var currentId = null;
+var analysisForce = false;
 var currentSidebarItems = [];
 var practicedThisPage = /* @__PURE__ */ new Set();
 var currentPlaybackGroup = null;
@@ -2544,7 +2646,9 @@ var openMobileSidebar = () => {
   document.body.classList.add("sidebar-open");
   SELECTORS.sidebarScrim.hidden = false;
 };
-var cfg = () => {
+var desktopCfgCache;
+var desktopCfgFlushTimer = null;
+var localCfg = () => {
   try {
     const current = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
     if (Object.keys(current).length > 0) return current;
@@ -2558,11 +2662,43 @@ var cfg = () => {
     return {};
   }
 };
+var flushDesktopCfg = () => {
+  if (!window.practiceLabDesktop?.savePlayerSettings || !desktopCfgCache) return;
+  if (desktopCfgFlushTimer) {
+    clearTimeout(desktopCfgFlushTimer);
+    desktopCfgFlushTimer = null;
+  }
+  const result = window.practiceLabDesktop.savePlayerSettings(desktopCfgCache);
+  if (result?.ok === false) console.warn("\u518D\u751F\u8A2D\u5B9A\u3092\u4FDD\u5B58\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F", result.message);
+};
+var scheduleDesktopCfgFlush = () => {
+  if (!window.practiceLabDesktop?.savePlayerSettings) return;
+  if (desktopCfgFlushTimer) clearTimeout(desktopCfgFlushTimer);
+  desktopCfgFlushTimer = setTimeout(flushDesktopCfg, 120);
+};
+var cfg = () => {
+  const browserSettings = localCfg();
+  if (!window.practiceLabDesktop?.getPlayerSettings) return browserSettings;
+  if (desktopCfgCache === void 0) {
+    const saved = window.practiceLabDesktop.getPlayerSettings();
+    desktopCfgCache = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+    if (Object.keys(desktopCfgCache).length === 0 && Object.keys(browserSettings).length > 0) {
+      desktopCfgCache = { ...browserSettings };
+      flushDesktopCfg();
+    }
+  }
+  return desktopCfgCache;
+};
 var saveCfg = (key, value) => {
   const valueMap = cfg();
   valueMap[key] = value;
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(valueMap));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(valueMap));
+  } catch {
+  }
+  scheduleDesktopCfgFlush();
 };
+window.addEventListener("beforeunload", flushDesktopCfg);
 var bpmCorrectionKey = (id) => `bpmFactor:${id}`;
 var clickOffsetKey = (id) => `clickOffsetHalfBeat:${id}`;
 var foldersKey = "sidebarFolders";
@@ -3014,6 +3150,42 @@ var sessionAssets = (session) => {
     stems: session?.assets?.stems || null
   };
 };
+var closeAnalysisDialog = () => {
+  if (SELECTORS.analysisDialog?.open) SELECTORS.analysisDialog.close();
+};
+var setAnalysisRangeInputs = ({ startSec = null, endSec = null } = {}) => {
+  const hasRange = startSec !== null || endSec !== null;
+  SELECTORS.analysisTimeMode.value = hasRange ? "range" : "full";
+  SELECTORS.analysisTimeRange.hidden = !hasRange;
+  SELECTORS.analysisStartTime.value = hasRange && startSec !== null ? fmt(startSec) : "";
+  SELECTORS.analysisEndTime.value = hasRange && endSec !== null ? fmt(endSec) : "";
+};
+var openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
+  if (!hasServer || !SELECTORS.analysisDialog) return;
+  analysisForce = reanalyze;
+  SELECTORS.inputCard.hidden = false;
+  SELECTORS.status.className = "status";
+  SELECTORS.status.textContent = "";
+  SELECTORS.jobCard.hidden = true;
+  SELECTORS.analysisDialogEyebrow.textContent = reanalyze ? "\u518D\u89E3\u6790" : "\u65B0\u3057\u3044\u89E3\u6790";
+  SELECTORS.analysisDialogTitle.textContent = reanalyze ? "\u3053\u306E\u66F2\u3092\u518D\u89E3\u6790" : "\u7DF4\u7FD2\u3057\u305F\u3044\u66F2\u3092\u8FFD\u52A0";
+  SELECTORS.analysisDialogDescription.textContent = reanalyze ? "\u89E3\u6790\u7BC4\u56F2\u3092\u78BA\u8A8D\u3057\u3066\u3001\u73FE\u5728\u306E\u66F2\u3092\u3082\u3046\u4E00\u5EA6\u89E3\u6790\u3057\u307E\u3059\u3002" : "YouTube\u306EURL\u3001\u307E\u305F\u306F\u624B\u5143\u306E\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u89E3\u6790\u3092\u59CB\u3081\u307E\u3059\u3002";
+  SELECTORS.analyzeBtn.textContent = reanalyze ? "\u518D\u89E3\u6790\u3092\u958B\u59CB" : "\u89E3\u6790\u3092\u958B\u59CB";
+  if (reanalyze) {
+    const sourceVideoId = currentData?.sourceVideoId || currentId;
+    SELECTORS.urlInput.value = sourceVideoId ? `https://www.youtube.com/watch?v=${sourceVideoId}` : "";
+    setAnalysisRangeInputs({
+      startSec: currentData?.analysisStartSec ?? null,
+      endSec: currentData?.analysisEndSec ?? null
+    });
+  } else {
+    SELECTORS.urlInput.value = "";
+    setAnalysisRangeInputs();
+  }
+  if (!SELECTORS.analysisDialog.open) SELECTORS.analysisDialog.showModal();
+  if (openAudioPicker) SELECTORS.audioFileInput.click();
+  else SELECTORS.urlInput.focus({ preventScroll: true });
+};
 var MIN_PLAYBACK_RATE = 0.25;
 var MAX_PLAYBACK_RATE = 1.25;
 var PLAYBACK_RATE_STEP = 0.05;
@@ -3283,6 +3455,7 @@ var setActiveTab = (tab) => {
   SELECTORS.scoreHistoryPanel.hidden = !scoreActive;
   SELECTORS.topbarSong.hidden = scoreActive || !currentId;
   SELECTORS.topbarActions.hidden = scoreActive || !currentId;
+  SELECTORS.btnNewUrl.hidden = scoreActive || !hasServer;
 };
 var getScoreHistory = () => {
   try {
@@ -3319,7 +3492,7 @@ var renderScoreHistory = () => {
       <div class="score-history-date">${escapeHtml(date)}</div>
     </div>`;
   }).join("");
-  window.lucide?.createIcons();
+  lucide.createIcons();
 };
 var saveScoreHistory = (result) => {
   if (!result?.videoId || !Array.isArray(result.outputs)) return;
@@ -3445,7 +3618,7 @@ var renderScoreOutputs = (data) => {
   `).join("")}`;
   SELECTORS.scoreResultStatus.className = "score-status score-result-status ok";
   SELECTORS.scoreResultStatus.textContent = `\u5B8C\u4E86 \xB7 \u7BC4\u56F2 ${region.x},${region.y},${region.width}x${region.height}`;
-  window.lucide?.createIcons();
+  lucide.createIcons();
 };
 var editScoreSettings = async (data = currentScoreResult) => {
   if (!data?.videoId || !data?.region) return;
@@ -3725,23 +3898,47 @@ var extractVideoId = (url) => {
   }
   return null;
 };
-var secColor = (label) => COLORS[Object.keys(COLORS).find((key) => label.toLowerCase().includes(key))] ?? "#94a3b8";
+var sectionColorKey = (label) => {
+  const normalized = String(label || "").toLowerCase();
+  const aliases = [
+    ["pre-chorus", "pre-chorus"],
+    ["b\u30E1\u30ED", "pre-chorus"],
+    ["intro", "intro"],
+    ["\u30A4\u30F3\u30C8\u30ED", "intro"],
+    ["verse", "verse"],
+    ["a\u30E1\u30ED", "verse"],
+    ["chorus", "chorus"],
+    ["\u30B5\u30D3", "chorus"],
+    ["bridge", "bridge"],
+    ["c\u30E1\u30ED", "bridge"],
+    ["outro", "outro"],
+    ["\u30A2\u30A6\u30C8\u30ED", "outro"],
+    ["interlude", "intro"],
+    ["instrumental", "intro"],
+    ["inst", "intro"],
+    ["\u9593\u594F", "intro"]
+  ];
+  return aliases.find(([alias]) => normalized.includes(alias))?.[1];
+};
+var secColor = (label) => COLORS[sectionColorKey(label)] ?? "#94a3b8";
 var localizeSectionLabel = (label) => {
   const raw = String(label || "");
   const normalized = raw.toLowerCase();
   const labels = [
-    ["pre-chorus", "\u30D7\u30EC\u30B3\u30FC\u30E9\u30B9"],
-    ["post-chorus", "\u30DD\u30B9\u30C8\u30B3\u30FC\u30E9\u30B9"],
+    ["pre-chorus", "B\u30E1\u30ED"],
+    ["post-chorus", "\u5F8C\u30B5\u30D3"],
     ["intro", "\u30A4\u30F3\u30C8\u30ED"],
-    ["verse", "\u30F4\u30A1\u30FC\u30B9"],
-    ["chorus", "\u30B3\u30FC\u30E9\u30B9"],
-    ["bridge", "\u30D6\u30EA\u30C3\u30B8"],
+    ["verse", "A\u30E1\u30ED"],
+    ["chorus", "\u30B5\u30D3"],
+    ["bridge", "C\u30E1\u30ED"],
     ["interlude", "\u9593\u594F"],
     ["instrumental", "\u9593\u594F"],
+    ["inst", "\u9593\u594F"],
     ["solo", "\u30BD\u30ED"],
     ["start", "\u958B\u59CB"],
     ["outro", "\u30A2\u30A6\u30C8\u30ED"],
-    ["ending", "\u30A8\u30F3\u30C7\u30A3\u30F3\u30B0"]
+    ["ending", "\u30A8\u30F3\u30C7\u30A3\u30F3\u30B0"],
+    ["end", "\u30A2\u30A6\u30C8\u30ED"]
   ];
   const match = labels.find(([key]) => normalized.includes(key));
   return match ? raw.replace(new RegExp(match[0], "i"), match[1]) : raw;
@@ -4237,11 +4434,161 @@ var restoreInterruptedJobs = async () => {
   } catch {
   }
 };
+var SETTINGS_SECTION_TITLES = {
+  general: "\u4E00\u822C\u8A2D\u5B9A",
+  analysis: "\u89E3\u6790\u74B0\u5883",
+  cloud: "\u30AF\u30E9\u30A6\u30C9\u9023\u643A",
+  storage: "\u30B9\u30C8\u30EC\u30FC\u30B8",
+  updates: "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8",
+  about: "\u3053\u306E\u30A2\u30D7\u30EA\u306B\u3064\u3044\u3066"
+};
+var selectSettingsSection = (section) => {
+  const selected = SETTINGS_SECTION_TITLES[section] ? section : "general";
+  document.querySelectorAll("[data-settings-section]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.settingsSection === selected);
+  });
+  document.querySelectorAll("[data-settings-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.settingsPanel === selected);
+  });
+  SELECTORS.settingsTitle.textContent = SETTINGS_SECTION_TITLES[selected];
+};
+var syncCloudFieldsState = () => {
+  SELECTORS.settingsCloudFields?.classList.toggle("disabled", !SELECTORS.settingsCloudEnabled?.checked);
+};
+var renderCloudStatus = (status) => {
+  cloudStatus = status || { configured: false };
+  if (!SELECTORS.btnCloudSync || staticLibraryMode) return;
+  if (cloudStatus.configured) {
+    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud-upload"></i><span>\u540C\u671F</span></span>`;
+    SELECTORS.btnCloudSync.title = cloudStatus.bucket ? `${cloudStatus.bucket}\u3078\u540C\u671F` : "\u81EA\u5206\u306E\u30AF\u30E9\u30A6\u30C9\u3078\u540C\u671F";
+  } else {
+    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud"></i><span>\u30AF\u30E9\u30A6\u30C9\u9023\u643A</span></span>`;
+    SELECTORS.btnCloudSync.title = "\u81EA\u5206\u306ECloudflare R2\u3092\u9023\u643A";
+  }
+  lucide.createIcons();
+};
+var refreshCloudStatus = async () => {
+  if (!hasServer || staticLibraryMode) return;
+  try {
+    const response = await fetch("/cloud/status", { cache: "no-store" });
+    if (response.ok) renderCloudStatus(await response.json());
+  } catch {
+  }
+};
+var refreshSettingsAnalysisStatus = async () => {
+  if (!SELECTORS.settingsAnalysisStatus) return;
+  SELECTORS.settingsAnalysisStatus.className = "settings-status-card";
+  SELECTORS.settingsAnalysisStatus.innerHTML = `<span class="spin"></span>GPU\u3068\u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059`;
+  try {
+    const response = await fetch("/system/status", { cache: "no-store" });
+    const status = await response.json();
+    if (!response.ok) throw new Error("\u89E3\u6790\u74B0\u5883\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    SELECTORS.settingsAnalysisStatus.className = `settings-status-card${status.ready ? " ok" : ""}`;
+    SELECTORS.settingsAnalysisStatus.textContent = status.ready ? `${status.nvidia?.name || "GPU"} \xB7 WSL2 CUDA \xB7 \u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u78BA\u8A8D\u6E08\u307F` : status.message || "NVIDIA\u89E3\u6790\u74B0\u5883\u306E\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7\u304C\u5FC5\u8981\u3067\u3059";
+  } catch (error) {
+    SELECTORS.settingsAnalysisStatus.textContent = error.message;
+  }
+};
+var openSettings = async (section = "general") => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.getSettings) {
+    await showAlert("\u8A2D\u5B9A\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u30A2\u30D7\u30EA\u3067\u5229\u7528\u3067\u304D\u307E\u3059\u3002", { title: "\u8A2D\u5B9A" });
+    return;
+  }
+  desktopSettings = await desktop.getSettings();
+  const cloud = desktopSettings.cloud || {};
+  SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
+  SELECTORS.settingsDataPath.textContent = desktopSettings.dataPath || "";
+  SELECTORS.settingsVersion.textContent = `PracticeLab ${desktopSettings.version || ""}`;
+  SELECTORS.settingsCloudEnabled.checked = !!cloud.enabled;
+  SELECTORS.settingsCloudAccount.value = cloud.accountId || "";
+  SELECTORS.settingsCloudBucket.value = cloud.bucket || "";
+  SELECTORS.settingsCloudAccessKey.value = cloud.accessKeyId || "";
+  SELECTORS.settingsCloudSecret.value = "";
+  SELECTORS.settingsCloudSecret.placeholder = cloud.hasSecret ? "\u4FDD\u5B58\u6E08\u307F\uFF08\u5909\u66F4\u3059\u308B\u5834\u5408\u3060\u3051\u5165\u529B\uFF09" : "\u30B7\u30FC\u30AF\u30EC\u30C3\u30C8\u30A2\u30AF\u30BB\u30B9\u30AD\u30FC";
+  SELECTORS.settingsCloudPublicUrl.value = cloud.publicBaseUrl || "";
+  SELECTORS.settingsCloudPrefix.value = cloud.prefix || "sessions";
+  SELECTORS.settingsCloudEndpoint.value = cloud.endpointUrl || "";
+  SELECTORS.settingsCloudState.className = `settings-cloud-state${cloudStatus.configured ? " ok" : ""}`;
+  SELECTORS.settingsCloudState.textContent = cloudStatus.configured ? `${cloudStatus.bucket || "R2"}\u3068\u9023\u643A\u6E08\u307F${cloudStatus.viewerUrl ? ` \xB7 ${cloudStatus.viewerUrl}` : ""}` : "\u672A\u9023\u643A\u3067\u3059\u3002\u8A2D\u5B9A\u306F\u5229\u7528\u8005\u3054\u3068\u306B\u3053\u306EPC\u3078\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002";
+  SELECTORS.settingsSaveStatus.textContent = "";
+  syncCloudFieldsState();
+  selectSettingsSection(section);
+  SELECTORS.settingsDialog.showModal();
+  lucide.createIcons();
+  if (section === "analysis") void refreshSettingsAnalysisStatus();
+};
+var closeSettings = () => SELECTORS.settingsDialog?.close();
+var saveSettings = async () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.saveSettings) return;
+  const enabled = SELECTORS.settingsCloudEnabled.checked;
+  if (enabled && !SELECTORS.settingsCloudSecret.value && !desktopSettings?.cloud?.hasSecret) {
+    SELECTORS.settingsSaveStatus.textContent = "\u30B7\u30FC\u30AF\u30EC\u30C3\u30C8\u30A2\u30AF\u30BB\u30B9\u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    return;
+  }
+  SELECTORS.settingsSave.disabled = true;
+  SELECTORS.settingsSaveStatus.textContent = "\u8A2D\u5B9A\u3092\u4FDD\u5B58\u3057\u3066\u3044\u307E\u3059...";
+  try {
+    localStorage.setItem("practice_lab_settings_saved", enabled ? "test-cloud" : "saved");
+    await desktop.saveSettings({
+      autoUpdate: SELECTORS.settingsAutoUpdate.checked,
+      cloud: {
+        enabled,
+        accountId: SELECTORS.settingsCloudAccount.value,
+        bucket: SELECTORS.settingsCloudBucket.value,
+        accessKeyId: SELECTORS.settingsCloudAccessKey.value,
+        secretAccessKey: SELECTORS.settingsCloudSecret.value,
+        publicBaseUrl: SELECTORS.settingsCloudPublicUrl.value,
+        prefix: SELECTORS.settingsCloudPrefix.value,
+        endpointUrl: SELECTORS.settingsCloudEndpoint.value
+      }
+    });
+    SELECTORS.settingsSaveStatus.textContent = "\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002\u8A2D\u5B9A\u3092\u53CD\u6620\u3057\u307E\u3059...";
+    setTimeout(closeSettings, 150);
+  } catch (error) {
+    SELECTORS.settingsSaveStatus.textContent = error.message;
+    localStorage.removeItem("practice_lab_settings_saved");
+  } finally {
+    SELECTORS.settingsSave.disabled = false;
+  }
+};
+var verifySavedCloudSettings = async () => {
+  const action = localStorage.getItem("practice_lab_settings_saved");
+  if (!action) return;
+  localStorage.removeItem("practice_lab_settings_saved");
+  if (action !== "test-cloud") return;
+  try {
+    const token = await window.practiceLabDesktop?.getToken();
+    const response = await fetch("/cloud/test", { method: "POST", headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {} });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || "R2\u3078\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    await refreshCloudStatus();
+    await showAlert(`${payload.bucket}\u3078\u306E\u63A5\u7D9A\u3092\u78BA\u8A8D\u3057\u307E\u3057\u305F\u3002`, { title: "\u30AF\u30E9\u30A6\u30C9\u9023\u643A\u5B8C\u4E86" });
+  } catch (error) {
+    await showAlert(`${error.message}
+\u8A2D\u5B9A\u753B\u9762\u304B\u3089\u5165\u529B\u5185\u5BB9\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002`, { title: "\u30AF\u30E9\u30A6\u30C9\u3078\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
+  }
+};
 var syncCloudLibrary = async () => {
   if (!hasServer || staticLibraryMode) return;
+  if (!cloudStatus.configured) {
+    await openSettings("cloud");
+    return;
+  }
+  const destination = cloudStatus.bucket ? `\u300C${cloudStatus.bucket}\u300D` : "\u81EA\u5206\u306ER2";
+  const approved = await showConfirm(
+    `\u89E3\u6790\u6E08\u307F\u306E\u66F2\u30FB\u97F3\u58F0\u30FB\u52D5\u753B\u30FB\u30D1\u30FC\u30C8\u97F3\u58F0\u3092${destination}\u3078\u540C\u671F\u3057\u307E\u3059\u3002\u7D9A\u3051\u307E\u3059\u304B\uFF1F`,
+    { title: "\u516C\u958B\u30E9\u30A4\u30D6\u30E9\u30EA\u3092\u66F4\u65B0", confirmLabel: "\u540C\u671F\u3059\u308B" }
+  );
+  if (!approved) return;
   SELECTORS.btnCloudSync.disabled = true;
   try {
-    const response = await fetch("/cloud/sync", { method: "POST" });
+    const token = await window.practiceLabDesktop?.getToken();
+    const response = await fetch("/cloud/sync", {
+      method: "POST",
+      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {}
+    });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u540C\u671F\u306B\u5931\u6557\u3057\u307E\u3057\u305F (${response.status})`);
     trackQueuedJob(submitted.jobId, { label: "\u30AF\u30E9\u30A6\u30C9\u540C\u671F" });
@@ -4438,10 +4785,12 @@ var initVideoPlayer = (videoUrl) => {
   }
   video.onclick = handleVideoClick;
   video.ondblclick = (event) => event.preventDefault();
+  video.onerror = null;
   video.removeAttribute("src");
   video.load();
   videoAvailable = !!videoUrl;
   lastVideoSyncAt = 0;
+  SELECTORS.videoWrap.classList.toggle("no-video", !videoUrl);
   SELECTORS.videoNote.hidden = !!videoUrl;
   SELECTORS.btnVideoFullscreen.hidden = !videoUrl;
   if (!videoUrl) return;
@@ -4453,6 +4802,7 @@ var initVideoPlayer = (videoUrl) => {
     setVideoFullscreen(false);
     video.removeAttribute("src");
     video.load();
+    SELECTORS.videoWrap.classList.add("no-video");
     SELECTORS.videoNote.hidden = false;
     SELECTORS.btnVideoFullscreen.hidden = true;
   };
@@ -4665,13 +5015,19 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
       });
     }
     renderFourBarGrid();
+    if (SELECTORS.sectionEditor?.open) {
+      drawSectionEditorWaveform();
+      syncSectionEditorPlaybackAvailability();
+      updateSectionEditorPlayer();
+    }
   });
   ws.on("timeupdate", (time) => {
     SELECTORS.timeCur.textContent = fmt(time);
     updatePlayingRow(time);
     syncVideoToAudio(time);
     syncStemPlayers(time);
-    if (loopOn && ws.isPlaying()) {
+    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(time);
+    if (loopOn && ws.isPlaying() && !SELECTORS.sectionEditor?.open) {
       const loopRange = getLoopRange();
       if (loopRange && (time < loopRange.start || time >= loopRange.end)) {
         seekAudio(loopRange.start);
@@ -4679,19 +5035,21 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     }
   });
   ws.on("play", () => {
-    markCurrentSessionPracticed();
+    if (!SELECTORS.sectionEditor?.open) markCurrentSessionPracticed();
     applyCurrentPlaybackRate();
     syncVideoToAudio(ws.getCurrentTime(), { force: true });
     playVideo();
     playStems();
     if (metroOn) startMetro();
     updatePlayButton();
+    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer();
   });
   ws.on("pause", () => {
     pauseVideo();
     pauseStems();
     stopMetro();
     updatePlayButton();
+    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer();
   });
   ws.on("seeking", () => {
     lastMetroTime = ws.getCurrentTime();
@@ -4746,21 +5104,8 @@ var setupControls = () => {
     else stopMetro();
   };
   SELECTORS.btnFsMetro.onclick = SELECTORS.btnMetro.onclick;
-  SELECTORS.btnReanalyze.onclick = async () => {
-    const sourceVideoId = currentData?.sourceVideoId || currentId;
-    if (sourceVideoId && hasServer) await doAnalyze(
-      `https://www.youtube.com/watch?v=${sourceVideoId}`,
-      true,
-      {
-        startSec: currentData?.analysisStartSec ?? null,
-        endSec: currentData?.analysisEndSec ?? null
-      }
-    );
-  };
-  SELECTORS.btnNewUrl.onclick = () => {
-    SELECTORS.inputCard.hidden = !SELECTORS.inputCard.hidden;
-    if (!SELECTORS.inputCard.hidden) SELECTORS.urlInput.focus();
-  };
+  SELECTORS.btnReanalyze.onclick = () => openAnalysisDialog({ reanalyze: true });
+  SELECTORS.btnNewUrl.onclick = () => openAnalysisDialog();
   SELECTORS.btnAutoNext.onclick = () => {
     autoNextOn = !autoNextOn;
     saveCfg(autoNextKey, autoNextOn);
@@ -4994,47 +5339,252 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   }
 };
 var sectionEditorDraft = [];
-var readSectionEditorDraft = () => {
-  sectionEditorDraft = [...SELECTORS.sectionEditorRows.querySelectorAll(".section-edit-row")].map((row) => ({
-    label: row.querySelector("[data-section-field='label']").value.trim(),
-    startBar: Number(row.querySelector("[data-section-field='start']").value),
-    endBar: Number(row.querySelector("[data-section-field='end']").value)
-  }));
+var sectionEditorSelectedIndex = 0;
+var sectionEditorBoundaryDrag = null;
+var sectionEditorPreviewTimer = null;
+var sectionEditorPreviewEndTime = null;
+var sectionEditorScrubPointerId = null;
+var sectionEditorPlayheadPointerId = null;
+var updateSectionEditorPlayer = (time = ws?.getCurrentTime?.() || 0) => {
+  if (!SELECTORS.sectionEditorPlayerToggle) return;
+  const duration = ws?.getDuration?.() || currentData?.duration || 0;
+  const progress = duration > 0 ? Math.max(0, Math.min(1, time / duration)) : 0;
+  SELECTORS.sectionEditorCurrentTime.textContent = fmt(time);
+  SELECTORS.sectionEditorDuration.textContent = fmt(duration);
+  SELECTORS.sectionEditorPlayhead.style.left = `${progress * 100}%`;
+  SELECTORS.sectionEditorScrub.setAttribute("aria-valuemax", String(Math.round(duration * 100) / 100));
+  SELECTORS.sectionEditorScrub.setAttribute("aria-valuenow", String(Math.round(time * 100) / 100));
+  SELECTORS.sectionEditorPlayhead.setAttribute("aria-valuemax", String(Math.round(duration * 100) / 100));
+  SELECTORS.sectionEditorPlayhead.setAttribute("aria-valuenow", String(Math.round(time * 100) / 100));
+  const playing = !!ws?.isPlaying?.();
+  if (SELECTORS.sectionEditorPlayerToggle.dataset.playing !== String(playing)) {
+    SELECTORS.sectionEditorPlayerToggle.dataset.playing = String(playing);
+    SELECTORS.sectionEditorPlayerToggle.setAttribute("aria-label", playing ? "\u4E00\u6642\u505C\u6B62" : "\u518D\u751F");
+    SELECTORS.sectionEditorPlayerToggle.innerHTML = playing ? '<i data-lucide="pause"></i>' : '<i data-lucide="play"></i>';
+    lucide.createIcons();
+  }
+};
+var drawSectionEditorWaveform = () => {
+  const canvas = SELECTORS.sectionEditorWaveform;
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const ratio = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  context.clearRect(0, 0, rect.width, rect.height);
+  const peaks = extractWaveformPeaks(ws?.getDecodedData?.(), Math.floor(rect.width));
+  const middle = rect.height / 2;
+  context.strokeStyle = "rgba(226, 232, 240, .76)";
+  context.lineWidth = 1;
+  context.beginPath();
+  for (let x = 0; x < peaks.length; x += 1) {
+    const amplitude = Math.max(1, peaks[x] * (middle - 5));
+    context.moveTo(x + 0.5, middle - amplitude);
+    context.lineTo(x + 0.5, middle + amplitude);
+  }
+  context.stroke();
+};
+var updateSectionEditorSelectedRange = () => {
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  const duration = ws?.getDuration?.() || currentData?.duration || 0;
+  if (!section || duration <= 0) {
+    SELECTORS.sectionEditorSelectedRange.hidden = true;
+    return;
+  }
+  const start = sectionEditorTimeAtBoundary(section.startBar - 1);
+  const end = sectionEditorTimeAtBoundary(section.endBar);
+  SELECTORS.sectionEditorSelectedRange.hidden = false;
+  SELECTORS.sectionEditorSelectedRange.style.left = `${Math.max(0, Math.min(1, start / duration)) * 100}%`;
+  SELECTORS.sectionEditorSelectedRange.style.width = `${Math.max(0, Math.min(1, (end - start) / duration)) * 100}%`;
+};
+var seekSectionEditorFromClientX = (clientX) => {
+  if (!canPlayAudio()) return;
+  const rect = SELECTORS.sectionEditorScrub.getBoundingClientRect();
+  if (rect.width <= 0) return;
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  stopSectionEditorPreview({ pause: false });
+  seekAudio((ws?.getDuration?.() || currentData?.duration || 0) * ratio, { respectLoopRange: false });
+  updateSectionEditorPlayer();
+};
+var toggleSectionEditorPlayback = () => {
+  if (!canPlayAudio()) return;
+  stopSectionEditorPreview({ pause: false });
+  if (ws.isPlaying()) ws.pause();
+  else ws.play();
+};
+var syncSectionEditorPlaybackAvailability = () => {
+  const disabled = !canPlayAudio();
+  SELECTORS.sectionEditorPlayerToggle.disabled = disabled;
+  SELECTORS.sectionEditorPreview.disabled = disabled;
+};
+var setSectionEditorPreviewState = (playing) => {
+  if (!SELECTORS.sectionEditorPreview) return;
+  SELECTORS.sectionEditorPreview.classList.toggle("active", playing);
+  SELECTORS.sectionEditorPreview.innerHTML = playing ? '<i data-lucide="square"></i><span>\u505C\u6B62</span>' : '<i data-lucide="play"></i><span>\u9078\u629E\u3060\u3051\u518D\u751F</span>';
+  lucide.createIcons();
+};
+var stopSectionEditorPreview = ({ pause = true } = {}) => {
+  if (sectionEditorPreviewTimer) window.clearInterval(sectionEditorPreviewTimer);
+  sectionEditorPreviewTimer = null;
+  sectionEditorPreviewEndTime = null;
+  if (pause && ws?.isPlaying()) ws.pause();
+  setSectionEditorPreviewState(false);
+};
+var sectionEditorTimeAtBoundary = (boundaryBar) => {
+  const sourceSections = currentData?.sections || [];
+  const source = sourceSections.find((section) => boundaryBar >= section.start_bar - 1 && boundaryBar <= section.end_bar);
+  if (source) {
+    const count = Math.max(1, source.end_bar - source.start_bar + 1);
+    const progress = Math.max(0, Math.min(1, (boundaryBar - (source.start_bar - 1)) / count));
+    return source.start_time + (source.end_time - source.start_time) * progress;
+  }
+  return (currentData?.duration || 0) * boundaryBar / sectionEditorTotalBars();
+};
+var previewSelectedSection = () => {
+  if (!canPlayAudio()) return;
+  if (sectionEditorPreviewTimer && ws.isPlaying()) {
+    stopSectionEditorPreview();
+    return;
+  }
+  syncSectionEditorSelectionFromFields();
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  if (!section) return;
+  const start = sectionEditorTimeAtBoundary(section.startBar - 1);
+  const end = sectionEditorTimeAtBoundary(section.endBar);
+  stopSectionEditorPreview({ pause: false });
+  sectionEditorPreviewEndTime = end;
+  playFromTime(start);
+  setSectionEditorPreviewState(true);
+  sectionEditorPreviewTimer = window.setInterval(() => {
+    if (!ws?.isPlaying() || ws.getCurrentTime() >= sectionEditorPreviewEndTime - 0.02) {
+      stopSectionEditorPreview();
+    }
+  }, 40);
+};
+var syncSectionEditorSelectionFromFields = () => {
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  if (!section) return;
+  section.label = SELECTORS.sectionEditorLabel.value.trim() || section.label;
+};
+var sectionEditorTotalBars = () => Math.max(1, ...sectionEditorDraft.map((section) => section.endBar));
+var renderSectionEditorInspector = () => {
+  sectionEditorSelectedIndex = Math.min(Math.max(0, sectionEditorSelectedIndex), sectionEditorDraft.length - 1);
+  const section = sectionEditorDraft[sectionEditorSelectedIndex];
+  if (!section) return;
+  SELECTORS.sectionEditorSelectionNumber.textContent = String(sectionEditorSelectedIndex + 1).padStart(2, "0");
+  SELECTORS.sectionEditorLabel.value = localizeSectionLabel(section.label);
+  SELECTORS.sectionEditorStart.value = String(section.startBar);
+  SELECTORS.sectionEditorEnd.value = String(section.endBar);
+  SELECTORS.sectionEditorStart.disabled = sectionEditorSelectedIndex === 0;
+  SELECTORS.sectionEditorEnd.disabled = sectionEditorSelectedIndex === sectionEditorDraft.length - 1;
+  SELECTORS.sectionEditorStart.min = String(sectionEditorSelectedIndex > 0 ? sectionEditorDraft[sectionEditorSelectedIndex - 1].startBar + 1 : 1);
+  SELECTORS.sectionEditorStart.max = String(section.endBar);
+  SELECTORS.sectionEditorEnd.min = String(section.startBar);
+  SELECTORS.sectionEditorEnd.max = String(sectionEditorSelectedIndex < sectionEditorDraft.length - 1 ? sectionEditorDraft[sectionEditorSelectedIndex + 1].endBar - 1 : sectionEditorTotalBars());
+  const tools = SELECTORS.sectionEditor.querySelector(".section-editor-tools");
+  tools.querySelector("[data-section-action='split']").disabled = section.startBar >= section.endBar;
+  tools.querySelector("[data-section-action='merge']").disabled = sectionEditorSelectedIndex === sectionEditorDraft.length - 1;
+  tools.querySelector("[data-section-action='delete']").disabled = sectionEditorDraft.length === 1;
+  syncSectionEditorPlaybackAvailability();
+  updateSectionEditorSelectedRange();
 };
 var renderSectionEditor = () => {
-  SELECTORS.sectionEditorRows.innerHTML = sectionEditorDraft.map((section, index) => `
-    <div class="section-edit-row" data-section-index="${index}">
-      <input data-section-field="label" value="${escapeHtml(section.label)}" aria-label="\u30BB\u30AF\u30B7\u30E7\u30F3\u540D ${index + 1}">
-      <input data-section-field="start" type="number" min="1" value="${section.startBar}" aria-label="\u958B\u59CB\u5C0F\u7BC0 ${index + 1}">
-      <input data-section-field="end" type="number" min="1" value="${section.endBar}" aria-label="\u7D42\u4E86\u5C0F\u7BC0 ${index + 1}">
-      <div class="section-edit-tools">
-        <button type="button" data-section-action="split" title="\u4E2D\u592E\u3067\u5206\u5272" ${section.startBar >= section.endBar ? "disabled" : ""}>\u5206\u5272</button>
-        <button type="button" data-section-action="merge" title="\u6B21\u3068\u7D50\u5408" ${index === sectionEditorDraft.length - 1 ? "disabled" : ""}>\u7D50\u5408</button>
-        <button type="button" data-section-action="delete" title="\u524A\u9664" ${sectionEditorDraft.length === 1 ? "disabled" : ""}>\u524A\u9664</button>
-      </div>
-    </div>
+  const totalBars = sectionEditorTotalBars();
+  const segments = sectionEditorDraft.map((section, index) => {
+    const startPercent = (section.startBar - 1) / totalBars * 100;
+    const widthPercent = (section.endBar - section.startBar + 1) / totalBars * 100;
+    const color = secColor(section.label);
+    return `
+      <button class="section-editor-segment${index === sectionEditorSelectedIndex ? " selected" : ""}"
+        type="button" data-section-index="${index}"
+        style="--section-left:${startPercent}%;--section-width:${widthPercent}%;--section-color:${color}"
+        aria-label="${escapeHtml(localizeSectionLabel(section.label))} ${section.startBar}\u5C0F\u7BC0\u304B\u3089${section.endBar}\u5C0F\u7BC0">
+        <strong>${escapeHtml(localizeSectionLabel(section.label))}</strong>
+        <small>${section.startBar}\u2013${section.endBar}\u5C0F\u7BC0</small>
+      </button>
+    `;
+  }).join("");
+  const boundaries = sectionEditorDraft.slice(0, -1).map((section, index) => `
+    <button class="section-editor-boundary" type="button" data-boundary-index="${index}"
+      style="--boundary-left:${section.endBar / totalBars * 100}%"
+      aria-label="${section.endBar}\u5C0F\u7BC0\u3068${section.endBar + 1}\u5C0F\u7BC0\u306E\u5883\u754C">
+      <span></span>
+    </button>
   `).join("");
+  const ruler = Array.from({ length: Math.ceil(totalBars / 4) + 1 }, (_, index) => {
+    const bar = Math.min(index * 4 + 1, totalBars);
+    const left = (bar - 1) / totalBars * 100;
+    return `<span style="left:${left}%">${bar}</span>`;
+  }).join("");
+  SELECTORS.sectionEditorRows.innerHTML = `
+    <div class="section-editor-grid section-editor-grid-minor" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
+    <div class="section-editor-grid section-editor-grid-major" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
+    ${segments}${boundaries}
+    <div class="section-editor-ruler" aria-hidden="true">${ruler}</div>
+  `;
+  renderSectionEditorInspector();
+};
+var updateSectionEditorBoundary = (boundaryIndex, endBar) => {
+  const left = sectionEditorDraft[boundaryIndex];
+  const right = sectionEditorDraft[boundaryIndex + 1];
+  if (!left || !right) return;
+  const snappedBar = Math.max(left.startBar, Math.min(right.endBar - 1, Math.round(endBar)));
+  left.endBar = snappedBar;
+  right.startBar = snappedBar + 1;
+};
+var updateSectionEditorSelectedBounds = (edge, value) => {
+  const index = sectionEditorSelectedIndex;
+  const section = sectionEditorDraft[index];
+  if (!section || !Number.isFinite(value)) return;
+  if (edge === "start" && index > 0) {
+    const previous = sectionEditorDraft[index - 1];
+    const startBar = Math.max(previous.startBar + 1, Math.min(section.endBar, Math.round(value)));
+    previous.endBar = startBar - 1;
+    section.startBar = startBar;
+  } else if (edge === "end" && index < sectionEditorDraft.length - 1) {
+    const next = sectionEditorDraft[index + 1];
+    const endBar = Math.max(section.startBar, Math.min(next.endBar - 1, Math.round(value)));
+    section.endBar = endBar;
+    next.startBar = endBar + 1;
+  }
+  renderSectionEditor();
 };
 var openSectionEditor = () => {
   if (!hasServer || !currentData?.sections?.length) return;
-  sectionEditorDraft = currentData.sections.map((section) => ({
-    label: section.label,
+  stopSectionEditorPreview();
+  sectionEditorDraft = normalizeSectionDraft(currentData.sections.map((section) => ({
+    label: localizeSectionLabel(section.label),
     startBar: section.start_bar,
     endBar: section.end_bar
-  }));
+  })), currentData.total_bars);
+  sectionEditorSelectedIndex = 0;
+  sectionEditorBoundaryDrag = null;
   SELECTORS.sectionEditorError.textContent = "";
   SELECTORS.btnRestoreSections.disabled = !currentData.automaticSections?.length;
   renderSectionEditor();
   SELECTORS.sectionEditor.showModal();
   lucide.createIcons();
+  window.requestAnimationFrame(() => {
+    drawSectionEditorWaveform();
+    syncSectionEditorPlaybackAvailability();
+    updateSectionEditorPlayer();
+    updateSectionEditorSelectedRange();
+  });
 };
 var applySectionDraftAction = (index, action) => {
-  readSectionEditorDraft();
+  stopSectionEditorPreview();
+  syncSectionEditorSelectionFromFields();
   sectionEditorDraft = mutateSectionDraft(sectionEditorDraft, index, action);
+  if (action === "split") sectionEditorSelectedIndex = Math.min(index + 1, sectionEditorDraft.length - 1);
+  else sectionEditorSelectedIndex = Math.min(index, sectionEditorDraft.length - 1);
   renderSectionEditor();
 };
 var saveSectionEditor = async () => {
-  readSectionEditorDraft();
+  syncSectionEditorSelectionFromFields();
   SELECTORS.sectionEditorError.textContent = "";
   SELECTORS.btnSaveSections.disabled = true;
   try {
@@ -5532,6 +6082,7 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
     if (!response.ok) throw new Error(submitted.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = `\u2713 ${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"}\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F`;
+    closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
       label: `${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"} \xB7 ${videoId || submitted.jobId}${range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : ""}`,
       onDone: async (data) => {
@@ -5581,6 +6132,7 @@ var doAnalyzeFile = async (file) => {
     if (!response.ok) throw new Error(submitted.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "\u2713 \u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u306E\u89E3\u6790\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F";
+    closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
       label: `\u97F3\u58F0\u89E3\u6790 \xB7 ${file.name}`,
       onDone: async (data) => {
@@ -5646,6 +6198,135 @@ var detectServer = async () => {
   }
   SELECTORS.btnCloudSync.hidden = false;
   SELECTORS.btnStorage.hidden = false;
+  SELECTORS.btnNewUrl.hidden = currentFeature === "score";
+};
+var renderDesktopSystemStatus = (status) => {
+  if (!status?.desktop || !SELECTORS.desktopStatus) return;
+  if (status.ready) {
+    SELECTORS.desktopStatus.hidden = true;
+    return;
+  }
+  SELECTORS.desktopStatus.hidden = false;
+  SELECTORS.desktopStatus.classList.remove("ready");
+  SELECTORS.desktopStatus.classList.toggle("error", !status.nvidia?.available);
+  SELECTORS.desktopStatusAction.hidden = !status.setupSupported;
+  if (!status.nvidia?.available) {
+    SELECTORS.desktopStatusTitle.textContent = "NVIDIA GPU\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093";
+    SELECTORS.desktopStatusMessage.textContent = "NVIDIA\u30C9\u30E9\u30A4\u30D0\u30FC\u3092\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u307E\u305F\u306F\u66F4\u65B0\u3057\u3066\u304B\u3089\u3001\u3082\u3046\u4E00\u5EA6\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    SELECTORS.desktopStatusAction.textContent = "\u3082\u3046\u4E00\u5EA6\u78BA\u8A8D";
+    return;
+  }
+  if (!status.wsl?.available) {
+    SELECTORS.desktopStatusTitle.textContent = "WSL2\u306E\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7\u304C\u5FC5\u8981\u3067\u3059";
+    SELECTORS.desktopStatusMessage.textContent = `${status.nvidia.name}\u3092\u691C\u51FA\u3057\u307E\u3057\u305F\u3002\u89E3\u6790\u7528\u306EUbuntu\u74B0\u5883\u3092\u6E96\u5099\u3057\u307E\u3059\u3002`;
+  } else if (!status.wsl.cudaAvailable) {
+    SELECTORS.desktopStatusTitle.textContent = "WSL2\u304B\u3089GPU\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093";
+    SELECTORS.desktopStatusMessage.textContent = "NVIDIA\u30C9\u30E9\u30A4\u30D0\u30FC\u3068Windows\u3092\u66F4\u65B0\u3057\u3001\u518D\u8D77\u52D5\u5F8C\u306B\u3082\u3046\u4E00\u5EA6\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+  } else {
+    SELECTORS.desktopStatusTitle.textContent = "CUDA\u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u3092\u6E96\u5099\u3057\u3066\u304F\u3060\u3055\u3044";
+    SELECTORS.desktopStatusMessage.textContent = `${status.nvidia.name}\u3068WSL2 CUDA\u306F\u5229\u7528\u3067\u304D\u307E\u3059\u3002\u521D\u56DE\u306E\u307F\u89E3\u6790\u74B0\u5883\u3092\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u3057\u307E\u3059\u3002`;
+  }
+  SELECTORS.desktopStatusAction.textContent = "NVIDIA\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7";
+};
+var refreshDesktopSystemStatus = async () => {
+  if (!hasServer) return;
+  try {
+    const response = await fetch("/system/status");
+    if (!response.ok) return;
+    renderDesktopSystemStatus(await response.json());
+  } catch {
+  }
+};
+var startDesktopNvidiaSetup = async () => {
+  SELECTORS.desktopStatusAction.disabled = true;
+  try {
+    const current = await fetch("/system/status").then((response2) => response2.json());
+    if (!current.nvidia?.available) {
+      await refreshDesktopSystemStatus();
+      return;
+    }
+    const token = await window.practiceLabDesktop?.getToken();
+    const response = await fetch("/system/setup-nvidia", {
+      method: "POST",
+      headers: token ? { "X-Practice-Lab-Desktop-Token": token } : {}
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || "\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7\u3092\u958B\u59CB\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    SELECTORS.desktopStatusTitle.textContent = "NVIDIA\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7\u3092\u8D77\u52D5\u3057\u307E\u3057\u305F";
+    SELECTORS.desktopStatusMessage.textContent = "\u5225\u30A6\u30A3\u30F3\u30C9\u30A6\u306E\u6848\u5185\u306B\u5F93\u3063\u3066\u304F\u3060\u3055\u3044\u3002\u5B8C\u4E86\u5F8C\u306BPracticeLab\u3092\u518D\u8D77\u52D5\u3057\u307E\u3059\u3002";
+  } catch (error) {
+    await showAlert(error.message, { title: "NVIDIA\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7" });
+  } finally {
+    SELECTORS.desktopStatusAction.disabled = false;
+  }
+};
+var initDesktopUpdates = () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop || !SELECTORS.desktopUpdate) return;
+  let updateReady = false;
+  const renderSettingsUpdateStatus = (status) => {
+    if (!SELECTORS.settingsCheckUpdate || !SELECTORS.settingsUpdateStatus) return;
+    const state = status?.state || "idle";
+    SELECTORS.settingsCheckUpdate.disabled = ["checking", "available", "downloading"].includes(state);
+    SELECTORS.settingsUpdateStatus.hidden = state === "idle";
+    SELECTORS.settingsUpdateStatus.classList.toggle("ok", ["current", "downloaded"].includes(state));
+    SELECTORS.settingsUpdateStatus.classList.toggle("error", state === "error");
+    if (SELECTORS.settingsCheckUpdateLabel) {
+      SELECTORS.settingsCheckUpdateLabel.textContent = state === "downloaded" ? "\u518D\u8D77\u52D5\u3057\u3066\u66F4\u65B0" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D";
+    }
+    if (state === "checking") SELECTORS.settingsUpdateStatus.textContent = "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059\u2026";
+    else if (state === "current") SELECTORS.settingsUpdateStatus.textContent = "\u73FE\u5728\u306E\u30D0\u30FC\u30B8\u30E7\u30F3\u304C\u6700\u65B0\u3067\u3059\u3002";
+    else if (state === "available") SELECTORS.settingsUpdateStatus.textContent = `\u30D0\u30FC\u30B8\u30E7\u30F3 ${status.version} \u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u3044\u307E\u3059\u2026`;
+    else if (state === "downloading") SELECTORS.settingsUpdateStatus.textContent = `\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u3044\u307E\u3059\u2026 ${status.percent || 0}%`;
+    else if (state === "downloaded") SELECTORS.settingsUpdateStatus.textContent = `\u30D0\u30FC\u30B8\u30E7\u30F3 ${status.version} \u306E\u6E96\u5099\u304C\u3067\u304D\u307E\u3057\u305F\u3002`;
+    else if (state === "unsupported") SELECTORS.settingsUpdateStatus.textContent = status.message || "\u958B\u767A\u7248\u3067\u306F\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3002";
+    else if (state === "error") {
+      const message = String(status.message || "");
+      SELECTORS.settingsUpdateStatus.textContent = /404|latest[^\s]*\.yml|no published|release/i.test(message) ? "\u516C\u958B\u6E08\u307F\u306E\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u306F\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u6642\u9593\u3092\u304A\u3044\u3066\u518D\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002";
+    }
+  };
+  desktop.onUpdateStatus((status) => {
+    updateReady = status.state === "downloaded" ? true : updateReady;
+    renderSettingsUpdateStatus(status);
+    if (status.state === "available" || status.state === "downloading") {
+      SELECTORS.desktopUpdate.hidden = false;
+      SELECTORS.desktopUpdate.disabled = true;
+      SELECTORS.desktopUpdate.textContent = status.state === "downloading" ? `\u66F4\u65B0\u3092\u53D6\u5F97\u4E2D ${status.percent || 0}%` : `v${status.version}\u3092\u53D6\u5F97\u4E2D`;
+    } else if (status.state === "downloaded") {
+      SELECTORS.desktopUpdate.hidden = false;
+      SELECTORS.desktopUpdate.disabled = false;
+      SELECTORS.desktopUpdate.textContent = `v${status.version}\u3078\u518D\u8D77\u52D5\u3057\u3066\u66F4\u65B0`;
+    } else if (status.state === "error") {
+      console.warn("Desktop update check failed", status.message);
+    }
+  });
+  SELECTORS.desktopUpdate.addEventListener("click", () => desktop.installUpdate());
+  SELECTORS.settingsCheckUpdate?.addEventListener("click", async () => {
+    if (updateReady) {
+      await desktop.installUpdate();
+      return;
+    }
+    renderSettingsUpdateStatus({ state: "checking" });
+    const result = await desktop.checkForUpdates();
+    if (["error", "unsupported", "current", "downloaded"].includes(result?.state)) renderSettingsUpdateStatus(result);
+  });
+};
+var initDesktopCommands = () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.onCommand) return;
+  desktop.onCommand((command) => {
+    if (command === "new-analysis") {
+      setActiveTab("structure");
+      openAnalysisDialog();
+    } else if (command === "open-audio") {
+      setActiveTab("structure");
+      openAnalysisDialog({ openAudioPicker: true });
+    } else if (command === "open-settings") {
+      void openSettings("general");
+    } else if (command === "about") {
+      void openSettings("about");
+    }
+  });
 };
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
@@ -5680,7 +6361,8 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("click", hideContextMenu);
 SELECTORS.contextMenu?.addEventListener("click", (event) => event.stopPropagation());
-SELECTORS.analyzeBtn.addEventListener("click", () => doAnalyze(SELECTORS.urlInput.value.trim()));
+SELECTORS.analyzeBtn.addEventListener("click", () => doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce));
+SELECTORS.analysisDialogClose?.addEventListener("click", closeAnalysisDialog);
 SELECTORS.analysisTimeMode.addEventListener("change", () => {
   SELECTORS.analysisTimeRange.hidden = SELECTORS.analysisTimeMode.value !== "range";
 });
@@ -5711,6 +6393,24 @@ SELECTORS.inputCard.addEventListener("drop", (event) => {
 SELECTORS.scoreProcessingMode?.addEventListener("change", syncScoreOptionAvailability);
 SELECTORS.btnCloudSync?.addEventListener("click", syncCloudLibrary);
 SELECTORS.btnStorage?.addEventListener("click", openStorageDialog);
+SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
+SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
+SELECTORS.settingsClose?.addEventListener("click", closeSettings);
+SELECTORS.settingsCancel?.addEventListener("click", closeSettings);
+SELECTORS.settingsSave?.addEventListener("click", saveSettings);
+SELECTORS.settingsCloudEnabled?.addEventListener("change", syncCloudFieldsState);
+SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectSettingsSection(button.dataset.settingsSection);
+    if (button.dataset.settingsSection === "analysis") void refreshSettingsAnalysisStatus();
+  });
+});
+SELECTORS.settingsOpenData?.addEventListener("click", () => window.practiceLabDesktop?.openDataFolder());
+SELECTORS.settingsOpenStorage?.addEventListener("click", () => {
+  closeSettings();
+  openStorageDialog();
+});
+SELECTORS.settingsNvidiaSetup?.addEventListener("click", startDesktopNvidiaSetup);
 SELECTORS.storageList?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-storage-clean]");
   if (button) cleanStorageCategory(button.dataset.storageClean);
@@ -5718,12 +6418,107 @@ SELECTORS.storageList?.addEventListener("click", (event) => {
 SELECTORS.btnEditSections?.addEventListener("click", openSectionEditor);
 SELECTORS.btnSaveSections?.addEventListener("click", saveSectionEditor);
 SELECTORS.btnRestoreSections?.addEventListener("click", restoreAutomaticSections);
-SELECTORS.sectionEditorRows?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-section-action]");
-  const row = button?.closest("[data-section-index]");
-  if (!button || !row) return;
-  applySectionDraftAction(Number(row.dataset.sectionIndex), button.dataset.sectionAction);
+SELECTORS.sectionEditorPreview?.addEventListener("click", previewSelectedSection);
+SELECTORS.sectionEditorPlayerToggle?.addEventListener("click", toggleSectionEditorPlayback);
+SELECTORS.sectionEditorScrub?.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  sectionEditorScrubPointerId = event.pointerId;
+  SELECTORS.sectionEditorScrub.setPointerCapture?.(event.pointerId);
+  seekSectionEditorFromClientX(event.clientX);
 });
+SELECTORS.sectionEditorScrub?.addEventListener("pointermove", (event) => {
+  if (sectionEditorScrubPointerId !== event.pointerId) return;
+  seekSectionEditorFromClientX(event.clientX);
+});
+var finishSectionEditorScrub = (event) => {
+  if (sectionEditorScrubPointerId !== event.pointerId) return;
+  sectionEditorScrubPointerId = null;
+  SELECTORS.sectionEditorScrub.releasePointerCapture?.(event.pointerId);
+};
+SELECTORS.sectionEditorScrub?.addEventListener("pointerup", finishSectionEditorScrub);
+SELECTORS.sectionEditorScrub?.addEventListener("pointercancel", finishSectionEditorScrub);
+var handleSectionEditorScrubKey = (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !canPlayAudio()) return;
+  event.preventDefault();
+  const duration = ws?.getDuration?.() || 0;
+  const next = event.key === "Home" ? 0 : event.key === "End" ? duration : ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5);
+  stopSectionEditorPreview({ pause: false });
+  seekAudio(Math.max(0, Math.min(duration, next)), { respectLoopRange: false });
+};
+SELECTORS.sectionEditorScrub?.addEventListener("keydown", handleSectionEditorScrubKey);
+SELECTORS.sectionEditorPlayhead?.addEventListener("keydown", handleSectionEditorScrubKey);
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  sectionEditorPlayheadPointerId = event.pointerId;
+  SELECTORS.sectionEditorPlayhead.classList.add("dragging");
+  SELECTORS.sectionEditorPlayhead.setPointerCapture?.(event.pointerId);
+  seekSectionEditorFromClientX(event.clientX);
+});
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointermove", (event) => {
+  if (sectionEditorPlayheadPointerId !== event.pointerId) return;
+  seekSectionEditorFromClientX(event.clientX);
+});
+var finishSectionEditorPlayheadDrag = (event) => {
+  if (sectionEditorPlayheadPointerId !== event.pointerId) return;
+  sectionEditorPlayheadPointerId = null;
+  SELECTORS.sectionEditorPlayhead.classList.remove("dragging");
+  SELECTORS.sectionEditorPlayhead.releasePointerCapture?.(event.pointerId);
+};
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointerup", finishSectionEditorPlayheadDrag);
+SELECTORS.sectionEditorPlayhead?.addEventListener("pointercancel", finishSectionEditorPlayheadDrag);
+SELECTORS.sectionEditor?.addEventListener("close", () => {
+  sectionEditorScrubPointerId = null;
+  sectionEditorPlayheadPointerId = null;
+  SELECTORS.sectionEditorPlayhead?.classList.remove("dragging");
+  stopSectionEditorPreview();
+});
+SELECTORS.sectionEditor?.addEventListener("click", (event) => {
+  const segment = event.target.closest("[data-section-index]");
+  if (segment && !event.target.closest("[data-boundary-index]")) {
+    stopSectionEditorPreview({ pause: false });
+    syncSectionEditorSelectionFromFields();
+    sectionEditorSelectedIndex = Number(segment.dataset.sectionIndex);
+    renderSectionEditor();
+    return;
+  }
+  const button = event.target.closest("[data-section-action]");
+  if (!button) return;
+  applySectionDraftAction(sectionEditorSelectedIndex, button.dataset.sectionAction);
+});
+SELECTORS.sectionEditorLabel?.addEventListener("change", () => {
+  syncSectionEditorSelectionFromFields();
+  renderSectionEditor();
+});
+SELECTORS.sectionEditorStart?.addEventListener("change", () => updateSectionEditorSelectedBounds("start", Number(SELECTORS.sectionEditorStart.value)));
+SELECTORS.sectionEditorEnd?.addEventListener("change", () => updateSectionEditorSelectedBounds("end", Number(SELECTORS.sectionEditorEnd.value)));
+SELECTORS.sectionEditorRows?.addEventListener("pointerdown", (event) => {
+  const handle = event.target.closest("[data-boundary-index]");
+  if (!handle) return;
+  event.preventDefault();
+  stopSectionEditorPreview({ pause: false });
+  syncSectionEditorSelectionFromFields();
+  sectionEditorBoundaryDrag = { pointerId: event.pointerId, boundaryIndex: Number(handle.dataset.boundaryIndex) };
+  SELECTORS.sectionEditorRows.setPointerCapture?.(event.pointerId);
+  SELECTORS.sectionEditorRows.classList.add("dragging-boundary");
+});
+SELECTORS.sectionEditorRows?.addEventListener("pointermove", (event) => {
+  if (!sectionEditorBoundaryDrag || sectionEditorBoundaryDrag.pointerId !== event.pointerId) return;
+  const rect = SELECTORS.sectionEditorRows.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  updateSectionEditorBoundary(sectionEditorBoundaryDrag.boundaryIndex, ratio * sectionEditorTotalBars());
+  renderSectionEditor();
+});
+var finishSectionEditorBoundaryDrag = (event) => {
+  if (!sectionEditorBoundaryDrag || sectionEditorBoundaryDrag.pointerId !== event.pointerId) return;
+  sectionEditorBoundaryDrag = null;
+  SELECTORS.sectionEditorRows.releasePointerCapture?.(event.pointerId);
+  SELECTORS.sectionEditorRows.classList.remove("dragging-boundary");
+};
+SELECTORS.sectionEditorRows?.addEventListener("pointerup", finishSectionEditorBoundaryDrag);
+SELECTORS.sectionEditorRows?.addEventListener("pointercancel", finishSectionEditorBoundaryDrag);
 SELECTORS.sessionSearch?.addEventListener("input", () => renderSidebar(currentSidebarItems));
 SELECTORS.sessionFilter?.addEventListener("change", () => renderSidebar(currentSidebarItems));
 SELECTORS.sessionSort?.addEventListener("change", () => renderSidebar(currentSidebarItems));
@@ -5795,15 +6590,25 @@ SELECTORS.scoreHistoryList?.addEventListener("keydown", (event) => {
   row.click();
 });
 SELECTORS.urlInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") doAnalyze(SELECTORS.urlInput.value.trim());
+  if (event.key === "Enter") doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce);
 });
+SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopNvidiaSetup);
 lucide.createIcons();
 syncScoreOptionAvailability();
 renderScoreHistory();
 await detectServer();
-await restoreInterruptedJobs();
+if (SELECTORS.btnTopSettings) {
+  SELECTORS.btnTopSettings.hidden = !window.practiceLabDesktop?.getSettings || staticLibraryMode;
+}
+initDesktopUpdates();
+initDesktopCommands();
+await refreshCloudStatus();
 await loadSharedFolders();
-await restoreLastStructureSession(await loadHistory());
+var initialHistory = await loadHistory();
+void refreshDesktopSystemStatus();
+void restoreInterruptedJobs();
+await restoreLastStructureSession(initialHistory);
+void verifySavedCloudSettings();
 /*! Bundled license information:
 
 lucide/dist/esm/createElement.js:
@@ -5829,6 +6634,7 @@ lucide/dist/esm/icons/repeat-2.js:
 lucide/dist/esm/icons/rotate-ccw.js:
 lucide/dist/esm/icons/settings-2.js:
 lucide/dist/esm/icons/skip-back.js:
+lucide/dist/esm/icons/square.js:
 lucide/dist/esm/icons/trash-2.js:
 lucide/dist/esm/icons/upload.js:
 lucide/dist/esm/icons/volume-2.js:
