@@ -63,11 +63,12 @@ fi
 step "アプリの依存パッケージをインストールしています"
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements/app.txt
+.venv/bin/python -m pip install "wheel==0.46.3"
 
 step "Apple Silicon用の解析環境をインストールしています"
 .venv/bin/python -m pip install "torch==2.6.0"
 .venv/bin/python -m pip install "natten==0.17.5" --no-build-isolation
-.venv/bin/python -m pip install "all-in-one-fix==2.0.4" --no-build-isolation
+.venv/bin/python -m pip install "https://github.com/openmirlab/all-in-one-fix/archive/9ba8cac49d441f54e2d89aaefbd44acde8ee2c38.zip" --no-build-isolation
 
 step "環境を確認しています"
 ANALYZER_EXECUTOR=native ANALYZER_DEVICE=auto .venv/bin/python scripts/check_env.py

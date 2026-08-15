@@ -122,6 +122,7 @@ test("同期ラベルをボタン中央に配置する", async ({ page }) => {
 
 test("曲構成と楽譜抽出を切り替えられる", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("#player-card")).toBeVisible();
   await page.getByRole("button", { name: "楽譜抽出", exact: true }).click();
   await expect(page.locator("#score-panel")).toBeVisible();
   await page.getByRole("button", { name: "曲構成", exact: true }).click();
