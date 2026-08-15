@@ -53,21 +53,35 @@ class AnalysisRangeTests(unittest.TestCase):
             captured.update(job_id=job_id, func=func, cleanup=cleanup, metadata=metadata)
             return {"jobId": job_id, "stage": "queued", "message": description}
 
-        with (
-            patch.object(app_module, "ensure_directories"),
-            patch.object(app_module, "bootstrap_public_data"),
-            patch.object(app_module, "export_static_assets"),
-            patch.object(app_module, "submit_queued_job", side_effect=submit),
-        ):
-            client = TestClient(app_module.create_app())
-            response = client.post(
-                "/analyze",
-                json={
-                    "url": "https://www.youtube.com/watch?v=abc123",
-                    "startSec": 30.5,
-                    "endSec": 95,
-                },
-            )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            public_dir = Path(temp_dir) / "public"
+            public_paths = {
+                "PUBLIC_DIR": public_dir,
+                "PUBLIC_AUDIO_DIR": public_dir / "audio",
+                "PUBLIC_VIDEO_DIR": public_dir / "video",
+                "PUBLIC_STEMS_DIR": public_dir / "stems",
+                "PUBLIC_SCORE_DIR": public_dir / "score",
+                "PUBLIC_RESULTS_DIR": public_dir / "results",
+            }
+            for path in public_paths.values():
+                path.mkdir(parents=True, exist_ok=True)
+
+            with (
+                patch.multiple(app_module, **public_paths),
+                patch.object(app_module, "ensure_directories"),
+                patch.object(app_module, "bootstrap_public_data"),
+                patch.object(app_module, "export_static_assets"),
+                patch.object(app_module, "submit_queued_job", side_effect=submit),
+            ):
+                client = TestClient(app_module.create_app())
+                response = client.post(
+                    "/analyze",
+                    json={
+                        "url": "https://www.youtube.com/watch?v=abc123",
+                        "startSec": 30.5,
+                        "endSec": 95,
+                    },
+                )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["jobId"], "abc123-clip-30500-95000")
