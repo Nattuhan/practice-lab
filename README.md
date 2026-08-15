@@ -1,5 +1,7 @@
 # PracticeLab
 
+[プライバシー](PRIVACY.md) · [セキュリティ](SECURITY.md) · [第三者ソフトウェア](THIRD_PARTY_NOTICES.md)
+
 YouTube 音源を解析して、楽曲構成、拍、小節、練習用再生、動画からの譜面画像抽出をまとめて扱うローカル実行ツールです。
 
 主な機能:
