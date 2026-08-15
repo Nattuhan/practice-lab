@@ -98,7 +98,6 @@ jobs:
             desktop/dist/installer/*dependencies*.json
 
   macos-apple-silicon:
-    needs: windows-nvidia
     runs-on: macos-15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
