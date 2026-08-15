@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { filterLibraryItems, sortLibraryItems } from "../src/library.js";
-import { mutateSectionDraft } from "../src/section-editor.js";
+import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor.js";
 import { formatBytes } from "../src/storage.js";
+import { extractWaveformPeaks } from "../src/waveform-peaks.js";
 
 const sessions = [
   { id: "a", title: "Beta", tags: ["ライブ"], date: "2026-01-01", lastPracticedAt: null },
@@ -27,7 +28,29 @@ test("セクションを連続した小節範囲のまま分割・結合でき�
   assert.deepEqual(merged.map(item => [item.startBar, item.endBar]), [[1, 4]]);
 });
 
+test("自動解析の重複と末尾の空白を連続した小節範囲へ補正する", () => {
+  const normalized = normalizeSectionDraft([
+    { label: "start", startBar: 1, endBar: 2 },
+    { label: "verse", startBar: 1, endBar: 8 },
+    { label: "chorus", startBar: 9, endBar: 11 },
+  ], 12);
+
+  assert.deepEqual(normalized.map(section => [section.startBar, section.endBar]), [[1, 2], [3, 8], [9, 12]]);
+});
+
 test("容量を読みやすい単位へ変換する", () => {
   assert.equal(formatBytes(1024), "1.00 KB");
   assert.equal(formatBytes(10 * 1024 * 1024), "10.0 MB");
+});
+
+test("実音源のサンプルから表示用波形を生成する", () => {
+  const channel = Float32Array.from([0, .1, -.2, .4, -.8, .2, -.1, 0]);
+  const peaks = extractWaveformPeaks({
+    numberOfChannels: 1,
+    length: channel.length,
+    getChannelData: () => channel,
+  }, 4);
+  assert.equal(peaks.length, 4);
+  assert.ok(peaks[2] > peaks[0]);
+  assert.equal(Math.max(...peaks), 1);
 });

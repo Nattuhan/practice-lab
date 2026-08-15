@@ -27,6 +27,7 @@ import allin1fix
 import torch
 
 from practice_lab.compute_device import is_acceleration_compatibility_error, select_torch_device
+from practice_lab.jpop_sections import refine_jpop_section_labels
 from practice_lab.timing import normalize_tempo_grid
 
 
@@ -97,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
 
+    sections, jpop_changes = refine_jpop_section_labels(sections)
+
     data = {
         "device": device,
         "bpm": round(float(result.bpm), 1) if result.bpm is not None else 0.0,
@@ -106,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         "beats": beats,
         "downbeats": downbeats,
     }
+    if jpop_changes:
+        data["jpopLabeling"] = {"version": 1, "changes": jpop_changes}
     data = normalize_tempo_grid(data)
     print(json.dumps(data, ensure_ascii=False))
     return 0

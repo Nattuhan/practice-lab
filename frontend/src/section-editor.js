@@ -18,3 +18,19 @@ export const mutateSectionDraft = (draft, index, action) => {
   }
   return next;
 };
+
+export const normalizeSectionDraft = (draft, totalBars) => {
+  const limit = Math.max(0, Math.round(Number(totalBars) || 0));
+  if (!draft.length || limit < 1 || draft.length > limit) return draft.map(section => ({ ...section }));
+
+  let nextStart = 1;
+  return draft.map((section, index) => {
+    const remaining = draft.length - index - 1;
+    const maxEnd = limit - remaining;
+    const rawEnd = Math.round(Number(section.endBar) || nextStart);
+    const endBar = index === draft.length - 1 ? limit : Math.max(nextStart, Math.min(maxEnd, rawEnd));
+    const normalized = { ...section, startBar: nextStart, endBar };
+    nextStart = endBar + 1;
+    return normalized;
+  });
+};

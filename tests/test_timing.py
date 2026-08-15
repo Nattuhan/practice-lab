@@ -1,9 +1,24 @@
 import unittest
 
-from practice_lab.timing import normalize_tempo_grid
+from practice_lab.timing import normalize_section_bar_ranges, normalize_tempo_grid
 
 
 class TempoGridNormalizationTests(unittest.TestCase):
+    def test_repairs_overlaps_gaps_and_the_trailing_range_without_changing_times(self):
+        sections = [
+            {"label": "start", "start_bar": 1, "end_bar": 2, "start_time": 0.0, "end_time": 3.0},
+            {"label": "verse", "start_bar": 1, "end_bar": 8, "start_time": 3.0, "end_time": 18.0},
+            {"label": "chorus", "start_bar": 10, "end_bar": 11, "start_time": 18.0, "end_time": 24.0},
+        ]
+
+        adjusted = normalize_section_bar_ranges(sections, 12)
+
+        self.assertEqual(
+            [(section["start_bar"], section["end_bar"], section["bar_count"]) for section in adjusted],
+            [(1, 2, 2), (3, 8, 6), (9, 12, 4)],
+        )
+        self.assertEqual([(section["start_time"], section["end_time"]) for section in adjusted], [(0.0, 3.0), (3.0, 18.0), (18.0, 24.0)])
+
     def test_promotes_half_time_bpm_when_sustained_double_time_beats_are_present(self):
         beats = [round(index * 0.68, 3) for index in range(12)]
         transition = beats[-1]
@@ -58,7 +73,8 @@ class TempoGridNormalizationTests(unittest.TestCase):
         self.assertEqual(adjusted["beats"][:5], [2.99, 3.6, 4.21, 4.82, 5.43])
         self.assertEqual(adjusted["downbeats"][:4], [2.99, 5.43, 7.87, 10.31])
         self.assertEqual(adjusted["beats"][14:17], [11.53, 12.14, 12.75])
-        self.assertEqual(adjusted["sections"][1]["start_bar"], 1)
+        self.assertEqual(adjusted["sections"][0]["start_bar"], 1)
+        self.assertEqual(adjusted["sections"][1]["start_bar"], adjusted["sections"][0]["end_bar"] + 1)
 
     def test_does_not_flatten_a_short_tempo_change_later_in_song(self):
         beats = [round(index * 0.9, 2) for index in range(40)]

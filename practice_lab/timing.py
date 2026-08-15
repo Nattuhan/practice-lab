@@ -131,6 +131,28 @@ def _repair_sparse_leading_grid(data: dict) -> dict:
     return adjusted
 
 
+def normalize_section_bar_ranges(sections: list[dict], total_bars: int) -> list[dict]:
+    if not sections or total_bars < 1:
+        return [dict(section) for section in sections]
+    if len(sections) > total_bars:
+        return [dict(section) for section in sections]
+
+    normalized = []
+    next_start = 1
+    for index, section in enumerate(sections):
+        remaining = len(sections) - index - 1
+        max_end = total_bars - remaining
+        raw_end = int(section.get("end_bar") or next_start)
+        end_bar = total_bars if index == len(sections) - 1 else max(next_start, min(max_end, raw_end))
+        adjusted = dict(section)
+        adjusted["start_bar"] = next_start
+        adjusted["end_bar"] = end_bar
+        adjusted["bar_count"] = end_bar - next_start + 1
+        normalized.append(adjusted)
+        next_start = end_bar + 1
+    return normalized
+
+
 def bars_from_sections(sections: list[dict], downbeats: list[float]) -> list[dict]:
     def time_to_bar(value: float) -> int:
         for index, downbeat in enumerate(downbeats):
@@ -147,7 +169,7 @@ def bars_from_sections(sections: list[dict], downbeats: list[float]) -> list[dic
         adjusted["end_bar"] = end_bar
         adjusted["bar_count"] = end_bar - start_bar + 1
         adjusted_sections.append(adjusted)
-    return adjusted_sections
+    return normalize_section_bar_ranges(adjusted_sections, len(downbeats))
 
 
 def normalize_tempo_grid(data: dict) -> dict:
