@@ -35,6 +35,7 @@
   "build": {
     "appId": "jp.nattuhan.practicelab",
     "productName": "PracticeLab",
+    "afterPack": "scripts/after-pack.cjs",
     "asar": true,
     "directories": {
       "output": "desktop/dist/installer"
@@ -114,7 +115,7 @@
       "hardenedRuntime": false,
       "notarize": false,
       "minimumSystemVersion": "12.0.0",
-      "artifactName": "PracticeLab-${version}-${arch}-unsigned.${ext}"
+      "artifactName": "PracticeLab-${version}-${arch}.${ext}"
     },
     "dmg": {
       "sign": false
