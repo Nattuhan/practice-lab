@@ -39,15 +39,14 @@ npm run desktop:dist -- --publish=never
 `.github/workflows/release-desktop.yml`は手動実行時に未公開インストーラーをArtifactとして作成します。
 `v1.2.3`形式のタグをpushすると、タグ番号をアプリのバージョンへ設定し、GitHub Releaseへ次を公開します。
 
-- `PracticeLab-Setup-1.2.3.exe`
+- `PracticeLab-Setup-1.2.3-unsigned.exe`
 - `latest.yml`
-- 差分更新用の`.blockmap`
+- Windows差分更新用の`.exe.blockmap`
 - `PracticeLab-1.2.3-arm64.dmg`
-- `PracticeLab-1.2.3-arm64.zip`
-- `latest-mac.yml`
 
-デスクトップアプリは起動後にGitHub Releasesを確認し、新版を取得します。ダウンロード完了後、
-画面上の更新ボタンから再起動して適用できます。
+Windows版は起動後にGitHub Releasesを確認し、新版を取得します。ダウンロード完了後、
+画面上の更新ボタンから再起動して適用できます。Mac版はGitHub Releaseから新しいDMGを
+取得して手動で入れ替えます。
 
 ## Windowsコード署名
 

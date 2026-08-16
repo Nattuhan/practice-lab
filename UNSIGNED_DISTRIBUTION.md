@@ -1,10 +1,10 @@
 # PracticeLab 無料配布版
 
-PracticeLabは、有料のコード署名証明書を使用しない無料配布ソフトウェアです。ダウンロード後は、同じReleaseに掲載された`SHA256SUMS.txt`でファイルのSHA-256を確認できます。
+PracticeLabは、有料のコード署名証明書を使用しない無料配布ソフトウェアです。GitHub Releaseに表示されるSHA-256ダイジェストで、ダウンロードしたファイルの整合性を確認できます。
 
 ## Windows
 
-`PracticeLab-Setup-*-unsigned.exe`を使用してください。初回起動時にMicrosoft Defender SmartScreenが「認識されないアプリ」として警告する場合があります。発行元は「不明な発行元」と表示されます。GitHubのこの公式リポジトリから入手したファイルで、SHA-256が一致することを確認した場合だけ実行してください。
+`PracticeLab-Setup-*-unsigned.exe`を使用してください。初回起動時にMicrosoft Defender SmartScreenが「認識されないアプリ」として警告する場合があります。発行元は「不明な発行元」と表示されます。GitHubのこの公式リポジトリから入手したファイルであることを確認した場合だけ実行してください。Windows版は自動更新に対応します。
 
 ## Mac
 
