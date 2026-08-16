@@ -9,14 +9,19 @@ export const createAppDialog = elements => {
     confirmLabel = "OK",
     cancelLabel = "キャンセル",
     danger = false,
+    inputType = "text",
+    readOnly = false,
   }) => new Promise(resolve => {
     const previouslyFocused = document.activeElement;
     elements.title.textContent = title;
     elements.message.textContent = message || "";
     elements.message.hidden = !message;
-    elements.inputWrap.hidden = type !== "prompt";
+    const hasInput = type === "prompt" || type === "reveal";
+    elements.inputWrap.hidden = !hasInput;
+    elements.input.type = inputType;
+    elements.input.readOnly = readOnly;
     elements.input.value = defaultValue;
-    elements.cancel.hidden = type === "alert";
+    elements.cancel.hidden = type === "alert" || type === "reveal";
     elements.cancel.textContent = cancelLabel;
     elements.confirm.textContent = confirmLabel;
     elements.confirm.classList.toggle("danger", danger);
@@ -28,6 +33,8 @@ export const createAppDialog = elements => {
       elements.dialog.removeEventListener("close", finish);
       elements.dialog.removeEventListener("cancel", handleCancel);
       previouslyFocused?.focus?.();
+      elements.input.type = "text";
+      elements.input.readOnly = false;
       if (type === "prompt") resolve(accepted ? elements.input.value : null);
       else resolve(type === "alert" ? undefined : accepted);
     };
@@ -41,7 +48,7 @@ export const createAppDialog = elements => {
     elements.dialog.returnValue = "cancel";
     elements.dialog.showModal();
     requestAnimationFrame(() => {
-      if (type === "prompt") {
+      if (hasInput) {
         elements.input.focus();
         elements.input.select();
       } else {
@@ -78,6 +85,17 @@ export const createAppDialog = elements => {
       defaultValue,
       confirmLabel: options.confirmLabel || "保存",
       cancelLabel: options.cancelLabel || "キャンセル",
+      inputType: options.inputType || "text",
+      readOnly: options.readOnly || false,
+    }),
+    reveal: (message, value, options = {}) => enqueue({
+      type: "reveal",
+      title: options.title || "確認",
+      message,
+      defaultValue: value,
+      confirmLabel: options.confirmLabel || "閉じる",
+      inputType: "text",
+      readOnly: true,
     }),
   };
 };

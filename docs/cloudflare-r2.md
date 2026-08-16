@@ -19,6 +19,20 @@ to other devices. Per-device playback volume and playback position remain
 local. Without a configured bucket the action opens the cloud-integration
 settings instead.
 
+## Add another device securely
+
+The desktop settings can export the saved R2 connection as a
+`.practicelab-link` file. The file contains the bucket settings and S3
+credentials encrypted with scrypt and AES-256-GCM. PracticeLab displays a
+separate 128-bit decryption code after saving the file. Transfer the file and
+code through separate channels, import them on the other device, and remove
+the transfer file after a successful import. The imported secret is then
+stored with Electron `safeStorage` on that device.
+
+The transfer file does not create a new Cloudflare token. Both devices use
+the same scoped R2 token until the user rotates it in Cloudflare. For stronger
+per-device revocation, create separate bucket-scoped R2 tokens instead.
+
 The environment-variable setup below remains available for source development
 and automation scripts.
 

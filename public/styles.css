@@ -3369,6 +3369,10 @@ input[type="range"] { accent-color: var(--orange); }
 .settings-group > .settings-update-status.error { color: #fca5a5; background: rgba(248, 113, 113, .07); }
 .settings-status-card, .settings-cloud-state { margin: 12px 0; padding: 12px; border: 1px solid rgba(255, 255, 255, .075); border-radius: 9px; color: var(--gray-7); background: rgba(0, 0, 0, .16); font-size: 11px; }
 .settings-status-card.ok, .settings-cloud-state.ok { border-color: rgba(52, 211, 153, .2); color: var(--green); background: rgba(52, 211, 153, .055); }
+.cloud-device-transfer { margin-top: 18px; }
+.cloud-device-transfer > small { display: block; margin-top: 12px; color: var(--gray-5); font-size: 10px; line-height: 1.55; }
+.settings-inline-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-inline-actions .settings-secondary { min-height: 38px; }
 .cloud-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; padding: 2px; }
 .cloud-fields.disabled { opacity: .42; pointer-events: none; }
 .settings-field { display: flex; flex-direction: column; gap: 6px; color: var(--gray-7); font-size: 10px; font-weight: 700; }

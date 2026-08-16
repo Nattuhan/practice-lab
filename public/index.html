@@ -535,6 +535,15 @@
             <details class="settings-advanced"><summary>詳細設定</summary><label class="settings-field"><span>S3互換エンドポイント</span><input id="settings-cloud-endpoint" type="url" autocomplete="off" placeholder="通常は空欄で構いません"></label></details>
           </div>
           <div class="settings-cloud-state" id="settings-cloud-state"></div>
+          <div class="settings-group cloud-device-transfer">
+            <h3>別の端末を接続</h3>
+            <p>保存済みのR2設定を、復号コード付きの暗号化ファイルとして別のWindows PCやMacへ移せます。</p>
+            <div class="settings-inline-actions">
+              <button class="settings-secondary" id="settings-cloud-export" type="button"><i data-lucide="file-lock-2"></i>接続ファイルを書き出す</button>
+              <button class="settings-secondary" id="settings-cloud-import" type="button"><i data-lucide="file-key-2"></i>接続ファイルを読み込む</button>
+            </div>
+            <small>接続ファイルと復号コードは別々に渡してください。読み込み後は接続ファイルを削除できます。</small>
+          </div>
         </section>
 
         <section class="settings-section" data-settings-panel="storage">

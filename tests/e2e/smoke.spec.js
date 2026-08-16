@@ -382,6 +382,61 @@ test("デスクトップ設定で利用者ごとのクラウド連携を編集�
   await expect(settings.getByText("自分のCloudflare R2と連携")).toBeVisible();
   await settings.getByRole("checkbox", { name: /クラウド連携を有効/ }).check();
   await expect(settings.getByLabel("R2 バケット名")).toBeEnabled();
+  await expect(settings.getByRole("button", { name: "接続ファイルを書き出す" })).toBeDisabled();
+  await expect(settings.getByRole("button", { name: "接続ファイルを読み込む" })).toBeEnabled();
+});
+
+test("暗号化接続ファイルを書き出して別端末の設定を読み込める", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__importedCloudConnection = null;
+    window.practiceLabDesktop = {
+      getSettings: async () => ({
+        autoUpdate: true,
+        dataPath: "C:\\Users\\tester\\AppData\\Local\\PracticeLab",
+        version: "1.0.0",
+        cloud: { enabled: true, bucket: "practice-lab", prefix: "sessions", hasSecret: true },
+      }),
+      exportCloudConnection: async () => ({
+        canceled: false,
+        fileName: "PracticeLab-connection.practicelab-link",
+        code: "0123-4567-89AB-CDEF-0123-4567-89AB-CDEF",
+      }),
+      chooseCloudConnection: async () => ({
+        canceled: false,
+        selectionId: "selection-1",
+        fileName: "PracticeLab-connection.practicelab-link",
+      }),
+      importCloudConnection: async payload => {
+        window.__importedCloudConnection = structuredClone(payload);
+        return { autoUpdate: true, cloud: { enabled: true, hasSecret: true } };
+      },
+      saveSettings: async settings => settings,
+      openDataFolder: async () => "",
+      checkForUpdates: async () => true,
+      onUpdateStatus: () => () => {},
+      onCommand: () => () => {},
+    };
+  });
+  await page.goto("/");
+  await page.locator("#btn-top-settings").click();
+  const settings = page.locator("#settings-dialog");
+  await settings.getByRole("button", { name: "クラウド連携" }).click();
+
+  await settings.getByRole("button", { name: "接続ファイルを書き出す" }).click();
+  const reveal = page.getByRole("dialog", { name: "接続ファイルを保存しました" });
+  await expect(reveal.locator("input")).toHaveValue("0123-4567-89AB-CDEF-0123-4567-89AB-CDEF");
+  await expect(reveal.locator("input")).toHaveAttribute("readonly", "");
+  await reveal.locator("#app-dialog-confirm").click();
+
+  await settings.getByRole("button", { name: "接続ファイルを読み込む" }).click();
+  const importDialog = page.getByRole("dialog", { name: "接続ファイルを読み込む" });
+  await expect(importDialog.locator("input")).toHaveAttribute("type", "password");
+  await importDialog.locator("input").fill("0123-4567-89AB-CDEF-0123-4567-89AB-CDEF");
+  await importDialog.getByRole("button", { name: "読み込む" }).click();
+  await expect.poll(() => page.evaluate(() => window.__importedCloudConnection)).toEqual({
+    selectionId: "selection-1",
+    code: "0123-4567-89AB-CDEF-0123-4567-89AB-CDEF",
+  });
 });
 
 test("デスクトップの再生設定を固定保存先から復元して変更を保存する", async ({ page }) => {

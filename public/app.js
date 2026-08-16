@@ -2139,15 +2139,20 @@ var createAppDialog = (elements) => {
     defaultValue = "",
     confirmLabel = "OK",
     cancelLabel = "\u30AD\u30E3\u30F3\u30BB\u30EB",
-    danger = false
+    danger = false,
+    inputType = "text",
+    readOnly = false
   }) => new Promise((resolve) => {
     const previouslyFocused = document.activeElement;
     elements.title.textContent = title;
     elements.message.textContent = message || "";
     elements.message.hidden = !message;
-    elements.inputWrap.hidden = type !== "prompt";
+    const hasInput = type === "prompt" || type === "reveal";
+    elements.inputWrap.hidden = !hasInput;
+    elements.input.type = inputType;
+    elements.input.readOnly = readOnly;
     elements.input.value = defaultValue;
-    elements.cancel.hidden = type === "alert";
+    elements.cancel.hidden = type === "alert" || type === "reveal";
     elements.cancel.textContent = cancelLabel;
     elements.confirm.textContent = confirmLabel;
     elements.confirm.classList.toggle("danger", danger);
@@ -2158,6 +2163,8 @@ var createAppDialog = (elements) => {
       elements.dialog.removeEventListener("close", finish);
       elements.dialog.removeEventListener("cancel", handleCancel);
       previouslyFocused?.focus?.();
+      elements.input.type = "text";
+      elements.input.readOnly = false;
       if (type === "prompt") resolve(accepted ? elements.input.value : null);
       else resolve(type === "alert" ? void 0 : accepted);
     };
@@ -2170,7 +2177,7 @@ var createAppDialog = (elements) => {
     elements.dialog.returnValue = "cancel";
     elements.dialog.showModal();
     requestAnimationFrame(() => {
-      if (type === "prompt") {
+      if (hasInput) {
         elements.input.focus();
         elements.input.select();
       } else {
@@ -2205,7 +2212,18 @@ var createAppDialog = (elements) => {
       message,
       defaultValue,
       confirmLabel: options.confirmLabel || "\u4FDD\u5B58",
-      cancelLabel: options.cancelLabel || "\u30AD\u30E3\u30F3\u30BB\u30EB"
+      cancelLabel: options.cancelLabel || "\u30AD\u30E3\u30F3\u30BB\u30EB",
+      inputType: options.inputType || "text",
+      readOnly: options.readOnly || false
+    }),
+    reveal: (message, value, options = {}) => enqueue({
+      type: "reveal",
+      title: options.title || "\u78BA\u8A8D",
+      message,
+      defaultValue: value,
+      confirmLabel: options.confirmLabel || "\u9589\u3058\u308B",
+      inputType: "text",
+      readOnly: true
     })
   };
 };
@@ -2383,6 +2401,8 @@ var SELECTORS = {
   settingsCloudPrefix: document.getElementById("settings-cloud-prefix"),
   settingsCloudEndpoint: document.getElementById("settings-cloud-endpoint"),
   settingsCloudState: document.getElementById("settings-cloud-state"),
+  settingsCloudExport: document.getElementById("settings-cloud-export"),
+  settingsCloudImport: document.getElementById("settings-cloud-import"),
   settingsOpenStorage: document.getElementById("settings-open-storage"),
   settingsVersion: document.getElementById("settings-version"),
   settingsCheckUpdate: document.getElementById("settings-check-update"),
@@ -2575,6 +2595,7 @@ var appDialog = createAppDialog({
 var showAlert = (message, options) => appDialog.alert(message, options);
 var showConfirm = (message, options) => appDialog.confirm(message, options);
 var showPrompt = (message, defaultValue, options) => appDialog.prompt(message, defaultValue, options);
+var showReveal = (message, value, options) => appDialog.reveal(message, value, options);
 var setScoreFeatureVisible = (visible) => {
   SELECTORS.tabScore.hidden = !visible;
   SELECTORS.scorePanel.hidden = true;
@@ -4536,6 +4557,8 @@ var openSettings = async (section = "general") => {
   SELECTORS.settingsCloudEndpoint.value = cloud.endpointUrl || "";
   SELECTORS.settingsCloudState.className = `settings-cloud-state${cloudStatus.configured ? " ok" : ""}`;
   SELECTORS.settingsCloudState.textContent = cloudStatus.configured ? `${cloudStatus.bucket || "R2"}\u3068\u9023\u643A\u6E08\u307F${cloudStatus.viewerUrl ? ` \xB7 ${cloudStatus.viewerUrl}` : ""}` : "\u672A\u9023\u643A\u3067\u3059\u3002\u8A2D\u5B9A\u306F\u5229\u7528\u8005\u3054\u3068\u306B\u3053\u306EPC\u3078\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002";
+  SELECTORS.settingsCloudExport.disabled = !cloud.enabled || !cloud.hasSecret;
+  SELECTORS.settingsCloudExport.title = cloud.enabled && cloud.hasSecret ? "\u4FDD\u5B58\u6E08\u307F\u306E\u30AF\u30E9\u30A6\u30C9\u9023\u643A\u8A2D\u5B9A\u3092\u66F8\u304D\u51FA\u3059" : "\u5148\u306B\u30AF\u30E9\u30A6\u30C9\u9023\u643A\u8A2D\u5B9A\u3092\u4FDD\u5B58\u3057\u3066\u304F\u3060\u3055\u3044";
   SELECTORS.settingsSaveStatus.textContent = "";
   syncCloudFieldsState();
   selectSettingsSection(section);
@@ -4576,6 +4599,55 @@ var saveSettings = async () => {
     localStorage.removeItem("practice_lab_settings_saved");
   } finally {
     SELECTORS.settingsSave.disabled = false;
+  }
+};
+var exportCloudConnection = async () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.exportCloudConnection) return;
+  SELECTORS.settingsCloudExport.disabled = true;
+  SELECTORS.settingsSaveStatus.textContent = "\u6697\u53F7\u5316\u63A5\u7D9A\u30D5\u30A1\u30A4\u30EB\u3092\u6E96\u5099\u3057\u3066\u3044\u307E\u3059...";
+  try {
+    const exported = await desktop.exportCloudConnection();
+    if (exported.canceled) {
+      SELECTORS.settingsSaveStatus.textContent = "";
+      return;
+    }
+    SELECTORS.settingsSaveStatus.textContent = `${exported.fileName}\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002`;
+    await showReveal(
+      `\u3053\u306E\u5FA9\u53F7\u30B3\u30FC\u30C9\u3092Mac\u3067\u5165\u529B\u3057\u307E\u3059\u3002\u63A5\u7D9A\u30D5\u30A1\u30A4\u30EB\u3068\u306F\u5225\u306E\u65B9\u6CD5\u3067\u6E21\u3057\u3001\u8AAD\u307F\u8FBC\u307F\u5F8C\u306F\u30D5\u30A1\u30A4\u30EB\u3092\u524A\u9664\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+      exported.code,
+      { title: "\u63A5\u7D9A\u30D5\u30A1\u30A4\u30EB\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", confirmLabel: "\u9589\u3058\u308B" }
+    );
+  } catch (error) {
+    SELECTORS.settingsSaveStatus.textContent = error.message;
+  } finally {
+    SELECTORS.settingsCloudExport.disabled = !desktopSettings?.cloud?.enabled || !desktopSettings?.cloud?.hasSecret;
+  }
+};
+var importCloudConnection = async () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.chooseCloudConnection || !desktop?.importCloudConnection) return;
+  SELECTORS.settingsCloudImport.disabled = true;
+  SELECTORS.settingsSaveStatus.textContent = "";
+  try {
+    const selected = await desktop.chooseCloudConnection();
+    if (selected.canceled) return;
+    const code = await showPrompt(
+      `${selected.fileName}\u306E\u66F8\u304D\u51FA\u3057\u5143\u306B\u8868\u793A\u3055\u308C\u305F\u5FA9\u53F7\u30B3\u30FC\u30C9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+      "",
+      { title: "\u63A5\u7D9A\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u307F\u8FBC\u3080", confirmLabel: "\u8AAD\u307F\u8FBC\u3080", inputType: "password" }
+    );
+    if (code === null) return;
+    SELECTORS.settingsSaveStatus.textContent = "\u63A5\u7D9A\u60C5\u5831\u3092\u5FA9\u53F7\u3057\u3066\u4FDD\u5B58\u3057\u3066\u3044\u307E\u3059...";
+    localStorage.setItem("practice_lab_settings_saved", "test-cloud");
+    desktopSettings = await desktop.importCloudConnection({ selectionId: selected.selectionId, code });
+    SELECTORS.settingsSaveStatus.textContent = "\u63A5\u7D9A\u60C5\u5831\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002\u8A2D\u5B9A\u3092\u53CD\u6620\u3057\u307E\u3059...";
+    setTimeout(closeSettings, 150);
+  } catch (error) {
+    localStorage.removeItem("practice_lab_settings_saved");
+    SELECTORS.settingsSaveStatus.textContent = error.message;
+  } finally {
+    SELECTORS.settingsCloudImport.disabled = false;
   }
 };
 var verifySavedCloudSettings = async () => {
@@ -6436,6 +6508,8 @@ SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);
 SELECTORS.settingsCancel?.addEventListener("click", closeSettings);
 SELECTORS.settingsSave?.addEventListener("click", saveSettings);
+SELECTORS.settingsCloudExport?.addEventListener("click", exportCloudConnection);
+SELECTORS.settingsCloudImport?.addEventListener("click", importCloudConnection);
 SELECTORS.settingsCloudEnabled?.addEventListener("change", syncCloudFieldsState);
 SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach((button) => {
   button.addEventListener("click", () => {

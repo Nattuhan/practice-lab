@@ -79,6 +79,8 @@ const SELECTORS = {
   settingsCloudPrefix: document.getElementById("settings-cloud-prefix"),
   settingsCloudEndpoint: document.getElementById("settings-cloud-endpoint"),
   settingsCloudState: document.getElementById("settings-cloud-state"),
+  settingsCloudExport: document.getElementById("settings-cloud-export"),
+  settingsCloudImport: document.getElementById("settings-cloud-import"),
   settingsOpenStorage: document.getElementById("settings-open-storage"),
   settingsVersion: document.getElementById("settings-version"),
   settingsCheckUpdate: document.getElementById("settings-check-update"),
@@ -272,6 +274,7 @@ const appDialog = createAppDialog({
 const showAlert = (message, options) => appDialog.alert(message, options);
 const showConfirm = (message, options) => appDialog.confirm(message, options);
 const showPrompt = (message, defaultValue, options) => appDialog.prompt(message, defaultValue, options);
+const showReveal = (message, value, options) => appDialog.reveal(message, value, options);
 
 const setScoreFeatureVisible = visible => {
   SELECTORS.tabScore.hidden = !visible;
@@ -2454,6 +2457,10 @@ const openSettings = async (section = "general") => {
   SELECTORS.settingsCloudState.textContent = cloudStatus.configured
     ? `${cloudStatus.bucket || "R2"}と連携済み${cloudStatus.viewerUrl ? ` · ${cloudStatus.viewerUrl}` : ""}`
     : "未連携です。設定は利用者ごとにこのPCへ保存されます。";
+  SELECTORS.settingsCloudExport.disabled = !cloud.enabled || !cloud.hasSecret;
+  SELECTORS.settingsCloudExport.title = cloud.enabled && cloud.hasSecret
+    ? "保存済みのクラウド連携設定を書き出す"
+    : "先にクラウド連携設定を保存してください";
   SELECTORS.settingsSaveStatus.textContent = "";
   syncCloudFieldsState();
   selectSettingsSection(section);
@@ -2496,6 +2503,57 @@ const saveSettings = async () => {
     localStorage.removeItem("practice_lab_settings_saved");
   } finally {
     SELECTORS.settingsSave.disabled = false;
+  }
+};
+
+const exportCloudConnection = async () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.exportCloudConnection) return;
+  SELECTORS.settingsCloudExport.disabled = true;
+  SELECTORS.settingsSaveStatus.textContent = "暗号化接続ファイルを準備しています...";
+  try {
+    const exported = await desktop.exportCloudConnection();
+    if (exported.canceled) {
+      SELECTORS.settingsSaveStatus.textContent = "";
+      return;
+    }
+    SELECTORS.settingsSaveStatus.textContent = `${exported.fileName}を保存しました。`;
+    await showReveal(
+      `この復号コードをMacで入力します。接続ファイルとは別の方法で渡し、読み込み後はファイルを削除してください。`,
+      exported.code,
+      { title: "接続ファイルを保存しました", confirmLabel: "閉じる" },
+    );
+  } catch (error) {
+    SELECTORS.settingsSaveStatus.textContent = error.message;
+  } finally {
+    SELECTORS.settingsCloudExport.disabled = !desktopSettings?.cloud?.enabled || !desktopSettings?.cloud?.hasSecret;
+  }
+};
+
+const importCloudConnection = async () => {
+  const desktop = window.practiceLabDesktop;
+  if (!desktop?.chooseCloudConnection || !desktop?.importCloudConnection) return;
+  SELECTORS.settingsCloudImport.disabled = true;
+  SELECTORS.settingsSaveStatus.textContent = "";
+  try {
+    const selected = await desktop.chooseCloudConnection();
+    if (selected.canceled) return;
+    const code = await showPrompt(
+      `${selected.fileName}の書き出し元に表示された復号コードを入力してください。`,
+      "",
+      { title: "接続ファイルを読み込む", confirmLabel: "読み込む", inputType: "password" },
+    );
+    if (code === null) return;
+    SELECTORS.settingsSaveStatus.textContent = "接続情報を復号して保存しています...";
+    localStorage.setItem("practice_lab_settings_saved", "test-cloud");
+    desktopSettings = await desktop.importCloudConnection({ selectionId: selected.selectionId, code });
+    SELECTORS.settingsSaveStatus.textContent = "接続情報を保存しました。設定を反映します...";
+    setTimeout(closeSettings, 150);
+  } catch (error) {
+    localStorage.removeItem("practice_lab_settings_saved");
+    SELECTORS.settingsSaveStatus.textContent = error.message;
+  } finally {
+    SELECTORS.settingsCloudImport.disabled = false;
   }
 };
 
@@ -4488,6 +4546,8 @@ SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);
 SELECTORS.settingsCancel?.addEventListener("click", closeSettings);
 SELECTORS.settingsSave?.addEventListener("click", saveSettings);
+SELECTORS.settingsCloudExport?.addEventListener("click", exportCloudConnection);
+SELECTORS.settingsCloudImport?.addEventListener("click", importCloudConnection);
 SELECTORS.settingsCloudEnabled?.addEventListener("change", syncCloudFieldsState);
 SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach(button => {
   button.addEventListener("click", () => {

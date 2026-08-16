@@ -6,6 +6,11 @@ const path = require("path");
 const os = require("os");
 const { spawn } = require("child_process");
 const { randomBytes } = require("crypto");
+const {
+  MAX_FILE_BYTES: MAX_CONNECTION_FILE_BYTES,
+  createConnectionFile,
+  openConnectionFile,
+} = require("./cloud-connection-transfer.cjs");
 const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require("./legacy-cloud-settings.cjs");
 const { sanitizePlayerSettings } = require("./player-settings.cjs");
 const { RELEASES_LATEST_URL, getUpdateMode } = require("./update-policy.cjs");
@@ -15,6 +20,7 @@ let backend = null;
 let backendUrl = null;
 let updateDownloaded = false;
 const desktopToken = randomBytes(32).toString("hex");
+const selectedConnectionFiles = new Map();
 
 const defaultDesktopSettings = Object.freeze({
   autoUpdate: true,
@@ -540,6 +546,80 @@ ipcMain.handle("desktop:get-settings", event => {
 ipcMain.handle("desktop:save-settings", (event, payload) => {
   requireTrustedIpc(event);
   const saved = writeDesktopSettings(payload);
+  setTimeout(() => restartBackend().catch(error => {
+    dialog.showErrorBox("設定を反映できませんでした", error.stack || error.message);
+  }), 350);
+  return saved;
+});
+ipcMain.handle("desktop:export-cloud-connection", async event => {
+  requireTrustedIpc(event);
+  const settings = readDesktopSettings();
+  const secret = readDesktopSecrets().r2SecretAccessKey;
+  if (!settings.cloud.enabled || !secret) throw new Error("先に有効なクラウド連携設定を保存してください");
+  const selected = await dialog.showSaveDialog(mainWindow, {
+    title: "別の端末用の接続ファイルを保存",
+    defaultPath: path.join(app.getPath("documents"), "PracticeLab-connection.practicelab-link"),
+    filters: [
+      { name: "PracticeLab接続ファイル", extensions: ["practicelab-link"] },
+    ],
+  });
+  if (selected.canceled || !selected.filePath) return { canceled: true };
+  const filePath = selected.filePath.toLowerCase().endsWith(".practicelab-link")
+    ? selected.filePath
+    : `${selected.filePath}.practicelab-link`;
+  if (filePath !== selected.filePath && fs.existsSync(filePath)) {
+    throw new Error("同名の接続ファイルがあります。別の名前を指定してください");
+  }
+  const exported = createConnectionFile({ ...settings.cloud, secretAccessKey: secret });
+  fs.writeFileSync(filePath, exported.contents, { encoding: "utf8", mode: 0o600 });
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {}
+  return {
+    canceled: false,
+    fileName: path.basename(filePath),
+    code: exported.code,
+  };
+});
+ipcMain.handle("desktop:choose-cloud-connection", async event => {
+  requireTrustedIpc(event);
+  const selected = await dialog.showOpenDialog(mainWindow, {
+    title: "PracticeLab接続ファイルを選択",
+    properties: ["openFile"],
+    filters: [
+      { name: "PracticeLab接続ファイル", extensions: ["practicelab-link"] },
+    ],
+  });
+  if (selected.canceled || selected.filePaths.length !== 1) return { canceled: true };
+  const filePath = selected.filePaths[0];
+  if (!filePath.toLowerCase().endsWith(".practicelab-link")) throw new Error("PracticeLab接続ファイルを選択してください");
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_CONNECTION_FILE_BYTES) {
+    throw new Error("接続ファイルのサイズが正しくありません");
+  }
+  const now = Date.now();
+  for (const [id, item] of selectedConnectionFiles) {
+    if (item.expiresAt <= now) selectedConnectionFiles.delete(id);
+  }
+  const selectionId = randomBytes(24).toString("hex");
+  selectedConnectionFiles.set(selectionId, { filePath, expiresAt: now + 10 * 60 * 1000 });
+  return { canceled: false, selectionId, fileName: path.basename(filePath) };
+});
+ipcMain.handle("desktop:import-cloud-connection", (event, payload = {}) => {
+  requireTrustedIpc(event);
+  const selectionId = String(payload.selectionId || "");
+  const selected = selectedConnectionFiles.get(selectionId);
+  if (!selected || selected.expiresAt <= Date.now()) {
+    selectedConnectionFiles.delete(selectionId);
+    throw new Error("接続ファイルをもう一度選択してください");
+  }
+  const contents = fs.readFileSync(selected.filePath, "utf8");
+  const cloud = openConnectionFile(contents, payload.code);
+  selectedConnectionFiles.delete(selectionId);
+  const saved = writeDesktopSettings({
+    autoUpdate: readDesktopSettings().autoUpdate,
+    cloud,
+  });
   setTimeout(() => restartBackend().catch(error => {
     dialog.showErrorBox("設定を反映できませんでした", error.stack || error.message);
   }), 350);

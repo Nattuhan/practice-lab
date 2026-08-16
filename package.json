@@ -43,6 +43,7 @@
     "files": [
       "desktop/main.cjs",
       "desktop/preload.cjs",
+      "desktop/cloud-connection-transfer.cjs",
       "desktop/legacy-cloud-settings.cjs",
       "desktop/player-settings.cjs",
       "desktop/update-policy.cjs",
