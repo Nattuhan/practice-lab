@@ -79,7 +79,7 @@ jobs:
         run: |
           npm sbom --sbom-format cyclonedx | Set-Content -Encoding utf8 desktop/dist/installer/PracticeLab-node-sbom-windows.cdx.json
           .venv\Scripts\python.exe -m pip inspect | Set-Content -Encoding utf8 desktop/dist/installer/PracticeLab-python-dependencies-windows.json
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: PracticeLab-Windows
           path: |
@@ -163,7 +163,7 @@ jobs:
         run: |
           npm sbom --sbom-format cyclonedx > desktop/dist/installer/PracticeLab-node-sbom-macos.cdx.json
           .venv/bin/python -m pip inspect > desktop/dist/installer/PracticeLab-python-dependencies-macos.json
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: PracticeLab-macOS-Apple-Silicon
           path: |
@@ -180,7 +180,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: PracticeLab-*
           path: release-artifacts
