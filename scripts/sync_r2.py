@@ -23,10 +23,12 @@ from practice_lab.cloud_storage import (
     configure_bucket_cors,
     delete_object_keys,
     get_r2_config,
+    load_json_object,
     load_sync_index,
     upload_file,
     upload_sync_index,
 )
+from practice_lab.cloud_sync import REMOTE_DEVICE_STATE_NAME, active_remote_file_index
 from practice_lab.storage import build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 
 CACHE_FILE = DATA_WORK_DIR / "r2-sync-cache.json"
@@ -152,9 +154,13 @@ def main() -> None:
             "--initialize-index を一度だけ実行してください"
         )
 
+    remote_state = load_json_object(config, f"{config.prefix}/{REMOTE_DEVICE_STATE_NAME}")
+    protected_index = active_remote_file_index(config, remote_state if isinstance(remote_state, dict) else None)
+    final_index = {**protected_index, **local_index}
+
     if args.initialize_index:
-        upload_sync_index(config, local_index)
-        print(f"initialized sync index for {len(local_index)} files; asset uploads: 0")
+        upload_sync_index(config, final_index)
+        print(f"initialized sync index for {len(final_index)} files; asset uploads: 0")
         return
 
     remote_index = remote_index or {}
@@ -173,11 +179,11 @@ def main() -> None:
         upload_file(config, path, key)
         uploaded.append(key)
 
-    removed = sorted(set(remote_index) - set(local_index))
+    removed = sorted(set(remote_index) - set(final_index))
     if removed:
         delete_object_keys(config, removed)
-    if uploaded or removed or remote_index != local_index:
-        upload_sync_index(config, local_index)
+    if uploaded or removed or remote_index != final_index:
+        upload_sync_index(config, final_index)
 
     print(f"uploaded {len(uploaded)} changed files; deleted {len(removed)} stale files; unchanged {unchanged}")
     for key in uploaded:

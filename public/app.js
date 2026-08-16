@@ -4284,7 +4284,7 @@ var localizeJobMessage = (message) => {
     "Queued local audio analysis": "\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u306E\u89E3\u6790\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
     "Queued stem separation": "\u30D1\u30FC\u30C8\u5206\u96E2\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
     "Queued stem mix export": "\u30D1\u30FC\u30C8\u66F8\u304D\u51FA\u3057\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
-    "Queued cloud sync": "\u30AF\u30E9\u30A6\u30C9\u540C\u671F\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
+    "Queued cloud sync": "\u7AEF\u672B\u9593\u540C\u671F\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
     "Queued score preview": "\u697D\u8B5C\u30D7\u30EC\u30D3\u30E5\u30FC\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
     "Queued score extraction": "\u697D\u8B5C\u62BD\u51FA\u3092\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F",
     "Rendering stem mix": "\u30D1\u30FC\u30C8\u306E\u30DF\u30C3\u30AF\u30B9\u3092\u66F8\u304D\u51FA\u3057\u3066\u3044\u307E\u3059",
@@ -4470,8 +4470,8 @@ var renderCloudStatus = (status) => {
   cloudStatus = status || { configured: false };
   if (!SELECTORS.btnCloudSync || staticLibraryMode) return;
   if (cloudStatus.configured) {
-    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud-upload"></i><span>\u540C\u671F</span></span>`;
-    SELECTORS.btnCloudSync.title = cloudStatus.bucket ? `${cloudStatus.bucket}\u3078\u540C\u671F` : "\u81EA\u5206\u306E\u30AF\u30E9\u30A6\u30C9\u3078\u540C\u671F";
+    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="refresh-cw"></i><span>\u7AEF\u672B\u9593\u540C\u671F</span></span>`;
+    SELECTORS.btnCloudSync.title = cloudStatus.bucket ? `${cloudStatus.bucket}\u3092\u4ECB\u3057\u3066\u7AEF\u672B\u9593\u540C\u671F` : "\u81EA\u5206\u306ER2\u3092\u4ECB\u3057\u3066\u7AEF\u672B\u9593\u540C\u671F";
   } else {
     SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud"></i><span>\u30AF\u30E9\u30A6\u30C9\u9023\u643A</span></span>`;
     SELECTORS.btnCloudSync.title = "\u81EA\u5206\u306ECloudflare R2\u3092\u9023\u643A";
@@ -4602,8 +4602,8 @@ var syncCloudLibrary = async () => {
   }
   const destination = cloudStatus.bucket ? `\u300C${cloudStatus.bucket}\u300D` : "\u81EA\u5206\u306ER2";
   const approved = await showConfirm(
-    `\u89E3\u6790\u6E08\u307F\u306E\u66F2\u30FB\u97F3\u58F0\u30FB\u52D5\u753B\u30FB\u30D1\u30FC\u30C8\u97F3\u58F0\u3092${destination}\u3078\u540C\u671F\u3057\u307E\u3059\u3002\u7D9A\u3051\u307E\u3059\u304B\uFF1F`,
-    { title: "\u516C\u958B\u30E9\u30A4\u30D6\u30E9\u30EA\u3092\u66F4\u65B0", confirmLabel: "\u540C\u671F\u3059\u308B" }
+    `\u3053\u306E\u7AEF\u672B\u3068${destination}\u306E\u66F2\u30FB\u89E3\u6790\u7D50\u679C\u30FB\u97F3\u58F0\u30FB\u52D5\u753B\u30FB\u30D1\u30FC\u30C8\u97F3\u58F0\u30FB\u30D5\u30A9\u30EB\u30C0\u30FC\u3092\u53CC\u65B9\u5411\u306B\u540C\u671F\u3057\u307E\u3059\u3002\u5225\u7AEF\u672B\u3067\u660E\u793A\u7684\u306B\u524A\u9664\u3057\u305F\u66F2\u306F\u3001\u3053\u306E\u7AEF\u672B\u304B\u3089\u3082\u524A\u9664\u3055\u308C\u307E\u3059\u3002\u7D9A\u3051\u307E\u3059\u304B\uFF1F`,
+    { title: "\u7AEF\u672B\u9593\u540C\u671F", confirmLabel: "\u540C\u671F\u3059\u308B" }
   );
   if (!approved) return;
   SELECTORS.btnCloudSync.disabled = true;
@@ -4613,7 +4613,24 @@ var syncCloudLibrary = async () => {
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u540C\u671F\u306B\u5931\u6557\u3057\u307E\u3057\u305F (${response.status})`);
-    trackQueuedJob(submitted.jobId, { label: "\u30AF\u30E9\u30A6\u30C9\u540C\u671F" });
+    trackQueuedJob(submitted.jobId, {
+      label: "\u7AEF\u672B\u9593\u540C\u671F",
+      onDone: async (result) => {
+        await loadHistory();
+        const deletedSessionIds = Array.isArray(result?.deletedSessionIds) ? result.deletedSessionIds : [];
+        const currentSessionWasDeleted = currentId && deletedSessionIds.includes(currentId);
+        const conflicts = Array.isArray(result?.conflicts) ? result.conflicts.length : 0;
+        const summary = [
+          `\u9001\u4FE1 ${Number(result?.uploaded || 0)}\u4EF6`,
+          `\u53D7\u4FE1 ${Number(result?.downloaded || 0)}\u66F2`,
+          `\u524A\u9664\u53CD\u6620 ${Number(result?.deleted || 0)}\u66F2`,
+          `\u63A5\u7D9A\u7AEF\u672B ${Number(result?.deviceCount || 1)}\u53F0`
+        ];
+        if (conflicts) summary.push(`\u7AF6\u5408 ${conflicts}\u4EF6\uFF08\u65B0\u3057\u3044\u5909\u66F4\u3092\u63A1\u7528\uFF09`);
+        await showAlert(summary.join(" \xB7 "), { title: "\u7AEF\u672B\u9593\u540C\u671F\u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F" });
+        if (currentSessionWasDeleted) window.location.reload();
+      }
+    });
   } catch (error) {
     await showAlert(error.message, { title: "\u30AF\u30E9\u30A6\u30C9\u540C\u671F\u306B\u5931\u6557\u3057\u307E\u3057\u305F" });
   } finally {

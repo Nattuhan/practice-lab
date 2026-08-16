@@ -116,6 +116,43 @@ def upload_file(config: R2Config, source: Path, key: str) -> None:
     )
 
 
+def download_file(config: R2Config, key: str, destination: Path, *, max_bytes: int = 8 * 1024**3) -> None:
+    client = _client(config)
+    metadata = client.head_object(Bucket=config.bucket, Key=key)
+    content_length = int(metadata.get("ContentLength") or 0)
+    if content_length < 0 or content_length > max_bytes:
+        raise RuntimeError(f"R2上のファイルが許容サイズを超えています: {key}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(f"{destination.suffix}.download")
+    client.download_file(config.bucket, key, str(temporary))
+    temporary.replace(destination)
+
+
+def load_json_object(config: R2Config, key: str) -> dict | list | None:
+    try:
+        response = _client(config).get_object(Bucket=config.bucket, Key=key)
+    except Exception as exc:
+        response = getattr(exc, "response", {})
+        code = str(response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return None
+        raise
+    body = response["Body"].read(5 * 1024 * 1024 + 1)
+    if len(body) > 5 * 1024 * 1024:
+        raise RuntimeError(f"R2上の同期情報が許容サイズを超えています: {key}")
+    return json.loads(body.decode("utf-8"))
+
+
+def upload_json_object(config: R2Config, key: str, payload: dict | list) -> None:
+    body = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    _client(config).put_object(
+        Bucket=config.bucket,
+        Key=key,
+        Body=body,
+        ContentType="application/json",
+    )
+
+
 def upload_session_assets(
     video_id: str,
     *,
@@ -171,7 +208,10 @@ def load_sync_index(config: R2Config) -> dict[str, str] | None:
         if code in {"NoSuchKey", "404", "NotFound"}:
             return None
         raise
-    payload = json.loads(response["Body"].read().decode("utf-8"))
+    body = response["Body"].read(5 * 1024 * 1024 + 1)
+    if len(body) > 5 * 1024 * 1024:
+        raise RuntimeError("R2上の同期台帳が許容サイズを超えています")
+    payload = json.loads(body.decode("utf-8"))
     if not isinstance(payload, dict):
         return None
     files = payload.get("files")

@@ -18,9 +18,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .analyzer_backend import analyzer_command, resolve_backend, stem_command
-from .config import DATA_AUDIO_DIR, DATA_DIR, DATA_RESULTS_DIR, DATA_STEMS_DIR, DATA_VIDEO_DIR, DATA_WORK_DIR, FOLDERS_FILE, MANIFEST_FILE, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_DIR, PUBLIC_STEMS_DIR, PUBLIC_VIDEO_DIR, SOURCE_ROOT, default_wsl_python
+from .config import DATA_AUDIO_DIR, DATA_DIR, DATA_RESULTS_DIR, DATA_STEMS_DIR, DATA_VIDEO_DIR, DATA_WORK_DIR, DEVICE_SYNC_STATE_FILE, FOLDERS_FILE, MANIFEST_FILE, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_DIR, PUBLIC_STEMS_DIR, PUBLIC_VIDEO_DIR, SOURCE_ROOT, default_wsl_python
 from .cloud_storage import build_r2_session_assets, configure_bucket_cors, delete_session_assets, get_r2_config, upload_file, upload_folders, upload_manifest, upload_session_assets, upload_static_app
 from .cloud_sync import sync_cloud_incremental
+from .device_sync import record_session_deletions
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 from .timing import normalize_section_bar_ranges, normalize_tempo_grid
 
@@ -1645,6 +1646,7 @@ def delete_results(video_ids: list[str]) -> list[str]:
                 ]
                 save_json(FOLDERS_FILE, folders)
         export_static_assets()
+        record_session_deletions(ids, path=DEVICE_SYNC_STATE_FILE)
 
         config = get_r2_config() if os.environ.get("R2_AUTO_PUBLISH") == "1" else None
         if config is not None:

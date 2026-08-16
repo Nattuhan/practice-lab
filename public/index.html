@@ -66,7 +66,7 @@
       </div>
       <span id="offline-badge" hidden>オフライン</span>
       <button class="desktop-update" id="desktop-update" type="button" hidden></button>
-      <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><span class="topbar-sync-content"><i data-lucide="cloud-upload"></i><span>同期</span></span></button>
+      <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><span class="topbar-sync-content"><i data-lucide="refresh-cw"></i><span>端末間同期</span></span></button>
       <button class="btn-top topbar-settings" id="btn-top-settings" type="button" hidden><i data-lucide="settings-2"></i><span>設定</span></button>
       <button class="btn-top action-primary topbar-new-analysis" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
     </div>
@@ -522,7 +522,7 @@
         <section class="settings-section" data-settings-panel="cloud">
           <div class="settings-group cloud-intro">
             <h3>自分のCloudflare R2と連携</h3>
-            <p>データは共通サーバーではなく、あなた自身のR2バケットへ同期されます。認証情報はこのPCで暗号化して保存します。解析や編集だけでは公開されず、画面上部の「同期」を押したときだけアップロードします。</p>
+            <p>データは共通サーバーではなく、あなた自身のR2バケットを介して同じ利用者の端末間で同期されます。認証情報はこのPCで暗号化して保存します。同期は画面上部の「端末間同期」を押したときだけ実行します。</p>
             <label class="settings-toggle"><span><strong>クラウド連携を有効にする</strong><small>未連携のままでもローカル機能はすべて利用できます。</small></span><input id="settings-cloud-enabled" type="checkbox"></label>
           </div>
           <div class="cloud-fields" id="settings-cloud-fields">

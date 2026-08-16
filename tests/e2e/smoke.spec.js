@@ -98,9 +98,10 @@ test("可視操作を小さく潰さず文字を切らない", async ({ page }) 
   expect(issues).toEqual([]);
 });
 
-test("同期ラベルをボタン中央に配置する", async ({ page }) => {
+test("端末間同期ラベルをボタン中央に配置する", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#btn-cloud-sync")).toBeVisible();
+  await expect(page.locator("#btn-cloud-sync")).toContainText("端末間同期");
   await expect(page.locator("#btn-cloud-sync .topbar-sync-content svg")).toBeVisible();
   const centers = await page.locator("#btn-cloud-sync").evaluate(button => {
     const content = button.querySelector(".topbar-sync-content");

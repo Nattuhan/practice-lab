@@ -2176,7 +2176,7 @@ const localizeJobMessage = message => {
     "Queued local audio analysis": "音声ファイルの解析を処理一覧に追加しました",
     "Queued stem separation": "パート分離を処理一覧に追加しました",
     "Queued stem mix export": "パート書き出しを処理一覧に追加しました",
-    "Queued cloud sync": "クラウド同期を処理一覧に追加しました",
+    "Queued cloud sync": "端末間同期を処理一覧に追加しました",
     "Queued score preview": "楽譜プレビューを処理一覧に追加しました",
     "Queued score extraction": "楽譜抽出を処理一覧に追加しました",
     "Rendering stem mix": "パートのミックスを書き出しています",
@@ -2378,8 +2378,8 @@ const renderCloudStatus = status => {
   cloudStatus = status || { configured: false };
   if (!SELECTORS.btnCloudSync || staticLibraryMode) return;
   if (cloudStatus.configured) {
-    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud-upload"></i><span>同期</span></span>`;
-    SELECTORS.btnCloudSync.title = cloudStatus.bucket ? `${cloudStatus.bucket}へ同期` : "自分のクラウドへ同期";
+    SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="refresh-cw"></i><span>端末間同期</span></span>`;
+    SELECTORS.btnCloudSync.title = cloudStatus.bucket ? `${cloudStatus.bucket}を介して端末間同期` : "自分のR2を介して端末間同期";
   } else {
     SELECTORS.btnCloudSync.innerHTML = `<span class="topbar-sync-content"><i data-lucide="cloud"></i><span>クラウド連携</span></span>`;
     SELECTORS.btnCloudSync.title = "自分のCloudflare R2を連携";
@@ -2523,8 +2523,8 @@ const syncCloudLibrary = async () => {
   }
   const destination = cloudStatus.bucket ? `「${cloudStatus.bucket}」` : "自分のR2";
   const approved = await showConfirm(
-    `解析済みの曲・音声・動画・パート音声を${destination}へ同期します。続けますか？`,
-    { title: "公開ライブラリを更新", confirmLabel: "同期する" },
+    `この端末と${destination}の曲・解析結果・音声・動画・パート音声・フォルダーを双方向に同期します。別端末で明示的に削除した曲は、この端末からも削除されます。続けますか？`,
+    { title: "端末間同期", confirmLabel: "同期する" },
   );
   if (!approved) return;
   SELECTORS.btnCloudSync.disabled = true;
@@ -2534,7 +2534,24 @@ const syncCloudLibrary = async () => {
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `同期に失敗しました (${response.status})`);
-    trackQueuedJob(submitted.jobId, { label: "クラウド同期" });
+    trackQueuedJob(submitted.jobId, {
+      label: "端末間同期",
+      onDone: async result => {
+        await loadHistory();
+        const deletedSessionIds = Array.isArray(result?.deletedSessionIds) ? result.deletedSessionIds : [];
+        const currentSessionWasDeleted = currentId && deletedSessionIds.includes(currentId);
+        const conflicts = Array.isArray(result?.conflicts) ? result.conflicts.length : 0;
+        const summary = [
+          `送信 ${Number(result?.uploaded || 0)}件`,
+          `受信 ${Number(result?.downloaded || 0)}曲`,
+          `削除反映 ${Number(result?.deleted || 0)}曲`,
+          `接続端末 ${Number(result?.deviceCount || 1)}台`,
+        ];
+        if (conflicts) summary.push(`競合 ${conflicts}件（新しい変更を採用）`);
+        await showAlert(summary.join(" · "), { title: "端末間同期が完了しました" });
+        if (currentSessionWasDeleted) window.location.reload();
+      },
+    });
   } catch (error) {
     await showAlert(error.message, { title: "クラウド同期に失敗しました" });
   } finally {

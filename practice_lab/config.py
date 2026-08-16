@@ -22,6 +22,7 @@ PUBLIC_STEMS_DIR = PUBLIC_DIR / "stems"
 PUBLIC_RESULTS_DIR = PUBLIC_DIR / "results"
 MANIFEST_FILE = DATA_RESULTS_DIR / "manifest.json"
 FOLDERS_FILE = DATA_RESULTS_DIR / "folders.json"
+DEVICE_SYNC_STATE_FILE = DATA_DIR / "device-sync-state.json"
 
 
 def _parse_env_value(value: str) -> str:

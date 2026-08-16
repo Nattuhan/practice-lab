@@ -3,6 +3,7 @@ const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
 const net = require("net");
 const path = require("path");
+const os = require("os");
 const { spawn } = require("child_process");
 const { randomBytes } = require("crypto");
 const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require("./legacy-cloud-settings.cjs");
@@ -271,6 +272,7 @@ async function startBackend() {
       PRACTICE_LAB_BACKEND_ORIGIN: url,
       PRACTICE_LAB_DESKTOP_TOKEN: desktopToken,
       PRACTICE_LAB_INSTANCE_ID: instanceId,
+      PRACTICE_LAB_DEVICE_NAME: os.hostname(),
       ANALYZER_EXECUTOR: process.platform === "win32" ? "wsl" : "auto",
       ANALYZER_DEVICE: process.platform === "win32" ? "cuda" : (process.platform === "darwin" ? "cpu" : "auto"),
       STEM_DEVICE: process.platform === "win32" ? "cuda" : (process.platform === "darwin" ? "cpu" : "auto"),

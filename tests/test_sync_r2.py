@@ -17,6 +17,8 @@ class IncrementalR2SyncTests(unittest.TestCase):
             unchanged.write_text("same", encoding="utf-8")
             changed.write_text("new", encoding="utf-8")
             unchanged_hash = hashlib.sha256(b"same").hexdigest()
+            protected_hash = hashlib.sha256(b"other device").hexdigest()
+            protected_key = "sessions/other-device-song/session.json"
             config = MagicMock(prefix="sessions", configure_cors=False)
 
             with (
@@ -26,7 +28,14 @@ class IncrementalR2SyncTests(unittest.TestCase):
                 patch.object(sync_r2, "prepare_session_metadata", return_value=[]),
                 patch.object(sync_r2, "desired_files", return_value={"index.html": unchanged, "app.js": changed}),
                 patch.object(sync_r2, "CACHE_FILE", root / "cache.json"),
-                patch.object(sync_r2, "load_sync_index", return_value={"index.html": unchanged_hash, "app.js": "old", "stale.mp3": "old"}),
+                patch.object(sync_r2, "load_sync_index", return_value={"index.html": unchanged_hash, "app.js": "old", "stale.mp3": "old", protected_key: protected_hash}),
+                patch.object(sync_r2, "load_json_object", return_value={
+                    "sessions": {
+                        "other-device-song": {
+                            "files": {protected_key: protected_hash},
+                        }
+                    }
+                }),
                 patch.object(sync_r2, "upload_file") as upload,
                 patch.object(sync_r2, "delete_object_keys") as delete,
                 patch.object(sync_r2, "upload_sync_index") as upload_index,
@@ -36,7 +45,7 @@ class IncrementalR2SyncTests(unittest.TestCase):
             upload.assert_called_once_with(config, changed, "app.js")
             delete.assert_called_once_with(config, ["stale.mp3"])
             uploaded_files = upload_index.call_args.args[1]
-            self.assertEqual(set(uploaded_files), {"index.html", "app.js"})
+            self.assertEqual(set(uploaded_files), {"index.html", "app.js", protected_key})
 
     def test_initialization_uploads_only_the_hash_index(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -53,6 +62,7 @@ class IncrementalR2SyncTests(unittest.TestCase):
                 patch.object(sync_r2, "desired_files", return_value={"app.js": app_file}),
                 patch.object(sync_r2, "CACHE_FILE", root / "cache.json"),
                 patch.object(sync_r2, "load_sync_index", return_value=None),
+                patch.object(sync_r2, "load_json_object", return_value=None),
                 patch.object(sync_r2, "upload_file") as upload,
                 patch.object(sync_r2, "upload_sync_index") as upload_index,
             ):

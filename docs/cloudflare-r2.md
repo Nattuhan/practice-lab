@@ -12,8 +12,12 @@ user's PracticeLab application-data directory. The secret access key is kept
 separately with Electron `safeStorage` (DPAPI on Windows and Keychain-backed
 storage on macOS).
 
-After setup, the top-bar action syncs only changed files to that user's bucket.
-Without a configured bucket it opens the cloud-integration settings instead.
+After setup, the top-bar action performs a bidirectional device sync through
+that user's bucket. Sessions missing on another device are downloaded rather
+than treated as deletions. Only deletions made through PracticeLab propagate
+to other devices. Per-device playback volume and playback position remain
+local. Without a configured bucket the action opens the cloud-integration
+settings instead.
 
 The environment-variable setup below remains available for source development
 and automation scripts.
