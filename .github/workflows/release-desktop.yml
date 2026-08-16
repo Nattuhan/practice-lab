@@ -178,7 +178,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "PracticeLab $GITHUB_REF_NAME" --notes-file UNSIGNED_DISTRIBUTION.md
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "PracticeLab $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
           fi
           gh release upload "$GITHUB_REF_NAME" \
             release-artifacts/PracticeLab-Setup-*.exe \
@@ -186,4 +186,4 @@ jobs:
             release-artifacts/latest.yml \
             release-artifacts/PracticeLab-*-arm64.dmg \
             --clobber
-          gh release edit "$GITHUB_REF_NAME" --title "PracticeLab $GITHUB_REF_NAME" --notes-file UNSIGNED_DISTRIBUTION.md --draft=false --latest
+          gh release edit "$GITHUB_REF_NAME" --title "PracticeLab $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --draft=false --latest
