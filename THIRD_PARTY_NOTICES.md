@@ -12,7 +12,7 @@ PracticeLabはMITライセンスで公開しますが、配布物には各プロ
 | yt-dlp | 動画取得 | [Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE) |
 | PyTorch | 解析実行 | [BSD-style](https://github.com/pytorch/pytorch/blob/main/LICENSE) |
 | NATTEN | 音楽構成解析依存 | [MIT](https://github.com/SHI-Labs/NATTEN/blob/main/LICENSE) |
-| all-in-one-fix | 音楽構成解析 | 配布パッケージのライセンス |
+| all-in-one-fix | 音楽構成解析 | [MIT](https://github.com/openmirlab/all-in-one-fix/blob/main/LICENSE) |
 | Demucs | パート分離 | [MIT](https://github.com/facebookresearch/demucs/blob/main/LICENSE) |
 | WaveSurfer.js / Lucide | UI | 各プロジェクトの配布ライセンス |
 

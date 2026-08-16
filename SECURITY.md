@@ -14,5 +14,5 @@ GitHubの「Security」タブにあるPrivate vulnerability reportingから報�
 
 ## 配布物の確認
 
-GitHub ReleasesにはWindows・macOSの署名済み配布物と`SHA256SUMS.txt`を掲載します。
-macOS版はAppleのNotarization、Windows版はAuthenticode署名を正式リリースの必須条件とします。
+GitHub ReleasesにはWindows・macOSの未署名配布物と`SHA256SUMS.txt`を掲載します。
+配布物のファイル名には`unsigned`を含め、Release本文でも未署名であることとOSの警告内容を明示します。利用者は、このリポジトリから取得したファイルのSHA-256が`SHA256SUMS.txt`と一致することを確認してください。

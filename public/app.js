@@ -2368,6 +2368,7 @@ var SELECTORS = {
   settingsSave: document.getElementById("settings-save"),
   settingsSaveStatus: document.getElementById("settings-save-status"),
   settingsAutoUpdate: document.getElementById("settings-auto-update"),
+  settingsAutoUpdateDescription: document.getElementById("settings-auto-update-description"),
   settingsDataPath: document.getElementById("settings-data-path"),
   settingsOpenData: document.getElementById("settings-open-data"),
   settingsAnalysisStatus: document.getElementById("settings-analysis-status"),
@@ -4508,6 +4509,20 @@ var openSettings = async (section = "general") => {
   desktopSettings = await desktop.getSettings();
   const cloud = desktopSettings.cloud || {};
   SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
+  const manualUpdates = desktopSettings.updateMode === "manual";
+  SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
+  if (manualUpdates) SELECTORS.settingsAutoUpdate.checked = false;
+  if (SELECTORS.settingsAutoUpdateDescription) {
+    SELECTORS.settingsAutoUpdateDescription.textContent = manualUpdates ? "\u672A\u7F72\u540D\u306EMac\u7248\u306F\u3001GitHub\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u304B\u3089\u624B\u52D5\u3067\u66F4\u65B0\u3057\u307E\u3059\u3002" : "\u8D77\u52D5\u6642\u306B\u65B0\u3057\u3044\u30D0\u30FC\u30B8\u30E7\u30F3\u3092\u78BA\u8A8D\u3057\u307E\u3059\u3002";
+  }
+  if (SELECTORS.settingsCheckUpdateLabel) {
+    SELECTORS.settingsCheckUpdateLabel.textContent = manualUpdates ? "\u6700\u65B0\u7248\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u3092\u958B\u304F" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D";
+  }
+  if (SELECTORS.settingsUpdateStatus) {
+    SELECTORS.settingsUpdateStatus.hidden = !manualUpdates;
+    SELECTORS.settingsUpdateStatus.className = "settings-update-status";
+    SELECTORS.settingsUpdateStatus.textContent = manualUpdates ? "Mac\u7248\u306F\u624B\u52D5\u66F4\u65B0\u3067\u3059\u3002\u30DC\u30BF\u30F3\u304B\u3089\u6700\u65B0\u7248\u3092\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002" : "";
+  }
   SELECTORS.settingsDataPath.textContent = desktopSettings.dataPath || "";
   SELECTORS.settingsVersion.textContent = `PracticeLab ${desktopSettings.version || ""}`;
   SELECTORS.settingsCloudEnabled.checked = !!cloud.enabled;
@@ -6277,7 +6292,7 @@ var initDesktopUpdates = () => {
     SELECTORS.settingsUpdateStatus.classList.toggle("ok", ["current", "downloaded"].includes(state));
     SELECTORS.settingsUpdateStatus.classList.toggle("error", state === "error");
     if (SELECTORS.settingsCheckUpdateLabel) {
-      SELECTORS.settingsCheckUpdateLabel.textContent = state === "downloaded" ? "\u518D\u8D77\u52D5\u3057\u3066\u66F4\u65B0" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D";
+      SELECTORS.settingsCheckUpdateLabel.textContent = state === "downloaded" ? "\u518D\u8D77\u52D5\u3057\u3066\u66F4\u65B0" : state === "manual" ? "\u6700\u65B0\u7248\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u3092\u958B\u304F" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D";
     }
     if (state === "checking") SELECTORS.settingsUpdateStatus.textContent = "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059\u2026";
     else if (state === "current") SELECTORS.settingsUpdateStatus.textContent = "\u73FE\u5728\u306E\u30D0\u30FC\u30B8\u30E7\u30F3\u304C\u6700\u65B0\u3067\u3059\u3002";
@@ -6285,6 +6300,7 @@ var initDesktopUpdates = () => {
     else if (state === "downloading") SELECTORS.settingsUpdateStatus.textContent = `\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u3044\u307E\u3059\u2026 ${status.percent || 0}%`;
     else if (state === "downloaded") SELECTORS.settingsUpdateStatus.textContent = `\u30D0\u30FC\u30B8\u30E7\u30F3 ${status.version} \u306E\u6E96\u5099\u304C\u3067\u304D\u307E\u3057\u305F\u3002`;
     else if (state === "unsupported") SELECTORS.settingsUpdateStatus.textContent = status.message || "\u958B\u767A\u7248\u3067\u306F\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3002";
+    else if (state === "manual") SELECTORS.settingsUpdateStatus.textContent = status.message || "\u6700\u65B0\u7248\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u3092\u958B\u304D\u307E\u3057\u305F\u3002";
     else if (state === "error") {
       const message = String(status.message || "");
       SELECTORS.settingsUpdateStatus.textContent = /404|latest[^\s]*\.yml|no published|release/i.test(message) ? "\u516C\u958B\u6E08\u307F\u306E\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u306F\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u6642\u9593\u3092\u304A\u3044\u3066\u518D\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002";
@@ -6313,7 +6329,7 @@ var initDesktopUpdates = () => {
     }
     renderSettingsUpdateStatus({ state: "checking" });
     const result = await desktop.checkForUpdates();
-    if (["error", "unsupported", "current", "downloaded"].includes(result?.state)) renderSettingsUpdateStatus(result);
+    if (["error", "unsupported", "manual", "current", "downloaded"].includes(result?.state)) renderSettingsUpdateStatus(result);
   });
 };
 var initDesktopCommands = () => {

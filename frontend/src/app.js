@@ -64,6 +64,7 @@ const SELECTORS = {
   settingsSave: document.getElementById("settings-save"),
   settingsSaveStatus: document.getElementById("settings-save-status"),
   settingsAutoUpdate: document.getElementById("settings-auto-update"),
+  settingsAutoUpdateDescription: document.getElementById("settings-auto-update-description"),
   settingsDataPath: document.getElementById("settings-data-path"),
   settingsOpenData: document.getElementById("settings-open-data"),
   settingsAnalysisStatus: document.getElementById("settings-analysis-status"),
@@ -2420,6 +2421,24 @@ const openSettings = async (section = "general") => {
   desktopSettings = await desktop.getSettings();
   const cloud = desktopSettings.cloud || {};
   SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
+  const manualUpdates = desktopSettings.updateMode === "manual";
+  SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
+  if (manualUpdates) SELECTORS.settingsAutoUpdate.checked = false;
+  if (SELECTORS.settingsAutoUpdateDescription) {
+    SELECTORS.settingsAutoUpdateDescription.textContent = manualUpdates
+      ? "未署名のMac版は、GitHubの配布ページから手動で更新します。"
+      : "起動時に新しいバージョンを確認します。";
+  }
+  if (SELECTORS.settingsCheckUpdateLabel) {
+    SELECTORS.settingsCheckUpdateLabel.textContent = manualUpdates ? "最新版の配布ページを開く" : "アップデートを確認";
+  }
+  if (SELECTORS.settingsUpdateStatus) {
+    SELECTORS.settingsUpdateStatus.hidden = !manualUpdates;
+    SELECTORS.settingsUpdateStatus.className = "settings-update-status";
+    SELECTORS.settingsUpdateStatus.textContent = manualUpdates
+      ? "Mac版は手動更新です。ボタンから最新版を確認できます。"
+      : "";
+  }
   SELECTORS.settingsDataPath.textContent = desktopSettings.dataPath || "";
   SELECTORS.settingsVersion.textContent = `PracticeLab ${desktopSettings.version || ""}`;
   SELECTORS.settingsCloudEnabled.checked = !!cloud.enabled;
@@ -4316,7 +4335,9 @@ const initDesktopUpdates = () => {
     SELECTORS.settingsUpdateStatus.classList.toggle("ok", ["current", "downloaded"].includes(state));
     SELECTORS.settingsUpdateStatus.classList.toggle("error", state === "error");
     if (SELECTORS.settingsCheckUpdateLabel) {
-      SELECTORS.settingsCheckUpdateLabel.textContent = state === "downloaded" ? "再起動して更新" : "アップデートを確認";
+      SELECTORS.settingsCheckUpdateLabel.textContent = state === "downloaded"
+        ? "再起動して更新"
+        : (state === "manual" ? "最新版の配布ページを開く" : "アップデートを確認");
     }
     if (state === "checking") SELECTORS.settingsUpdateStatus.textContent = "アップデートを確認しています…";
     else if (state === "current") SELECTORS.settingsUpdateStatus.textContent = "現在のバージョンが最新です。";
@@ -4324,6 +4345,7 @@ const initDesktopUpdates = () => {
     else if (state === "downloading") SELECTORS.settingsUpdateStatus.textContent = `アップデートをダウンロードしています… ${status.percent || 0}%`;
     else if (state === "downloaded") SELECTORS.settingsUpdateStatus.textContent = `バージョン ${status.version} の準備ができました。`;
     else if (state === "unsupported") SELECTORS.settingsUpdateStatus.textContent = status.message || "開発版ではアップデートを確認できません。";
+    else if (state === "manual") SELECTORS.settingsUpdateStatus.textContent = status.message || "最新版の配布ページを開きました。";
     else if (state === "error") {
       const message = String(status.message || "");
       SELECTORS.settingsUpdateStatus.textContent = /404|latest[^\s]*\.yml|no published|release/i.test(message)
@@ -4356,7 +4378,7 @@ const initDesktopUpdates = () => {
     }
     renderSettingsUpdateStatus({ state: "checking" });
     const result = await desktop.checkForUpdates();
-    if (["error", "unsupported", "current", "downloaded"].includes(result?.state)) renderSettingsUpdateStatus(result);
+    if (["error", "unsupported", "manual", "current", "downloaded"].includes(result?.state)) renderSettingsUpdateStatus(result);
   });
 };
 

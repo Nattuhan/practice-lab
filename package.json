@@ -44,6 +44,7 @@
       "desktop/preload.cjs",
       "desktop/legacy-cloud-settings.cjs",
       "desktop/player-settings.cjs",
+      "desktop/update-policy.cjs",
       "package.json"
     ],
     "extraResources": [
@@ -94,7 +95,7 @@
         "nsis"
       ],
       "icon": "desktop/assets/practicelab-icon.ico",
-      "artifactName": "PracticeLab-Setup-${version}.${ext}"
+      "artifactName": "PracticeLab-Setup-${version}-unsigned.${ext}"
     },
     "mac": {
       "target": [
@@ -109,12 +110,11 @@
       ],
       "icon": "desktop/assets/practicelab-icon.icns",
       "category": "public.app-category.music",
-      "hardenedRuntime": true,
-      "entitlements": "desktop/entitlements.mac.plist",
-      "entitlementsInherit": "desktop/entitlements.mac.plist",
-      "notarize": true,
+      "identity": null,
+      "hardenedRuntime": false,
+      "notarize": false,
       "minimumSystemVersion": "12.0.0",
-      "artifactName": "PracticeLab-${version}-${arch}.${ext}"
+      "artifactName": "PracticeLab-${version}-${arch}-unsigned.${ext}"
     },
     "dmg": {
       "sign": false
@@ -131,7 +131,7 @@
       "provider": "github",
       "owner": "Nattuhan",
       "repo": "practice-lab",
-      "releaseType": "release"
+      "releaseType": "draft"
     }
   }
 }

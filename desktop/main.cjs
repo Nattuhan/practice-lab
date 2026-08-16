@@ -7,6 +7,7 @@ const { spawn } = require("child_process");
 const { randomBytes } = require("crypto");
 const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require("./legacy-cloud-settings.cjs");
 const { sanitizePlayerSettings } = require("./player-settings.cjs");
+const { RELEASES_LATEST_URL, getUpdateMode } = require("./update-policy.cjs");
 
 let mainWindow = null;
 let backend = null;
@@ -89,6 +90,7 @@ function settingsForRenderer() {
     dataPath: app.getPath("userData"),
     version: app.getVersion(),
     packaged: app.isPackaged,
+    updateMode: getUpdateMode({ packaged: app.isPackaged, platform: process.platform }),
   };
 }
 
@@ -336,7 +338,7 @@ function sendUpdateStatus(payload) {
 }
 
 function configureUpdates() {
-  if (!app.isPackaged) return;
+  if (getUpdateMode({ packaged: app.isPackaged, platform: process.platform }) !== "automatic") return;
   autoUpdater.autoDownload = true;
   autoUpdater.on("checking-for-update", () => sendUpdateStatus({ state: "checking" }));
   autoUpdater.on("update-available", info => sendUpdateStatus({ state: "available", version: info.version }));
@@ -357,8 +359,18 @@ function sendCommand(command) {
 }
 
 async function checkForUpdates() {
-  if (!app.isPackaged) {
+  const mode = getUpdateMode({ packaged: app.isPackaged, platform: process.platform });
+  if (mode === "development") {
     const status = { state: "unsupported", message: "開発版ではアップデート確認を行いません。" };
+    sendUpdateStatus(status);
+    return status;
+  }
+  if (mode === "manual") {
+    await shell.openExternal(RELEASES_LATEST_URL);
+    const status = {
+      state: "manual",
+      message: "未署名のMac版は自動更新に対応していません。最新版の配布ページを開きました。",
+    };
     sendUpdateStatus(status);
     return status;
   }
@@ -431,7 +443,10 @@ function configureApplicationMenu() {
     {
       label: "ヘルプ",
       submenu: [
-        { label: "アップデートを確認", click: checkForUpdates },
+        {
+          label: process.platform === "darwin" ? "最新版の配布ページを開く" : "アップデートを確認",
+          click: checkForUpdates,
+        },
         { label: "データ保存場所を開く", click: () => shell.openPath(app.getPath("userData")) },
         { type: "separator" },
         { label: "PracticeLabについて", click: () => sendCommand("about") },
