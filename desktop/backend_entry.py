@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import multiprocessing
 import os
 import runpy
@@ -11,16 +12,51 @@ import uvicorn
 from practice_lab.app import create_app
 
 
+COMMON_FROZEN_RUNTIME_MODULES = (
+    "numpy",
+    "PIL",
+    "rapidocr_onnxruntime",
+    "yt_dlp",
+    "practice_lab.timing",
+)
+MACOS_ANALYSIS_RUNTIME_MODULES = (
+    "allin1fix",
+    "demucs_infer.separate",
+    "natten",
+    "torch",
+    "practice_lab.compute_device",
+    "practice_lab.jpop_sections",
+)
+
+
 def main() -> None:
     host = os.environ.get("PRACTICE_LAB_HOST", "127.0.0.1")
     port = int(os.environ.get("PRACTICE_LAB_PORT", "8000"))
     uvicorn.run(create_app(), host=host, port=port, log_level="info", access_log=False)
 
 
+def check_frozen_runtime(profile: str) -> None:
+    """Import modules used by scripts that the frozen backend executes dynamically."""
+    modules = list(COMMON_FROZEN_RUNTIME_MODULES)
+    if profile == "macos-analysis":
+        modules.extend(MACOS_ANALYSIS_RUNTIME_MODULES)
+    elif profile != "windows":
+        raise ValueError(f"Unknown frozen runtime profile: {profile}")
+
+    for module in modules:
+        importlib.import_module(module)
+        print(f"[OK] {module}", flush=True)
+
+
 def run_frozen_python_command() -> bool:
     """Emulate the Python CLI for subprocesses launched by the frozen backend."""
     if not getattr(sys, "frozen", False) or len(sys.argv) < 2:
         return False
+    if sys.argv[1] == "--check-runtime":
+        if len(sys.argv) != 3:
+            raise SystemExit("usage: practice-lab-backend --check-runtime PROFILE")
+        check_frozen_runtime(sys.argv[2])
+        return True
     if sys.argv[1] == "-m" and len(sys.argv) >= 3:
         module = sys.argv[2]
         sys.argv = [module, *sys.argv[3:]]

@@ -8,6 +8,34 @@ from desktop import backend_entry
 
 
 class DesktopBackendEntryTests(unittest.TestCase):
+    def test_runtime_check_imports_all_macos_analysis_modules(self):
+        with patch("desktop.backend_entry.importlib.import_module") as import_module:
+            backend_entry.check_frozen_runtime("macos-analysis")
+
+        imported = [call.args[0] for call in import_module.call_args_list]
+        self.assertEqual(
+            imported,
+            [
+                *backend_entry.COMMON_FROZEN_RUNTIME_MODULES,
+                *backend_entry.MACOS_ANALYSIS_RUNTIME_MODULES,
+            ],
+        )
+
+    def test_frozen_runtime_check_is_dispatched(self):
+        with (
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(
+                sys,
+                "argv",
+                ["practice-lab-backend", "--check-runtime", "macos-analysis"],
+            ),
+            patch("desktop.backend_entry.check_frozen_runtime") as check_runtime,
+        ):
+            handled = backend_entry.run_frozen_python_command()
+
+        self.assertTrue(handled)
+        check_runtime.assert_called_once_with("macos-analysis")
+
     def test_frozen_module_command_is_dispatched_instead_of_starting_uvicorn(self):
         with (
             patch.object(sys, "frozen", True, create=True),

@@ -26,6 +26,9 @@ fi
   --collect-all natten \
   --collect-all allin1fix \
   --collect-all demucs_infer \
+  --hidden-import practice_lab.compute_device \
+  --hidden-import practice_lab.jpop_sections \
+  --hidden-import practice_lab.timing \
   --distpath "$repo_root/desktop/dist/backend" \
   --workpath "$repo_root/desktop/build/backend" \
   --specpath "$repo_root/desktop/build" \
