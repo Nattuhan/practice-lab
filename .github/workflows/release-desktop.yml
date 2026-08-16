@@ -150,8 +150,13 @@ jobs:
         run: |
           dmg="$(find desktop/dist/installer -maxdepth 1 -name 'PracticeLab-*-arm64-unsigned.dmg' -print -quit)"
           test -n "$dmg"
-          if codesign --display --verbose=2 desktop/dist/installer/mac-arm64/PracticeLab.app 2>/dev/null; then
-            echo "Expected an unsigned application bundle" >&2
+          codesign --display --verbose=4 desktop/dist/installer/mac-arm64/PracticeLab.app 2>&1 || true
+          if codesign --verify --deep --strict desktop/dist/installer/mac-arm64/PracticeLab.app 2>/dev/null; then
+            echo "Expected the application bundle not to have a valid complete signature" >&2
+            exit 1
+          fi
+          if spctl --assess --type execute desktop/dist/installer/mac-arm64/PracticeLab.app 2>/dev/null; then
+            echo "Expected Gatekeeper to treat this build as untrusted" >&2
             exit 1
           fi
       - name: Generate dependency inventories
