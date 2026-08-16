@@ -349,6 +349,7 @@ test("容量を確認して再生成可能なキャッシュだけを整理で�
 });
 
 test("デスクトップ設定で利用者ごとのクラウド連携を編集できる", async ({ page }) => {
+  await page.setViewportSize({ width: 1060, height: 768 });
   await page.addInitScript(() => {
     window.practiceLabDesktop = {
       getSettings: async () => ({
@@ -380,6 +381,12 @@ test("デスクトップ設定で利用者ごとのクラウド連携を編集�
   expect(Math.abs(settingsBox.y + settingsBox.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
   await settings.getByRole("button", { name: "クラウド連携" }).click();
   await expect(settings.getByText("自分のCloudflare R2と連携")).toBeVisible();
+  const sections = settings.locator(".settings-sections");
+  await expect.poll(() => sections.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  await sections.hover();
+  await page.mouse.wheel(0, 600);
+  await expect.poll(() => sections.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  await expect(settings.locator("#settings-save")).toBeVisible();
   await settings.getByRole("checkbox", { name: /クラウド連携を有効/ }).check();
   await expect(settings.getByLabel("R2 バケット名")).toBeEnabled();
   await expect(settings.getByRole("button", { name: "接続ファイルを書き出す" })).toBeDisabled();
