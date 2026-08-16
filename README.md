@@ -299,7 +299,7 @@ PracticeLabのソースコードは [`LICENSE`](LICENSE) に記載したMIT Lice
 
 ## 無料配布版
 
-Windows版とApple Silicon Mac版は、有料のコード署名証明書を使用せず無料で配布します。OSには「不明な発行元」または「開発元を確認できない」と表示されます。Windows版のファイル名には`unsigned`を含めます。Mac版は壊れたアプリと判定されないようアドホック署名を施し、通常の製品名で配布します。GitHub ReleaseにはWindows用EXEと自動更新メタデータ、Mac用DMGだけを掲載します。詳細は[`UNSIGNED_DISTRIBUTION.md`](UNSIGNED_DISTRIBUTION.md)を参照してください。
+Windows版とApple Silicon Mac版は、有料のコード署名証明書を使用せず無料で配布します。OSには「不明な発行元」または「開発元を確認できない」と表示されます。配布ファイル名は通常の製品名とし、署名状態と初回起動方法はReleaseの案内に明記します。Mac版は壊れたアプリと判定されないようアドホック署名を施します。GitHub ReleaseにはWindows用EXEと自動更新メタデータ、Mac用DMGだけを掲載します。詳細は[`UNSIGNED_DISTRIBUTION.md`](UNSIGNED_DISTRIBUTION.md)を参照してください。
 
 Windows版はアプリ内更新に対応します。コード署名が必須となるMacの自動更新は使用せず、アプリから最新版のGitHub Releaseを開いて手動更新します。
 

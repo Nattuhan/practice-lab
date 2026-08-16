@@ -96,7 +96,7 @@
         "nsis"
       ],
       "icon": "desktop/assets/practicelab-icon.ico",
-      "artifactName": "PracticeLab-Setup-${version}-unsigned.${ext}"
+      "artifactName": "PracticeLab-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [

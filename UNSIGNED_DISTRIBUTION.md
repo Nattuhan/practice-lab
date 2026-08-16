@@ -4,7 +4,7 @@ PracticeLabは、有料のコード署名証明書を使用しない無料配布
 
 ## Windows
 
-`PracticeLab-Setup-*-unsigned.exe`を使用してください。初回起動時にMicrosoft Defender SmartScreenが「認識されないアプリ」として警告する場合があります。発行元は「不明な発行元」と表示されます。GitHubのこの公式リポジトリから入手したファイルであることを確認した場合だけ実行してください。Windows版は自動更新に対応します。
+`PracticeLab-Setup-*.exe`を使用してください。初回起動時にMicrosoft Defender SmartScreenが「認識されないアプリ」として警告する場合があります。発行元は「不明な発行元」と表示されます。GitHubのこの公式リポジトリから入手したファイルであることを確認した場合だけ実行してください。Windows版は自動更新に対応します。
 
 ## Mac
 

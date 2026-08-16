@@ -39,7 +39,7 @@ npm run desktop:dist -- --publish=never
 `.github/workflows/release-desktop.yml`は手動実行時に未公開インストーラーをArtifactとして作成します。
 `v1.2.3`形式のタグをpushすると、タグ番号をアプリのバージョンへ設定し、GitHub Releaseへ次を公開します。
 
-- `PracticeLab-Setup-1.2.3-unsigned.exe`
+- `PracticeLab-Setup-1.2.3.exe`
 - `latest.yml`
 - Windows差分更新用の`.exe.blockmap`
 - `PracticeLab-1.2.3-arm64.dmg`
