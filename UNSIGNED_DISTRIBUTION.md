@@ -1,6 +1,6 @@
-# PracticeLab 無料・未署名版
+# PracticeLab 無料配布版
 
-PracticeLabは、コード署名証明書を使用しない無料配布ソフトウェアです。配布ファイルには`unsigned`と明記しています。ダウンロード後は、同じReleaseに掲載された`SHA256SUMS.txt`でファイルのSHA-256を確認できます。
+PracticeLabは、有料のコード署名証明書を使用しない無料配布ソフトウェアです。ダウンロード後は、同じReleaseに掲載された`SHA256SUMS.txt`でファイルのSHA-256を確認できます。
 
 ## Windows
 
@@ -8,7 +8,7 @@ PracticeLabは、コード署名証明書を使用しない無料配布ソフト
 
 ## Mac
 
-Apple Silicon搭載Mac用の`PracticeLab-*-arm64-unsigned.dmg`を使用してください。未署名のため、通常のダブルクリックではmacOSに止められます。FinderでアプリをControlキーを押しながらクリックして「開く」を選ぶか、「システム設定」→「プライバシーとセキュリティ」で、このアプリを開く操作をしてください。
+Apple Silicon搭載Mac用の`PracticeLab-*-arm64.dmg`を使用してください。アプリ本体には配布物の整合性を保つためのアドホック署名を施していますが、Apple Developer IDによる署名とNotarizationは行っていません。初回起動時にmacOSに止められた場合は、FinderでアプリをControlキーを押しながらクリックして「開く」を選ぶか、「システム設定」→「プライバシーとセキュリティ」で、このアプリを開く操作をしてください。
 
 未署名のMac版はアプリ内自動更新に対応しません。「設定」→「アップデート」から最新版のGitHub Releaseを開き、DMGを手動で入れ替えてください。
 

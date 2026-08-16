@@ -8,6 +8,8 @@ WSL2上のCUDAランタイムで実行します。
 
 Apple Silicon Mac版は同じUIとFastAPIバックエンドに、PyTorch、NATTEN、all-in-one-fix、
 Demucsを含むmacOSネイティブCPU解析環境を同梱します。Intel Macは対象外です。
+Apple Developer IDを使用しない無料配布ビルドには、DMG作成前にアドホック署名を施して
+アプリバンドル内部の整合性を保証します。これはNotarizationの代替ではありません。
 
 アプリ本体と利用者データは分離されています。
 

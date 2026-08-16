@@ -297,9 +297,9 @@ PracticeLabのソースコードは [`LICENSE`](LICENSE) に記載したMIT Lice
 - `madmom`のソースコードはBSDライセンスですが、付属する学習済みモデルとデータはCC BY-NC-SA 4.0です。これらを利用する解析機能には非商用条件が適用されます。商用利用を検討する場合は、[madmomの公式ライセンス](https://github.com/CPJKU/madmom/blob/master/LICENSE) を確認してください。
 - PracticeLabのMIT Licenseは、第三者製パッケージやモデルのライセンス条件を変更するものではありません。
 
-## 無料・未署名版の配布
+## 無料配布版
 
-Windows版とApple Silicon Mac版は、コード署名証明書を使用せず無料で配布します。OSには「不明な発行元」または「開発元を確認できない」と表示されます。配布物のファイル名には`unsigned`を含め、GitHub ReleaseにSHA-256チェックサムと起動方法を掲載します。詳細は[`UNSIGNED_DISTRIBUTION.md`](UNSIGNED_DISTRIBUTION.md)を参照してください。
+Windows版とApple Silicon Mac版は、有料のコード署名証明書を使用せず無料で配布します。OSには「不明な発行元」または「開発元を確認できない」と表示されます。Windows版のファイル名には`unsigned`を含めます。Mac版は壊れたアプリと判定されないようアドホック署名を施し、通常の製品名で配布します。GitHub ReleaseにはSHA-256チェックサムと起動方法を掲載します。詳細は[`UNSIGNED_DISTRIBUTION.md`](UNSIGNED_DISTRIBUTION.md)を参照してください。
 
 Windows版はアプリ内更新に対応します。コード署名が必須となるMacの自動更新は使用せず、アプリから最新版のGitHub Releaseを開いて手動更新します。
 
