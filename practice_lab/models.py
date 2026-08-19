@@ -168,11 +168,15 @@ class JobStatusResponse(BaseModel):
     cancel_requested: bool = False
     started_at: float | None = None
     updated_at: float | None = None
+    finished_at: float | None = None
+    duration_seconds: float | None = None
     result: dict | None = None
     description: str | None = None
     kind: str | None = None
     interrupted: bool = False
     resumable: bool = False
+    source_job_id: str | None = None
+    archived: bool = False
 
 
 class JobSubmissionResponse(BaseModel):

@@ -29,7 +29,7 @@ from .models import (
     StorageCleanupRequest,
 )
 from .score_extractor import cleanup_canceled_score_job, extract_score, prepare_score_preview
-from .services import analyze_local_audio, analyze_url, build_analysis_session_id, cancel_job, cleanup_canceled_analysis, cleanup_canceled_stems, cleanup_stem_mix_export, cleanup_uploaded_analysis, create_stem_mix_export, create_stems, delete_result, delete_results, extract_video_id, get_job_status, get_resumable_job_spec, initialize_job_store, list_job_statuses, normalize_analysis_range, publish_folders_to_cloud, rename_result, save_bpm_correction, save_sections, save_uploaded_audio, set_job_status, submit_queued_job, sync_cloud_library, update_library_metadata
+from .services import analyze_local_audio, analyze_url, build_analysis_session_id, cancel_job, cleanup_canceled_analysis, cleanup_canceled_stems, cleanup_stem_mix_export, cleanup_uploaded_analysis, create_stem_mix_export, create_stems, delete_result, delete_results, extract_video_id, get_job_status, get_resumable_job_spec, initialize_job_store, list_job_history, list_job_statuses, normalize_analysis_range, publish_folders_to_cloud, rename_result, save_bpm_correction, save_sections, save_uploaded_audio, set_job_status, submit_queued_job, sync_cloud_library, update_library_metadata
 from .storage import bootstrap_public_data, export_static_assets, load_folders, save_folders
 from .storage_usage import cleanup_storage, storage_report
 from .system_status import get_system_status, launch_nvidia_setup
@@ -208,6 +208,10 @@ def create_app() -> FastAPI:
     @app.get("/jobs", response_model=list[JobStatusResponse])
     async def jobs(recoverable: bool = False):
         return [JobStatusResponse(**job) for job in list_job_statuses(recoverable_only=recoverable)]
+
+    @app.get("/jobs/history", response_model=list[JobStatusResponse])
+    async def job_history():
+        return [JobStatusResponse(**job) for job in list_job_history()]
 
     @app.post("/jobs/{job_id}/resume", response_model=JobSubmissionResponse)
     async def resume_job(job_id: str):

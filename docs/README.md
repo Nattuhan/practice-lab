@@ -1,5 +1,15 @@
-# Docs
+# ドキュメント一覧
 
-実行に不要な設計メモや作業計画を置く場所です。
+## 利用者向け
 
-普段の起動や運用で触るものはリポジトリ直下の `start.bat` と `scripts/` に置きます。
+- [利用者ガイド](user-guide.md): 解析、練習、パート分離、楽譜抽出、処理履歴、同期
+- [プライバシーポリシー](../PRIVACY.md)
+- [未署名配布版の起動方法](../UNSIGNED_DISTRIBUTION.md)
+
+## 開発者・運用者向け
+
+- [開発者ガイド](development.md): 環境構築、起動、テスト、内部構成、ビルド
+- [デスクトップリリース](desktop-release.md)
+- [Cloudflare R2](cloudflare-r2.md)
+- [R2静的閲覧版](static-library.md)
+- [別PCへのセットアップ](portable-setup.md)

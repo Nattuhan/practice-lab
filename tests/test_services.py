@@ -94,10 +94,18 @@ class JobQueueTests(unittest.TestCase):
             self.assertFalse(status["canceled"])
             self.assertFalse(status["cancel_requested"])
             self.assertNotIn("result", status)
+            archived = [
+                job for job in services.list_job_history()
+                if job.get("source_job_id") == job_id
+            ]
+            self.assertEqual(len(archived), 1)
+            self.assertTrue(archived[0]["canceled"])
             fake_queue.put.assert_called_once()
         finally:
             with services.JOB_LOCK:
                 services.JOBS.pop(job_id, None)
+                for archived_id in [key for key in services.JOBS if key.startswith(f"{job_id}:history:")]:
+                    services.JOBS.pop(archived_id, None)
 
     def test_unfinished_job_is_loaded_as_user_resumable(self):
         previous_jobs = services.JOBS.copy()

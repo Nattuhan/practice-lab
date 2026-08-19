@@ -130,6 +130,46 @@ test("曲構成と楽譜抽出を切り替えられる", async ({ page }) => {
   await expect(page.locator("#structure-panel")).toBeVisible();
 });
 
+test("処理履歴に所要時間と結果を表示する", async ({ page }) => {
+  await page.route("**/jobs/history", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify([{
+      id: "history-analysis",
+      stage: "done",
+      message: "Complete",
+      description: "Queued analysis",
+      kind: "analysis",
+      done: true,
+      started_at: 100,
+      finished_at: 225.5,
+      updated_at: 225.5,
+      duration_seconds: 125.5,
+    }]),
+  }));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "処理履歴", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("曲構成の解析", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("2分 6秒", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("成功", { exact: true })).toBeVisible();
+});
+
+test("R2静的閲覧版では処理履歴を表示しない", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.PRACTICE_LAB_CONFIG = { mode: "static", libraryBaseUrl: "results" };
+  });
+  let historyRequested = false;
+  await page.route("**/jobs/history", route => {
+    historyRequested = true;
+    return route.abort();
+  });
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "処理履歴", exact: true })).toBeHidden();
+  expect(historyRequested).toBe(false);
+});
+
 test("パート書き出し操作を右パネル内に収める", async ({ page }) => {
   await page.goto("/");
   const panel = page.locator("#stem-panel");

@@ -45,6 +45,22 @@ class JobRecoveryApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         submit.assert_called_once_with({"type": "cloud_sync", "jobId": self.job_id})
 
+    def test_history_includes_duration_without_result_payload(self):
+        with services.JOB_LOCK:
+            services.JOBS[self.job_id].update({
+                "started_at": 100.0,
+                "updated_at": 112.5,
+                "finished_at": 112.5,
+                "result": {"large": "payload"},
+            })
+        client = TestClient(app_module.create_app())
+        response = client.get("/jobs/history")
+
+        self.assertEqual(response.status_code, 200)
+        job = next(item for item in response.json() if item["id"] == self.job_id)
+        self.assertEqual(job["duration_seconds"], 12.5)
+        self.assertIsNone(job["result"])
+
 
 if __name__ == "__main__":
     unittest.main()

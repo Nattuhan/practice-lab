@@ -8,7 +8,7 @@ PracticeLabは、解析した曲と設定を原則として利用者の端末内
 - 解析対象の音声・動画と変換後の再生データ
 - BPM、セクション、楽譜、パート分離などの解析結果
 - 音量、再生速度、フォルダー、クラウド連携などの設定
-- 処理状況と診断ログ
+- 処理履歴（開始日時、所要時間、成功・失敗）と診断ログ
 
 Windowsでは`%LOCALAPPDATA%\PracticeLab`、macOSではPracticeLabのApplication Support領域へ
 保存します。クラウド認証情報はOSの暗号化機能を利用して保存します。
@@ -21,6 +21,7 @@ Windowsでは`%LOCALAPPDATA%\PracticeLab`、macOSではPracticeLabのApplication
   明示的に実行した場合だけ、音声・動画・解析結果などをそのバケットへアップロードします。
 
 PracticeLabの開発者が管理する共通ストレージへ、利用者の曲や認証情報を自動送信することはありません。
+処理履歴、診断ログ、アプリ設定はR2静的閲覧版へアップロードしません。
 
 ## データの削除
 

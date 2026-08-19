@@ -122,8 +122,13 @@ def initialize_job_store() -> None:
                         "resumable": isinstance(job.get("spec"), dict),
                         "cancel_requested": False,
                         "updated_at": now,
+                        "finished_at": now,
                     }
                 )
+            elif not job.get("finished_at") and job.get("updated_at"):
+                # Older PracticeLab versions only stored updated_at. For a
+                # completed job that timestamp is the best available finish.
+                job["finished_at"] = job["updated_at"]
             JOBS[job["id"]] = job
         persist_jobs_locked()
 
@@ -134,6 +139,22 @@ def list_job_statuses(*, recoverable_only: bool = False) -> list[dict]:
     if recoverable_only:
         values = [job for job in values if job.get("interrupted") and job.get("resumable")]
     return sorted(values, key=lambda item: item.get("updated_at", 0), reverse=True)
+
+
+def list_job_history() -> list[dict]:
+    history = []
+    for job in list_job_statuses():
+        started_at = job.get("started_at")
+        finished_at = job.get("finished_at") or (job.get("updated_at") if job.get("done") else None)
+        summary = {key: value for key, value in job.items() if key not in {"result", "spec"}}
+        summary["finished_at"] = finished_at
+        summary["duration_seconds"] = (
+            max(0.0, float(finished_at) - float(started_at))
+            if started_at is not None and finished_at is not None
+            else None
+        )
+        history.append(summary)
+    return history
 
 
 def get_resumable_job_spec(job_id: str) -> dict:
@@ -163,6 +184,8 @@ def set_job_status(video_id: str, stage: str, message: str, *, done: bool = Fals
                 "updated_at": now,
             }
         )
+        if done:
+            current["finished_at"] = now
         current.setdefault("started_at", now)
         JOBS[video_id] = current
         persist_jobs_locked()
@@ -188,6 +211,7 @@ def complete_job_status(video_id: str, message: str, result: dict) -> None:
                 "error": None,
                 "result": result,
                 "updated_at": now,
+                "finished_at": now,
             }
         )
         current.setdefault("started_at", now)
@@ -219,6 +243,7 @@ def mark_job_canceled(job_id: str) -> None:
                 "canceled": True,
                 "cancel_requested": True,
                 "updated_at": now,
+                "finished_at": now,
             }
         )
         current.setdefault("started_at", now)
@@ -318,6 +343,14 @@ def submit_queued_job(job_id: str, description: str, func, cleanup=None, *, spec
                 "stage": existing.get("stage", "queued"),
                 "message": existing.get("message", description),
             }
+        if existing and existing.get("done"):
+            # Repeated operations intentionally reuse a stable polling id.
+            # Archive the previous run before replacing it so the history UI
+            # keeps every execution rather than only the latest one.
+            archive_id = f"{job_id}:history:{int(float(existing.get('started_at', now)) * 1000)}"
+            archived = dict(existing)
+            archived.update({"id": archive_id, "source_job_id": job_id, "archived": True})
+            JOBS[archive_id] = archived
         # A job id is intentionally reused for repeated work on the same video.
         # Build a fresh record instead of updating the completed one: otherwise
         # cancel_requested from an earlier run poisons every later submission.

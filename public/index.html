@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=20260816-playhead-scrub">
+  <link rel="stylesheet" href="styles.css?v=20260819-job-history">
 </head>
 <body>
 <div class="shell">
@@ -67,6 +67,7 @@
       <span id="offline-badge" hidden>オフライン</span>
       <button class="desktop-update" id="desktop-update" type="button" hidden></button>
       <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><span class="topbar-sync-content"><i data-lucide="refresh-cw"></i><span>端末間同期</span></span></button>
+      <button class="btn-top icon-only" id="btn-job-history" type="button" aria-label="処理履歴" title="処理履歴" hidden><i data-lucide="history"></i></button>
       <button class="btn-top topbar-settings" id="btn-top-settings" type="button" hidden><i data-lucide="settings-2"></i><span>設定</span></button>
       <button class="btn-top action-primary topbar-new-analysis" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
     </div>
@@ -649,6 +650,23 @@
   </form>
 </dialog>
 
+<dialog class="job-history-dialog" id="job-history-dialog">
+  <div class="job-history-card">
+    <div class="job-history-head">
+      <div>
+        <strong>処理履歴</strong>
+        <small>解析・同期・書き出しにかかった時間</small>
+      </div>
+      <div class="job-history-head-actions">
+        <button class="icon-btn" id="job-history-refresh" type="button" aria-label="履歴を更新" title="履歴を更新"><i data-lucide="refresh-cw"></i></button>
+        <button class="icon-btn" id="job-history-close" type="button" aria-label="閉じる"><i data-lucide="x"></i></button>
+      </div>
+    </div>
+    <div class="job-history-summary" id="job-history-summary"></div>
+    <div class="job-history-list" id="job-history-list"><div class="job-history-empty">読み込んでいます...</div></div>
+  </div>
+</dialog>
+
 <div class="context-menu" id="context-menu" hidden></div>
 <aside class="queue-dock" id="queue-dock" hidden>
   <div class="queue-head">
@@ -658,6 +676,6 @@
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=20260816-playhead-scrub"></script>
+<script type="module" src="app.js?v=20260819-job-history"></script>
 </body>
 </html>

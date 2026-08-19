@@ -2364,6 +2364,12 @@ var SELECTORS = {
   queueDock: document.getElementById("queue-dock"),
   queueList: document.getElementById("queue-list"),
   queueCount: document.getElementById("queue-count"),
+  btnJobHistory: document.getElementById("btn-job-history"),
+  jobHistoryDialog: document.getElementById("job-history-dialog"),
+  jobHistoryClose: document.getElementById("job-history-close"),
+  jobHistoryRefresh: document.getElementById("job-history-refresh"),
+  jobHistorySummary: document.getElementById("job-history-summary"),
+  jobHistoryList: document.getElementById("job-history-list"),
   btnAddFolder: document.getElementById("btn-add-folder"),
   btnStorage: document.getElementById("btn-storage"),
   btnSettings: document.getElementById("btn-settings"),
@@ -4343,6 +4349,75 @@ var localizeJobMessage = (message) => {
   if (/^Uploading /i.test(raw)) return `${raw.replace(/^Uploading /i, "")}\u3092\u30AF\u30E9\u30A6\u30C9\u3078\u9001\u4FE1\u3057\u3066\u3044\u307E\u3059`;
   return raw;
 };
+var formatJobDuration = (seconds) => {
+  if (!Number.isFinite(Number(seconds))) return "\u8A08\u6E2C\u306A\u3057";
+  const value = Math.max(0, Number(seconds));
+  if (value < 60) return `${value < 10 ? value.toFixed(1) : Math.round(value)}\u79D2`;
+  const total = Math.round(value);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total % 3600 / 60);
+  const remainder = total % 60;
+  return hours ? `${hours}\u6642\u9593 ${minutes}\u5206 ${remainder}\u79D2` : `${minutes}\u5206 ${remainder}\u79D2`;
+};
+var jobHistoryTitle = (job) => {
+  const labels = {
+    analysis: "\u66F2\u69CB\u6210\u306E\u89E3\u6790",
+    stems: "\u30D1\u30FC\u30C8\u5206\u96E2",
+    "stem-export": "\u30D1\u30FC\u30C8\u66F8\u304D\u51FA\u3057",
+    "cloud-sync": "\u7AEF\u672B\u9593\u540C\u671F",
+    "score-preview": "\u697D\u8B5C\u30D7\u30EC\u30D3\u30E5\u30FC",
+    "score-extract": "\u697D\u8B5C\u62BD\u51FA"
+  };
+  return labels[job.kind] || localizeJobMessage(job.description) || "\u51E6\u7406";
+};
+var renderJobHistory = (jobs) => {
+  const completed = jobs.filter((job) => job.done && !job.error && !job.canceled).length;
+  const failed = jobs.filter((job) => job.error).length;
+  const running = jobs.filter((job) => !job.done).length;
+  SELECTORS.jobHistorySummary.innerHTML = `
+    <span><b>${jobs.length}</b>\u4EF6</span>
+    <span class="success"><b>${completed}</b>\u6210\u529F</span>
+    ${failed ? `<span class="error"><b>${failed}</b>\u5931\u6557</span>` : ""}
+    ${running ? `<span class="running"><b>${running}</b>\u51E6\u7406\u4E2D</span>` : ""}
+  `;
+  if (!jobs.length) {
+    SELECTORS.jobHistoryList.innerHTML = `<div class="job-history-empty">\u307E\u3060\u51E6\u7406\u5C65\u6B74\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u4ECA\u5F8C\u306E\u51E6\u7406\u306F\u3053\u3053\u3078\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002</div>`;
+    return;
+  }
+  SELECTORS.jobHistoryList.innerHTML = jobs.map((job) => {
+    const stateClass = job.canceled ? "canceled" : job.error ? "error" : job.done ? "success" : "running";
+    const state = job.canceled ? "\u30AD\u30E3\u30F3\u30BB\u30EB" : job.error ? "\u5931\u6557" : job.done ? "\u6210\u529F" : "\u51E6\u7406\u4E2D";
+    const started = job.started_at ? new Date(job.started_at * 1e3).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" }) : "\u65E5\u6642\u4E0D\u660E";
+    const duration = job.duration_seconds ?? (job.done && job.started_at && job.updated_at ? job.updated_at - job.started_at : null);
+    return `<article class="job-history-item ${stateClass}">
+      <div class="job-history-item-main">
+        <strong>${escapeHtml(jobHistoryTitle(job))}</strong>
+        <span class="job-history-state">${state}</span>
+      </div>
+      <div class="job-history-meta"><span>${escapeHtml(started)}</span><span class="job-history-duration"><i data-lucide="timer"></i>${escapeHtml(formatJobDuration(duration))}</span></div>
+      <p title="${escapeHtml(job.error || localizeJobMessage(job.message))}">${escapeHtml(job.error || localizeJobMessage(job.message))}</p>
+    </article>`;
+  }).join("");
+  lucide.createIcons();
+};
+var loadJobHistory = async () => {
+  if (!hasServer || !SELECTORS.jobHistoryList) return;
+  SELECTORS.jobHistoryRefresh.disabled = true;
+  try {
+    const response = await fetch("/jobs/history", { cache: "no-store" });
+    if (!response.ok) throw new Error(`\u5C65\u6B74\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093 (${response.status})`);
+    renderJobHistory(await response.json());
+  } catch (error) {
+    SELECTORS.jobHistoryList.innerHTML = `<div class="job-history-empty error">${escapeHtml(error.message)}</div>`;
+  } finally {
+    SELECTORS.jobHistoryRefresh.disabled = false;
+  }
+};
+var openJobHistory = () => {
+  if (!SELECTORS.jobHistoryDialog || !hasServer) return;
+  SELECTORS.jobHistoryDialog.showModal();
+  void loadJobHistory();
+};
 var renderQueueDock = () => {
   if (!SELECTORS.queueDock || !SELECTORS.queueList || !SELECTORS.queueCount) return;
   const jobs = [...trackedJobs.values()].sort((a3, b2) => b2.createdAt - a3.createdAt);
@@ -6294,6 +6369,7 @@ var detectServer = async () => {
     SELECTORS.btnBpmSave.hidden = true;
     SELECTORS.btnAddFolder.hidden = true;
     SELECTORS.btnStorage.hidden = true;
+    SELECTORS.btnJobHistory.hidden = true;
     setScoreFeatureVisible(false);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "\u9759\u7684\u30E9\u30A4\u30D6\u30E9\u30EA\u30E2\u30FC\u30C9";
@@ -6305,10 +6381,12 @@ var detectServer = async () => {
     SELECTORS.btnReanalyze.hidden = true;
     SELECTORS.btnCloudSync.hidden = true;
     SELECTORS.btnStorage.hidden = true;
+    SELECTORS.btnJobHistory.hidden = true;
     return;
   }
   SELECTORS.btnCloudSync.hidden = false;
   SELECTORS.btnStorage.hidden = false;
+  SELECTORS.btnJobHistory.hidden = false;
   SELECTORS.btnNewUrl.hidden = currentFeature === "score";
 };
 var renderDesktopSystemStatus = (status) => {
@@ -6503,6 +6581,12 @@ SELECTORS.inputCard.addEventListener("drop", (event) => {
 SELECTORS.scoreProcessingMode?.addEventListener("change", syncScoreOptionAvailability);
 SELECTORS.btnCloudSync?.addEventListener("click", syncCloudLibrary);
 SELECTORS.btnStorage?.addEventListener("click", openStorageDialog);
+SELECTORS.btnJobHistory?.addEventListener("click", openJobHistory);
+SELECTORS.jobHistoryClose?.addEventListener("click", () => SELECTORS.jobHistoryDialog.close());
+SELECTORS.jobHistoryRefresh?.addEventListener("click", loadJobHistory);
+SELECTORS.jobHistoryDialog?.addEventListener("click", (event) => {
+  if (event.target === SELECTORS.jobHistoryDialog) SELECTORS.jobHistoryDialog.close();
+});
 SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);

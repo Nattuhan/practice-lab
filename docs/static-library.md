@@ -1,71 +1,57 @@
-# Static library mode
+# R2静的閲覧版
 
-Static library mode is the always-on viewer for analyzed sessions.
+R2静的閲覧版は、デスクトップ版で解析済みの曲を別端末から再生するための読み取り専用画面です。
 
-The local FastAPI app remains the management app:
+## デスクトップ版との違い
 
-- analyze YouTube URLs
-- re-analyze
-- extract scores
-- upload session assets to R2
+デスクトップ版は管理アプリです。YouTube・音声ファイルの解析、パート分離、楽譜抽出、ライブラリ編集、処理履歴、R2同期を実行します。
 
-The static library app can be hosted on Cloudflare Pages and only reads files
-from R2:
+静的閲覧版はR2上の解析済みファイルを読むだけです。曲の一覧表示と再生、セクション移動、ループ、速度変更、クリック、公開済みstemsの再生に対応します。
 
-- `sessions/manifest.json`
-- `sessions/{video_id}/session.json`
-- `sessions/{video_id}/audio.mp3`
-- `sessions/{video_id}/video.mp4`
+解析、処理履歴、設定、削除、アップロードは表示も実行もしません。端末内の`jobs.json`、ログ、設定、R2認証情報は公開対象外です。
 
-Score Extractor is intentionally not part of the static library. It is a
-management-side tool because it creates new assets and depends on the backend.
-
-## Static app URL
-
-The sync script can upload the static viewer itself to R2. Use your own public
-R2 base URL when documenting or configuring a deployment:
+## オブジェクト構成
 
 ```text
-https://<public-r2-domain>/index.html
+index.html
+app.js
+styles.css
+sessions/manifest.json
+sessions/folders.json
+sessions/{session_id}/session.json
+sessions/{session_id}/audio.mp3
+sessions/{session_id}/video.mp4
+sessions/{session_id}/stems/*.mp3
 ```
 
-This keeps the app and `sessions/*` assets on the same origin, which avoids
-browser CORS issues.
+## 静的モード
 
-## Cloudflare Pages
+公開時は`window.PRACTICE_LAB_CONFIG`で静的モードを指定します。
 
-Use these settings:
-
-```text
-Build command: none
-Build output directory: public
+```html
+<script>
+window.PRACTICE_LAB_CONFIG = {
+  mode: "static",
+  libraryBaseUrl: "sessions"
+};
+</script>
 ```
 
-The static app falls back to:
+FastAPIが存在するローカル版では、同じUIファイルが管理アプリとして動作します。静的モードでは、バックエンド専用機能を実行するAPI呼び出しを行いません。
 
-```text
-https://<public-r2-domain>/sessions/manifest.json
+## 更新
+
+静的閲覧版へ反映する変更がある場合だけ、次を実行します。
+
+```bash
+python scripts/export_static.py
+python scripts/sync_r2.py
 ```
 
-When the FastAPI server is present, the same `public/` files still work as the
-management app and read local `results/manifest.json`.
+`sync_r2.py`はSHA-256台帳を比較し、新規・変更・削除だけを反映します。未変更の音声・動画を再送しません。
 
-For public deployments, inject `window.PRACTICE_LAB_CONFIG` before `app.js` and
-set `libraryBaseUrl`, `manifestUrl`, or `foldersUrl` instead of hard-coding a
-personal R2 URL in the tracked source.
+デスクトップ専用の解析機能、処理履歴、ローカル設定だけを変更した場合は、R2同期は不要です。
 
-If using Cloudflare Pages on a different hostname, configure R2 CORS for that
-Pages origin.
+## CORS
 
-## Refresh data
-
-After local analysis, upload the latest assets:
-
-```powershell
-python scripts\sync_r2.py
-```
-
-The sync script also configures read CORS on the R2 bucket so Cloudflare Pages
-can fetch JSON, audio, and video assets when the API token has permission. If
-the token is only `Object Read & Write`, CORS setup may need to be done in the
-Cloudflare dashboard.
+閲覧ページとR2のホスト名が異なる場合は、Cloudflare側で閲覧ページのオリジンに対する`GET`と`HEAD`を許可します。詳細は[cloudflare-r2.md](cloudflare-r2.md)を参照してください。

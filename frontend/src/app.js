@@ -42,6 +42,12 @@ const SELECTORS = {
   queueDock: document.getElementById("queue-dock"),
   queueList: document.getElementById("queue-list"),
   queueCount: document.getElementById("queue-count"),
+  btnJobHistory: document.getElementById("btn-job-history"),
+  jobHistoryDialog: document.getElementById("job-history-dialog"),
+  jobHistoryClose: document.getElementById("job-history-close"),
+  jobHistoryRefresh: document.getElementById("job-history-refresh"),
+  jobHistorySummary: document.getElementById("job-history-summary"),
+  jobHistoryList: document.getElementById("job-history-list"),
   btnAddFolder: document.getElementById("btn-add-folder"),
   btnStorage: document.getElementById("btn-storage"),
   btnSettings: document.getElementById("btn-settings"),
@@ -2218,6 +2224,80 @@ const localizeJobMessage = message => {
   return raw;
 };
 
+const formatJobDuration = seconds => {
+  if (!Number.isFinite(Number(seconds))) return "計測なし";
+  const value = Math.max(0, Number(seconds));
+  if (value < 60) return `${value < 10 ? value.toFixed(1) : Math.round(value)}秒`;
+  const total = Math.round(value);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return hours ? `${hours}時間 ${minutes}分 ${remainder}秒` : `${minutes}分 ${remainder}秒`;
+};
+
+const jobHistoryTitle = job => {
+  const labels = {
+    analysis: "曲構成の解析",
+    stems: "パート分離",
+    "stem-export": "パート書き出し",
+    "cloud-sync": "端末間同期",
+    "score-preview": "楽譜プレビュー",
+    "score-extract": "楽譜抽出",
+  };
+  return labels[job.kind] || localizeJobMessage(job.description) || "処理";
+};
+
+const renderJobHistory = jobs => {
+  const completed = jobs.filter(job => job.done && !job.error && !job.canceled).length;
+  const failed = jobs.filter(job => job.error).length;
+  const running = jobs.filter(job => !job.done).length;
+  SELECTORS.jobHistorySummary.innerHTML = `
+    <span><b>${jobs.length}</b>件</span>
+    <span class="success"><b>${completed}</b>成功</span>
+    ${failed ? `<span class="error"><b>${failed}</b>失敗</span>` : ""}
+    ${running ? `<span class="running"><b>${running}</b>処理中</span>` : ""}
+  `;
+  if (!jobs.length) {
+    SELECTORS.jobHistoryList.innerHTML = `<div class="job-history-empty">まだ処理履歴はありません。今後の処理はここへ保存されます。</div>`;
+    return;
+  }
+  SELECTORS.jobHistoryList.innerHTML = jobs.map(job => {
+    const stateClass = job.canceled ? "canceled" : job.error ? "error" : job.done ? "success" : "running";
+    const state = job.canceled ? "キャンセル" : job.error ? "失敗" : job.done ? "成功" : "処理中";
+    const started = job.started_at ? new Date(job.started_at * 1000).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" }) : "日時不明";
+    const duration = job.duration_seconds ?? (job.done && job.started_at && job.updated_at ? job.updated_at - job.started_at : null);
+    return `<article class="job-history-item ${stateClass}">
+      <div class="job-history-item-main">
+        <strong>${escapeHtml(jobHistoryTitle(job))}</strong>
+        <span class="job-history-state">${state}</span>
+      </div>
+      <div class="job-history-meta"><span>${escapeHtml(started)}</span><span class="job-history-duration"><i data-lucide="timer"></i>${escapeHtml(formatJobDuration(duration))}</span></div>
+      <p title="${escapeHtml(job.error || localizeJobMessage(job.message))}">${escapeHtml(job.error || localizeJobMessage(job.message))}</p>
+    </article>`;
+  }).join("");
+  lucide.createIcons();
+};
+
+const loadJobHistory = async () => {
+  if (!hasServer || !SELECTORS.jobHistoryList) return;
+  SELECTORS.jobHistoryRefresh.disabled = true;
+  try {
+    const response = await fetch("/jobs/history", { cache: "no-store" });
+    if (!response.ok) throw new Error(`履歴を取得できません (${response.status})`);
+    renderJobHistory(await response.json());
+  } catch (error) {
+    SELECTORS.jobHistoryList.innerHTML = `<div class="job-history-empty error">${escapeHtml(error.message)}</div>`;
+  } finally {
+    SELECTORS.jobHistoryRefresh.disabled = false;
+  }
+};
+
+const openJobHistory = () => {
+  if (!SELECTORS.jobHistoryDialog || !hasServer) return;
+  SELECTORS.jobHistoryDialog.showModal();
+  void loadJobHistory();
+};
+
 const renderQueueDock = () => {
   if (!SELECTORS.queueDock || !SELECTORS.queueList || !SELECTORS.queueCount) return;
   const jobs = [...trackedJobs.values()].sort((a, b) => b.createdAt - a.createdAt);
@@ -4316,6 +4396,7 @@ const detectServer = async () => {
     SELECTORS.btnBpmSave.hidden = true;
     SELECTORS.btnAddFolder.hidden = true;
     SELECTORS.btnStorage.hidden = true;
+    SELECTORS.btnJobHistory.hidden = true;
     setScoreFeatureVisible(false);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "静的ライブラリモード";
@@ -4328,11 +4409,13 @@ const detectServer = async () => {
     SELECTORS.btnReanalyze.hidden = true;
     SELECTORS.btnCloudSync.hidden = true;
     SELECTORS.btnStorage.hidden = true;
+    SELECTORS.btnJobHistory.hidden = true;
     return;
   }
 
   SELECTORS.btnCloudSync.hidden = false;
   SELECTORS.btnStorage.hidden = false;
+  SELECTORS.btnJobHistory.hidden = false;
   SELECTORS.btnNewUrl.hidden = currentFeature === "score";
 };
 
@@ -4541,6 +4624,12 @@ SELECTORS.inputCard.addEventListener("drop", event => {
 SELECTORS.scoreProcessingMode?.addEventListener("change", syncScoreOptionAvailability);
 SELECTORS.btnCloudSync?.addEventListener("click", syncCloudLibrary);
 SELECTORS.btnStorage?.addEventListener("click", openStorageDialog);
+SELECTORS.btnJobHistory?.addEventListener("click", openJobHistory);
+SELECTORS.jobHistoryClose?.addEventListener("click", () => SELECTORS.jobHistoryDialog.close());
+SELECTORS.jobHistoryRefresh?.addEventListener("click", loadJobHistory);
+SELECTORS.jobHistoryDialog?.addEventListener("click", event => {
+  if (event.target === SELECTORS.jobHistoryDialog) SELECTORS.jobHistoryDialog.close();
+});
 SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);
