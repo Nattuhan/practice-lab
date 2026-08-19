@@ -150,8 +150,18 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
   await page.goto("/");
   const historyButton = page.getByRole("button", { name: "処理履歴", exact: true });
   await expect(historyButton).toContainText("処理履歴");
+  await expect(historyButton.locator("svg")).toBeVisible();
   await historyButton.click();
   const dialog = page.getByRole("dialog");
+  const placement = await dialog.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return {
+      horizontalOffset: Math.abs(rect.left + rect.width / 2 - window.innerWidth / 2),
+      verticalOffset: Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2),
+    };
+  });
+  expect(placement.horizontalOffset).toBeLessThanOrEqual(1);
+  expect(placement.verticalOffset).toBeLessThanOrEqual(1);
   await expect(dialog.getByText("曲構成の解析", { exact: true })).toBeVisible();
   await expect(dialog.getByText("2分 6秒", { exact: true })).toBeVisible();
   await expect(dialog.getByText("成功", { exact: true })).toBeVisible();

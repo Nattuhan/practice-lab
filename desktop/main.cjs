@@ -471,8 +471,8 @@ async function createWindow() {
     writeBackendLog(`Legacy R2 settings migration failed: ${error.message}\n`);
   }
   const workArea = screen.getPrimaryDisplay().workArea;
-  const width = Math.min(1440, workArea.width);
-  const height = Math.min(940, workArea.height);
+  const width = Math.min(1280, Math.max(1024, workArea.width - 96));
+  const height = Math.min(820, Math.max(700, workArea.height - 96));
   mainWindow = new BrowserWindow({
     width,
     height,

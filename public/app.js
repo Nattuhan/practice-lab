@@ -174,6 +174,17 @@ var HardDrive = [
   ]
 ];
 
+// node_modules/lucide/dist/esm/icons/history.js
+var History = [
+  "svg",
+  defaultAttributes,
+  [
+    ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }],
+    ["path", { d: "M3 3v5h5" }],
+    ["path", { d: "M12 7v5l4 2" }]
+  ]
+];
+
 // node_modules/lucide/dist/esm/icons/list-end.js
 var ListEnd = [
   "svg",
@@ -314,6 +325,17 @@ var Square = [
   "svg",
   defaultAttributes,
   [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }]]
+];
+
+// node_modules/lucide/dist/esm/icons/timer.js
+var Timer = [
+  "svg",
+  defaultAttributes,
+  [
+    ["line", { x1: "10", x2: "14", y1: "2", y2: "2" }],
+    ["line", { x1: "12", x2: "15", y1: "14", y2: "11" }],
+    ["circle", { cx: "12", cy: "14", r: "8" }]
+  ]
 ];
 
 // node_modules/lucide/dist/esm/icons/trash-2.js
@@ -2107,6 +2129,7 @@ var icons = {
   Gauge,
   ListEnd,
   HardDrive,
+  History,
   Maximize,
   Music,
   Music2,
@@ -2120,6 +2143,7 @@ var icons = {
   Settings2,
   SkipBack,
   Square,
+  Timer,
   Trash2,
   Upload,
   Volume2,
@@ -6817,6 +6841,7 @@ lucide/dist/esm/icons/file-audio.js:
 lucide/dist/esm/icons/folder-plus.js:
 lucide/dist/esm/icons/gauge.js:
 lucide/dist/esm/icons/hard-drive.js:
+lucide/dist/esm/icons/history.js:
 lucide/dist/esm/icons/list-end.js:
 lucide/dist/esm/icons/maximize.js:
 lucide/dist/esm/icons/music-2.js:
@@ -6831,6 +6856,7 @@ lucide/dist/esm/icons/rotate-ccw.js:
 lucide/dist/esm/icons/settings-2.js:
 lucide/dist/esm/icons/skip-back.js:
 lucide/dist/esm/icons/square.js:
+lucide/dist/esm/icons/timer.js:
 lucide/dist/esm/icons/trash-2.js:
 lucide/dist/esm/icons/upload.js:
 lucide/dist/esm/icons/volume-2.js:
