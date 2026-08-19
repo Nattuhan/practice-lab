@@ -1,11 +1,16 @@
-# PracticeLab v1.0.3
+# PracticeLab v1.0.4
 
 音楽の解析と練習をひとつの画面で行えるデスクトップアプリです。
 
 ## ダウンロード
 
-- **Windows**: `PracticeLab-Setup-1.0.3.exe`
-- **macOS（Apple Silicon）**: `PracticeLab-1.0.3-arm64.dmg`
+- **Windows**: `PracticeLab-Setup-1.0.4.exe`
+- **macOS（Apple Silicon）**: `PracticeLab-1.0.4-arm64.dmg`
+
+## v1.0.4の変更
+
+- 上部の処理履歴ボタンに「処理履歴」の文字を常時表示
+- 起動時のウィンドウを画面内へ収めて中央に表示
 
 ## v1.0.3の変更
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, screen, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const fs = require("fs");
 const net = require("net");
@@ -470,9 +470,14 @@ async function createWindow() {
   } catch (error) {
     writeBackendLog(`Legacy R2 settings migration failed: ${error.message}\n`);
   }
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const width = Math.min(1440, workArea.width);
+  const height = Math.min(940, workArea.height);
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 940,
+    width,
+    height,
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
     minWidth: 1024,
     minHeight: 700,
     show: false,
@@ -484,7 +489,10 @@ async function createWindow() {
       sandbox: true,
     },
   });
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.center();
+    mainWindow.show();
+  });
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   mainWindow.webContents.on("will-attach-webview", event => event.preventDefault());
   const url = await startBackend();

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=20260819-job-history">
+  <link rel="stylesheet" href="styles.css?v=20260819-job-history-label">
 </head>
 <body>
 <div class="shell">
@@ -67,7 +67,7 @@
       <span id="offline-badge" hidden>オフライン</span>
       <button class="desktop-update" id="desktop-update" type="button" hidden></button>
       <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><span class="topbar-sync-content"><i data-lucide="refresh-cw"></i><span>端末間同期</span></span></button>
-      <button class="btn-top icon-only" id="btn-job-history" type="button" aria-label="処理履歴" title="処理履歴" hidden><i data-lucide="history"></i></button>
+      <button class="btn-top topbar-job-history" id="btn-job-history" type="button" aria-label="処理履歴" title="処理履歴" hidden><i data-lucide="clock-3"></i><span>処理履歴</span></button>
       <button class="btn-top topbar-settings" id="btn-top-settings" type="button" hidden><i data-lucide="settings-2"></i><span>設定</span></button>
       <button class="btn-top action-primary topbar-new-analysis" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
     </div>
@@ -676,6 +676,6 @@
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=20260819-job-history"></script>
+<script type="module" src="app.js?v=20260819-job-history-label"></script>
 </body>
 </html>

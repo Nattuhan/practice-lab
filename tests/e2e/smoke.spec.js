@@ -148,7 +148,9 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
   }));
 
   await page.goto("/");
-  await page.getByRole("button", { name: "処理履歴", exact: true }).click();
+  const historyButton = page.getByRole("button", { name: "処理履歴", exact: true });
+  await expect(historyButton).toContainText("処理履歴");
+  await historyButton.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("曲構成の解析", { exact: true })).toBeVisible();
   await expect(dialog.getByText("2分 6秒", { exact: true })).toBeVisible();
