@@ -59,8 +59,9 @@ Windows版は起動後にGitHub Releasesを確認し、新版を取得します�
 
 ## macOS署名とNotarization
 
-正式タグではApple Developer ProgramのDeveloper ID Application証明書とNotarizationを必須にします。
-GitHub ActionsのRepository secretsへ次を登録します。
+現在のApple Silicon Mac版は、GitHub Actionsでアドホック署名した未公証DMGとして配布します。ビルド時に`codesign --verify --deep --strict`でアプリバンドルの整合性を検証し、Gatekeeperから信頼済みと誤認されないことも確認します。利用者向けの起動手順は[未署名配布版の案内](../UNSIGNED_DISTRIBUTION.md)に記載しています。
+
+将来Developer ID署名とNotarizationへ移行する場合は、GitHub ActionsのRepository secretsへ次を登録します。
 
 - `MACOS_CERTIFICATE`: Developer ID Application証明書を含む`.p12`のBase64値
 - `MACOS_CERTIFICATE_PASSWORD`: `.p12`のパスワード
@@ -68,8 +69,7 @@ GitHub ActionsのRepository secretsへ次を登録します。
 - `APPLE_APP_SPECIFIC_PASSWORD`: App用パスワード
 - `APPLE_TEAM_ID`: Developer Team ID
 
-正式タグで一つでも不足するとリリースを停止します。ビルド後は`codesign`、Gatekeeperの`spctl`、
-Notarization ticketの`stapler`を検証します。
+移行後はビルド後に`codesign`、Gatekeeperの`spctl`、Notarization ticketの`stapler`を検証します。
 
 要件の根拠:
 
