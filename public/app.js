@@ -4363,8 +4363,11 @@ var localizeJobMessage = (message) => {
   };
   if (exact[raw]) return exact[raw];
   if (/^Starting WSL analyzer on /i.test(raw)) return "\u66F2\u69CB\u6210\u306E\u89E3\u6790\u3092\u958B\u59CB\u3057\u3066\u3044\u307E\u3059";
+  if (/^Analyzer running for (\d+)s$/i.test(raw)) {
+    return `AI\u3067\u66F2\u69CB\u6210\u3092\u89E3\u6790\u4E2D\u3067\u3059\uFF08${raw.match(/(\d+)s$/)?.[1] || 0}\u79D2\u7D4C\u904E\uFF09`;
+  }
   if (/^Analyzer still running; no output for (\d+)s$/i.test(raw)) {
-    return `\u66F2\u69CB\u6210\u3092\u89E3\u6790\u4E2D\u3067\u3059\uFF08${raw.match(/(\d+)s$/)?.[1] || 0}\u79D2\u9593\u3001\u65B0\u3057\u3044\u9032\u6357\u306A\u3057\uFF09`;
+    return `AI\u3067\u66F2\u69CB\u6210\u3092\u89E3\u6790\u4E2D\u3067\u3059\uFF08${raw.match(/(\d+)s$/)?.[1] || 0}\u79D2\u7D4C\u904E\uFF09`;
   }
   if (/^Encoding /i.test(raw)) {
     const stem = raw.replace(/^Encoding /i, "").toLowerCase();

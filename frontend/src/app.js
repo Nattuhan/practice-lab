@@ -2213,8 +2213,11 @@ const localizeJobMessage = message => {
   };
   if (exact[raw]) return exact[raw];
   if (/^Starting WSL analyzer on /i.test(raw)) return "曲構成の解析を開始しています";
+  if (/^Analyzer running for (\d+)s$/i.test(raw)) {
+    return `AIで曲構成を解析中です（${raw.match(/(\d+)s$/)?.[1] || 0}秒経過）`;
+  }
   if (/^Analyzer still running; no output for (\d+)s$/i.test(raw)) {
-    return `曲構成を解析中です（${raw.match(/(\d+)s$/)?.[1] || 0}秒間、新しい進捗なし）`;
+    return `AIで曲構成を解析中です（${raw.match(/(\d+)s$/)?.[1] || 0}秒経過）`;
   }
   if (/^Encoding /i.test(raw)) {
     const stem = raw.replace(/^Encoding /i, "").toLowerCase();

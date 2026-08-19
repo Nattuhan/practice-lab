@@ -399,12 +399,12 @@ class EnvFileTests(unittest.TestCase):
 
 
 class AnalyzerRuntimeConfigTests(unittest.TestCase):
-    def test_defaults_fail_fast_when_analyzer_goes_silent(self):
+    def test_defaults_allow_silent_cpu_inference_to_finish(self):
         with patch.dict(os.environ, {}, clear=True):
             config = get_analyzer_runtime_config()
 
-        self.assertEqual(config.timeout_seconds, 600)
-        self.assertEqual(config.no_output_timeout_seconds, 120)
+        self.assertEqual(config.timeout_seconds, 1800)
+        self.assertIsNone(config.no_output_timeout_seconds)
         self.assertEqual(config.heartbeat_seconds, 30)
         self.assertEqual(config.device, "auto")
 

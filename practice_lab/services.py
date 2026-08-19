@@ -65,8 +65,8 @@ class AnalyzerRuntimeConfig:
 
 
 def get_analyzer_runtime_config() -> AnalyzerRuntimeConfig:
-    timeout_seconds = int(os.environ.get("ANALYZER_TIMEOUT_SECONDS", "600"))
-    no_output_timeout_seconds = int(os.environ.get("ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS", "120"))
+    timeout_seconds = int(os.environ.get("ANALYZER_TIMEOUT_SECONDS", "1800"))
+    no_output_timeout_seconds = int(os.environ.get("ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS", "0"))
     heartbeat_seconds = int(os.environ.get("ANALYZER_HEARTBEAT_SECONDS", "30"))
     return AnalyzerRuntimeConfig(
         timeout_seconds=timeout_seconds,
@@ -992,8 +992,9 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
     set_job_status(job_id, "inferencing", f"Starting analyzer on {backend.label}")
 
     try:
-        deadline = time.monotonic() + runtime_config.timeout_seconds
-        last_output_at = time.monotonic()
+        analyzer_started_at = time.monotonic()
+        deadline = analyzer_started_at + runtime_config.timeout_seconds
+        last_output_at = analyzer_started_at
         last_heartbeat_at = last_output_at
         while process.poll() is None:
             if is_job_cancel_requested(job_id):
@@ -1012,7 +1013,7 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
                 set_job_status(
                     job_id,
                     "inferencing",
-                    f"Analyzer still running; no output for {silence_seconds}s",
+                    f"Analyzer running for {int(now - analyzer_started_at)}s",
                 )
                 last_heartbeat_at = now
             try:

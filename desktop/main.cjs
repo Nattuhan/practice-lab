@@ -281,6 +281,8 @@ async function startBackend() {
       PRACTICE_LAB_DEVICE_NAME: os.hostname(),
       ANALYZER_EXECUTOR: process.platform === "win32" ? "wsl" : "auto",
       ANALYZER_DEVICE: process.platform === "win32" ? "cuda" : (process.platform === "darwin" ? "cpu" : "auto"),
+      ANALYZER_TIMEOUT_SECONDS: "1800",
+      ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS: "0",
       STEM_DEVICE: process.platform === "win32" ? "cuda" : (process.platform === "darwin" ? "cpu" : "auto"),
       PRACTICE_LAB_SKIP_ENV_FILE: "1",
       R2_ENABLED: cloud.enabled ? "1" : "0",
