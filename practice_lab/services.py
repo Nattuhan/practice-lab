@@ -416,6 +416,41 @@ def yt_dlp_command(*args: str) -> list[str]:
     return [sys.executable, "-m", "yt_dlp", *args]
 
 
+def yt_dlp_browser_session_args() -> list[str]:
+    """Return a local browser session fallback for YouTube's signed streams.
+
+    YouTube occasionally returns unusable anonymous stream URLs even though
+    metadata extraction succeeds.  A browser session makes yt-dlp use the web
+    client and generate a fresh, working URL.  This stays local to the device
+    and is only attempted after an anonymous 403.
+    """
+    candidates: list[tuple[str, Path]] = []
+    home = Path.home()
+    if sys.platform == "darwin":
+        candidates = [
+            ("chrome", home / "Library/Application Support/Google/Chrome"),
+            ("edge", home / "Library/Application Support/Microsoft Edge"),
+            ("brave", home / "Library/Application Support/BraveSoftware/Brave-Browser"),
+        ]
+    elif sys.platform == "win32":
+        local_app_data = Path(os.environ.get("LOCALAPPDATA", ""))
+        candidates = [
+            ("chrome", local_app_data / "Google/Chrome/User Data"),
+            ("edge", local_app_data / "Microsoft/Edge/User Data"),
+            ("brave", local_app_data / "BraveSoftware/Brave-Browser/User Data"),
+        ]
+    else:
+        candidates = [
+            ("chrome", home / ".config/google-chrome"),
+            ("chromium", home / ".config/chromium"),
+            ("brave", home / ".config/BraveSoftware/Brave-Browser"),
+        ]
+    for browser, profile_path in candidates:
+        if profile_path.exists():
+            return ["--cookies-from-browser", browser, "--remote-components", "ejs:github"]
+    return []
+
+
 def yt_dlp_error(stderr: str, fallback: str) -> str:
     lines = [
         line for line in (stderr or fallback).splitlines()
@@ -423,7 +458,7 @@ def yt_dlp_error(stderr: str, fallback: str) -> str:
     ]
     message = "\n".join(lines).strip() or fallback
     if "HTTP Error 403" in message or "Forbidden" in message:
-        return f"{message}\n\nYouTube temporarily rejected the video stream. PracticeLab retried with a fresh URL and a compatible MP4 format, but YouTube still returned 403."
+        return f"{message}\n\nYouTube temporarily rejected the video stream. PracticeLab retried anonymously and with a local browser session when available, but YouTube still returned 403."
     return message
 
 
@@ -445,32 +480,41 @@ def download_wav(
 ) -> None:
     format_selector = _download_format(start_sec, end_sec, video=False)
     format_args = ["-f", format_selector] if format_selector else []
+    session_args = yt_dlp_browser_session_args()
+    attempt_args = [[], session_args] if session_args else [[]]
+    last_error = "yt-dlp failed"
     with tempfile.TemporaryDirectory() as temp_dir:
-        result = subprocess.run(
-            yt_dlp_command(
+        for index, extra_args in enumerate(attempt_args):
+            result = subprocess.run(
+                yt_dlp_command(
+                *extra_args,
                 *format_args,
                 "-x",
                 "--audio-format",
                 "wav",
                 "-o",
-                os.path.join(temp_dir, "audio.%(ext)s"),
+                os.path.join(temp_dir, f"audio-{index}.%(ext)s"),
                 "--no-playlist",
                 "--js-runtimes",
                 "node",
                 *_download_section_args(start_sec, end_sec),
                 url,
             ),
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(yt_dlp_error(result.stderr, "yt-dlp failed"))
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                files = list(Path(temp_dir).glob(f"audio-{index}.wav"))
+                if not files:
+                    raise RuntimeError("wav not found")
+                shutil.move(str(files[0]), str(destination))
+                return
+            last_error = yt_dlp_error(result.stderr, "yt-dlp failed")
+            if "403" not in last_error and "Forbidden" not in last_error:
+                raise RuntimeError(last_error)
 
-        files = list(Path(temp_dir).glob("*.wav"))
-        if not files:
-            raise RuntimeError("wav not found")
-        shutil.move(str(files[0]), str(destination))
+    raise RuntimeError(last_error)
 
 
 def download_video(
@@ -485,13 +529,15 @@ def download_video(
     if start_sec is None and end_sec is None and format_selector != FULL_VIDEO_FALLBACK_FORMAT:
         format_candidates.append(FULL_VIDEO_FALLBACK_FORMAT)
     last_error = "yt-dlp video download failed"
+    session_args = yt_dlp_browser_session_args()
     with tempfile.TemporaryDirectory() as temp_dir:
         for format_index, candidate in enumerate(format_candidates):
-            attempts = 2 if format_index == 0 else 1
-            for attempt in range(attempts):
+            attempt_args = [[], session_args] if session_args and format_index == 0 else [[]]
+            for attempt, extra_args in enumerate(attempt_args):
                 output_base = f"video-{format_index}-{attempt}"
                 result = subprocess.run(
                     yt_dlp_command(
+                        *extra_args,
                         "-f",
                         candidate,
                         "--merge-output-format",
@@ -523,7 +569,7 @@ def download_video(
                 last_error = yt_dlp_error(result.stderr, "yt-dlp video download failed")
                 if "403" not in last_error and "Forbidden" not in last_error:
                     raise RuntimeError(last_error)
-                if attempt + 1 < attempts:
+                if attempt + 1 < len(attempt_args):
                     time.sleep(1)
     raise RuntimeError(last_error)
 

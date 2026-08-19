@@ -1,16 +1,17 @@
-# PracticeLab v1.0.1
+# PracticeLab v1.0.2
 
 音楽の解析と練習をひとつの画面で行えるデスクトップアプリです。
 
 ## ダウンロード
 
-- **Windows**: `PracticeLab-Setup-1.0.1.exe`
-- **macOS（Apple Silicon）**: `PracticeLab-1.0.1-arm64.dmg`
+- **Windows**: `PracticeLab-Setup-1.0.2.exe`
+- **macOS（Apple Silicon）**: `PracticeLab-1.0.2-arm64.dmg`
 
-## v1.0.1の修正
+## v1.0.2の修正
 
-- macOS版で解析開始時に不足モジュールのエラーが発生する問題を修正
-- 配布前に完成したバックエンドで解析依存関係を検査する処理を追加
+- 一部のYouTube動画で解析開始時に403エラーが発生する問題を修正
+- 匿名での再取得が拒否された場合、端末内のChrome系ブラウザのYouTubeセッションを使って再試行
+- Windows版に同梱するYouTube取得処理を更新
 
 ## 主な機能
 
