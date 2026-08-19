@@ -4395,7 +4395,8 @@ var jobHistoryTitle = (job) => {
     "score-preview": "\u697D\u8B5C\u30D7\u30EC\u30D3\u30E5\u30FC",
     "score-extract": "\u697D\u8B5C\u62BD\u51FA"
   };
-  return labels[job.kind] || localizeJobMessage(job.description) || "\u51E6\u7406";
+  const operation = labels[job.kind] || localizeJobMessage(job.description) || "\u51E6\u7406";
+  return job.display_title ? `${operation} \xB7 ${job.display_title}` : operation;
 };
 var renderJobHistory = (jobs) => {
   const completed = jobs.filter((job) => job.done && !job.error && !job.canceled).length;
@@ -4456,7 +4457,7 @@ var renderQueueDock = () => {
     const elapsed = Math.max(0, Math.floor(Date.now() / 1e3 - startedAt));
     return `
       <div class="queue-item ${queueItemClass(status)}">
-        <div class="queue-title" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</div>
+        <div class="queue-title" title="${escapeHtml(status.display_title || item.label)}">${escapeHtml(status.display_title ? `${item.kind === "analysis" ? "\u89E3\u6790" : "\u51E6\u7406"} \xB7 ${status.display_title}${item.rangeLabel || ""}` : item.label)}</div>
         <div class="queue-stage">${escapeHtml(localizeJobStage(status.stage))} \xB7 ${elapsed}\u79D2</div>
         <div class="queue-message">${escapeHtml(status.error || localizeJobMessage(status.message))}</div>
         ${status.resumable ? `<button class="queue-cancel queue-resume" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="resume">\u518D\u958B</button>` : item.kind === "stem-export" && status.done && status.result?.downloadUrl ? `<a class="queue-cancel queue-download" href="${escapeHtml(status.result.downloadUrl)}" download="${escapeHtml(status.result.filename || "stem-mix.mp3")}">\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9</a>` : item.kind === "score-extract" && status.done && status.result ? `<button class="queue-cancel queue-view-result" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="view-score">\u7D50\u679C\u3092\u898B\u308B</button>` : `<button class="queue-cancel" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="cancel" ${status.done || status.cancel_requested ? "disabled" : ""}>\u30AD\u30E3\u30F3\u30BB\u30EB</button>`}
@@ -4504,6 +4505,7 @@ var trackQueuedJob = (jobId, options = {}) => {
     onDone: options.onDone,
     onError: options.onError,
     kind: options.kind,
+    rangeLabel: options.rangeLabel || "",
     retainDone: Boolean(options.retainDone),
     createdAt: Date.now(),
     status: { stage: "queued", message: "\u51E6\u7406\u4E00\u89A7\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F", done: false }
@@ -6297,7 +6299,9 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
     SELECTORS.status.textContent = `\u2713 ${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"}\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F`;
     closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
-      label: `${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"} \xB7 ${videoId || submitted.jobId}${range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : ""}`,
+      label: `${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"} \xB7 YouTube\u52D5\u753B${range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : ""}`,
+      kind: "analysis",
+      rangeLabel: range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : "",
       onDone: async (data) => {
         if (!data) return;
         showResult(data, data.id);

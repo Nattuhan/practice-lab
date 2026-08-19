@@ -2247,7 +2247,8 @@ const jobHistoryTitle = job => {
     "score-preview": "楽譜プレビュー",
     "score-extract": "楽譜抽出",
   };
-  return labels[job.kind] || localizeJobMessage(job.description) || "処理";
+  const operation = labels[job.kind] || localizeJobMessage(job.description) || "処理";
+  return job.display_title ? `${operation} · ${job.display_title}` : operation;
 };
 
 const renderJobHistory = jobs => {
@@ -2312,7 +2313,7 @@ const renderQueueDock = () => {
     const elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startedAt));
     return `
       <div class="queue-item ${queueItemClass(status)}">
-        <div class="queue-title" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</div>
+        <div class="queue-title" title="${escapeHtml(status.display_title || item.label)}">${escapeHtml(status.display_title ? `${item.kind === "analysis" ? "解析" : "処理"} · ${status.display_title}${item.rangeLabel || ""}` : item.label)}</div>
         <div class="queue-stage">${escapeHtml(localizeJobStage(status.stage))} · ${elapsed}秒</div>
         <div class="queue-message">${escapeHtml(status.error || localizeJobMessage(status.message))}</div>
         ${status.resumable
@@ -2369,6 +2370,7 @@ const trackQueuedJob = (jobId, options = {}) => {
     onDone: options.onDone,
     onError: options.onError,
     kind: options.kind,
+    rangeLabel: options.rangeLabel || "",
     retainDone: Boolean(options.retainDone),
     createdAt: Date.now(),
     status: { stage: "queued", message: "処理一覧に追加しました", done: false },
@@ -4296,7 +4298,9 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
     SELECTORS.status.textContent = `✓ ${force ? "再解析" : "解析"}を追加しました`;
     closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
-      label: `${force ? "再解析" : "解析"} · ${videoId || submitted.jobId}${range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : ""}`,
+      label: `${force ? "再解析" : "解析"} · YouTube動画${range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : ""}`,
+      kind: "analysis",
+      rangeLabel: range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : "",
       onDone: async data => {
         if (!data) return;
         showResult(data, data.id);

@@ -173,6 +173,7 @@ class JobStatusResponse(BaseModel):
     result: dict | None = None
     description: str | None = None
     kind: str | None = None
+    display_title: str | None = None
     interrupted: bool = False
     resumable: bool = False
     source_job_id: str | None = None

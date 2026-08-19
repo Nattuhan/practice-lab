@@ -139,6 +139,7 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
       message: "Complete",
       description: "Queued analysis",
       kind: "analysis",
+      display_title: "テスト楽曲",
       done: true,
       started_at: 100,
       finished_at: 225.5,
@@ -162,7 +163,7 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
   });
   expect(placement.horizontalOffset).toBeLessThanOrEqual(1);
   expect(placement.verticalOffset).toBeLessThanOrEqual(1);
-  await expect(dialog.getByText("曲構成の解析", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("曲構成の解析 · テスト楽曲", { exact: true })).toBeVisible();
   await expect(dialog.getByText("2分 6秒", { exact: true })).toBeVisible();
   await expect(dialog.getByText("成功", { exact: true })).toBeVisible();
 });

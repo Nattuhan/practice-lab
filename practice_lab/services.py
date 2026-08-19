@@ -193,6 +193,19 @@ def set_job_status(video_id: str, stage: str, message: str, *, done: bool = Fals
         cli_log(video_id, error or message)
 
 
+def set_job_display_title(job_id: str, title: str) -> None:
+    clean_title = str(title or "").strip()[:300]
+    if not clean_title:
+        return
+    with JOB_LOCK:
+        current = JOBS.get(job_id)
+        if not current:
+            return
+        current["display_title"] = clean_title
+        current["updated_at"] = time.time()
+        persist_jobs_locked()
+
+
 def get_job_status(video_id: str) -> dict | None:
     with JOB_LOCK:
         job = JOBS.get(video_id)
@@ -1303,6 +1316,7 @@ def analyze_url(
 
     set_job_status(job_id, "downloading", "Fetching title")
     title = get_title(url)
+    set_job_display_title(job_id, title)
 
     if not audio_file.exists():
         raise_if_job_canceled(job_id)

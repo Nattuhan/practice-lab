@@ -63,6 +63,23 @@ class AudioConversionTests(unittest.TestCase):
 
 
 class JobQueueTests(unittest.TestCase):
+    def test_job_display_title_replaces_internal_id_for_clients(self):
+        job_id = "opaque-video-id"
+        with services.JOB_LOCK:
+            services.JOBS[job_id] = {
+                "id": job_id,
+                "stage": "downloading",
+                "message": "Fetching title",
+                "done": False,
+            }
+        try:
+            with patch.object(services, "persist_jobs_locked"):
+                services.set_job_display_title(job_id, "Human readable song")
+            self.assertEqual(services.get_job_status(job_id)["display_title"], "Human readable song")
+        finally:
+            with services.JOB_LOCK:
+                services.JOBS.pop(job_id, None)
+
     def test_resubmission_clears_an_earlier_cancellation(self):
         job_id = "test-video:score-preview"
         with services.JOB_LOCK:
