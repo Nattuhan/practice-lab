@@ -33,3 +33,21 @@ fi
   --workpath "$repo_root/desktop/build/backend" \
   --specpath "$repo_root/desktop/build" \
   "$repo_root/desktop/backend_entry.py"
+
+# OpenCV bundles its own OpenSSL under cv2/.dylibs. Leaving that copy in place
+# can make the dynamic loader choose a libcrypto that is incompatible with
+# Python's ssl module, so the packaged backend exits before startup. Replace
+# the duplicates with the exact libraries used by the build Python.
+backend_internal="$repo_root/desktop/dist/backend/practice-lab-backend/_internal"
+cv2_dylibs="$backend_internal/cv2/.dylibs"
+python_ssl_module="$("$python_bin" -c 'import _ssl; print(_ssl.__file__)')"
+find "$cv2_dylibs" -maxdepth 1 -type f \( -name 'libcrypto.3.dylib' -o -name 'libssl.3.dylib' \) -delete
+find "$backend_internal" -maxdepth 1 -type l \( -name 'libcrypto.3.dylib' -o -name 'libssl.3.dylib' \) -delete
+for library in libcrypto.3.dylib libssl.3.dylib; do
+  source_library="$(otool -L "$python_ssl_module" | awk -v suffix="/$library" '$1 ~ suffix "$" { print $1; exit }')"
+  if [[ ! -f "$source_library" ]]; then
+    echo "OpenSSL library used by Python was not found: $library" >&2
+    exit 1
+  fi
+  cp "$source_library" "$backend_internal/$library"
+done

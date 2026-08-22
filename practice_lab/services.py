@@ -111,7 +111,11 @@ def initialize_job_store() -> None:
             if not isinstance(item, dict) or not isinstance(item.get("id"), str):
                 continue
             job = dict(item)
-            if not job.get("done"):
+            if job.get("archived"):
+                # Archived attempts belong in history only. They must never be
+                # offered as separate resumable work after another restart.
+                job["resumable"] = False
+            elif not job.get("done"):
                 job.update(
                     {
                         "stage": "interrupted",
@@ -129,6 +133,27 @@ def initialize_job_store() -> None:
                 # Older PracticeLab versions only stored updated_at. For a
                 # completed job that timestamp is the best available finish.
                 job["finished_at"] = job["updated_at"]
+            if not job.get("display_title"):
+                spec = job.get("spec") if isinstance(job.get("spec"), dict) else {}
+                target_id = spec.get("videoId")
+                if not isinstance(target_id, str):
+                    target_id = str(job["id"]).split(":history:", 1)[0].split(":", 1)[0]
+                result_files = [DATA_RESULTS_DIR / f"{target_id}.json"]
+                source_id = target_id.split("-clip-", 1)[0]
+                if source_id and source_id == target_id:
+                    result_files.extend(sorted(DATA_RESULTS_DIR.glob(f"{source_id}-clip-*.json")))
+                title = None
+                for result_file in result_files:
+                    try:
+                        title = json.loads(result_file.read_text(encoding="utf-8")).get("title")
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    if title:
+                        break
+                if title:
+                    job["display_title"] = str(title)[:300]
+                elif spec.get("type") == "analyze_file" and spec.get("title"):
+                    job["display_title"] = str(spec["title"])[:300]
             JOBS[job["id"]] = job
         persist_jobs_locked()
 
@@ -137,7 +162,10 @@ def list_job_statuses(*, recoverable_only: bool = False) -> list[dict]:
     with JOB_LOCK:
         values = [dict(job) for job in JOBS.values()]
     if recoverable_only:
-        values = [job for job in values if job.get("interrupted") and job.get("resumable")]
+        values = [
+            job for job in values
+            if job.get("interrupted") and job.get("resumable") and not job.get("archived")
+        ]
     return sorted(values, key=lambda item: item.get("updated_at", 0), reverse=True)
 
 
@@ -166,6 +194,33 @@ def get_resumable_job_spec(job_id: str) -> dict:
         if not isinstance(spec, dict):
             raise ValueError("ジョブの再開情報がありません")
         return dict(spec)
+
+
+def cancel_interrupted_job(job_id: str) -> dict:
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise ValueError("job not found")
+        if not job.get("interrupted") or not job.get("done") or not job.get("resumable"):
+            raise ValueError("再開待ちの処理だけをキャンセルできます")
+        now = time.time()
+        job.update({
+            "stage": "canceled",
+            "message": "Canceled",
+            "done": True,
+            "error": None,
+            "canceled": True,
+            "cancel_requested": True,
+            "interrupted": False,
+            "resumable": False,
+            "updated_at": now,
+            "finished_at": now,
+        })
+        # A canceled interrupted job must not retain enough information to be
+        # accidentally resumed by a future version.
+        job.pop("spec", None)
+        persist_jobs_locked()
+        return dict(job)
 
 
 def set_job_status(video_id: str, stage: str, message: str, *, done: bool = False, error: str | None = None) -> None:

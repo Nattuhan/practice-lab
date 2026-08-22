@@ -45,6 +45,34 @@ class JobRecoveryApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         submit.assert_called_once_with({"type": "cloud_sync", "jobId": self.job_id})
 
+    def test_cancels_interrupted_job_permanently(self):
+        client = TestClient(app_module.create_app())
+        with patch.object(services, "persist_jobs_locked"):
+            response = client.delete(f"/jobs/{self.job_id}/cancel-interrupted")
+
+        self.assertEqual(response.status_code, 200)
+        job = services.get_job_status(self.job_id)
+        self.assertTrue(job["canceled"])
+        self.assertFalse(job["resumable"])
+        self.assertFalse(job["interrupted"])
+        self.assertNotIn("spec", job)
+        self.assertNotIn(self.job_id, [item["id"] for item in services.list_job_statuses(recoverable_only=True)])
+
+    def test_archived_attempt_is_not_recoverable(self):
+        archived_id = f"{self.job_id}:history:1"
+        with services.JOB_LOCK:
+            services.JOBS[archived_id] = {
+                **services.JOBS[self.job_id],
+                "id": archived_id,
+                "archived": True,
+            }
+        try:
+            recoverable = services.list_job_statuses(recoverable_only=True)
+            self.assertNotIn(archived_id, [job["id"] for job in recoverable])
+        finally:
+            with services.JOB_LOCK:
+                services.JOBS.pop(archived_id, None)
+
     def test_history_includes_duration_without_result_payload(self):
         with services.JOB_LOCK:
             services.JOBS[self.job_id].update({

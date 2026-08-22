@@ -168,6 +168,26 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
   await expect(dialog.getByText("成功", { exact: true })).toBeVisible();
 });
 
+test("古い処理履歴にもライブラリから曲名を補完する", async ({ page }) => {
+  await page.route("**/jobs/history", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify([{
+      id: "e2e-baseline:stems:history:1",
+      stage: "done",
+      message: "Complete",
+      kind: "stems",
+      done: true,
+      started_at: 100,
+      finished_at: 110,
+      updated_at: 110,
+      duration_seconds: 10,
+    }]),
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "処理履歴", exact: true }).click();
+  await expect(page.getByRole("dialog").getByText("パート分離 · E2E Baseline", { exact: true })).toBeVisible();
+});
+
 test("R2静的閲覧版では処理履歴を表示しない", async ({ page }) => {
   await page.addInitScript(() => {
     window.PRACTICE_LAB_CONFIG = { mode: "static", libraryBaseUrl: "results" };
@@ -262,6 +282,7 @@ test("再起動で中断したジョブを利用者が再開できる", async ({
       message: "Application restarted; resume when ready",
       description: "Queued analysis",
       kind: "analysis",
+      display_title: "再開対象の曲",
       done: true,
       interrupted: true,
       resumable: true,
@@ -272,12 +293,44 @@ test("再起動で中断したジョブを利用者が再開できる", async ({
     contentType: "application/json",
     body: JSON.stringify({ jobId: "recovery-test", stage: "queued", message: "Queued analysis" }),
   }));
+  await page.route("**/jobs/recovery-test/cancel-interrupted", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ ok: true }),
+  }));
 
   await page.goto("/");
   const resume = page.getByRole("button", { name: "再開", exact: true });
   await expect(resume).toBeVisible();
+  await expect(page.getByText("曲構成の解析 · 再開対象の曲", { exact: true })).toBeVisible();
+  await expect(page.getByText(/8170秒|8339秒/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "キャンセル", exact: true })).toBeVisible();
   await resume.click();
   await expect(resume).toBeHidden();
+});
+
+test("未対応バックエンドではキャンセル成功扱いにしない", async ({ page }) => {
+  await page.route("**/jobs?recoverable=true", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify([{
+      id: "old-backend-job",
+      stage: "interrupted",
+      message: "Application restarted; resume when ready",
+      description: "Queued stem separation",
+      kind: "stems",
+      display_title: "削除対象の曲",
+      done: true,
+      interrupted: true,
+      resumable: true,
+    }]),
+  }));
+  await page.route("**/jobs/old-backend-job/cancel-interrupted", route => route.fulfill({ status: 405, contentType: "application/json", body: JSON.stringify({ detail: "Method Not Allowed" }) }));
+
+  await page.goto("/");
+  await expect(page.getByText("パート分離 · 削除対象の曲", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "キャンセル", exact: true }).click();
+  await expect(page.getByText("このアプリはキャンセル処理に未対応です。バックエンドを含む修正版へ更新してください", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "OK", exact: true }).click();
+  await expect(page.getByText("パート分離 · 削除対象の曲", { exact: true })).toBeVisible();
 });
 
 test("曲名とタグでライブラリを検索できる", async ({ page }) => {

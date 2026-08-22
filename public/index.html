@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'">
   <title>PracticeLab</title>
-  <link rel="stylesheet" href="styles.css?v=20260819-job-history-label">
+  <link rel="stylesheet" href="styles.css?v=1.1.1">
 </head>
 <body>
 <div class="shell">
@@ -671,11 +671,14 @@
 <aside class="queue-dock" id="queue-dock" hidden>
   <div class="queue-head">
     <span>処理一覧</span>
-    <span class="queue-count" id="queue-count">0</span>
+    <div class="queue-head-actions">
+      <button class="queue-clear" id="queue-clear-interrupted" type="button" hidden>すべてキャンセル</button>
+      <span class="queue-count" id="queue-count">0</span>
+    </div>
   </div>
   <div class="queue-list" id="queue-list"></div>
 </aside>
 
-<script type="module" src="app.js?v=20260819-job-history-label"></script>
+<script type="module" src="app.js?v=1.1.1"></script>
 </body>
 </html>

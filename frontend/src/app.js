@@ -42,6 +42,7 @@ const SELECTORS = {
   queueDock: document.getElementById("queue-dock"),
   queueList: document.getElementById("queue-list"),
   queueCount: document.getElementById("queue-count"),
+  queueClearInterrupted: document.getElementById("queue-clear-interrupted"),
   btnJobHistory: document.getElementById("btn-job-history"),
   jobHistoryDialog: document.getElementById("job-history-dialog"),
   jobHistoryClose: document.getElementById("job-history-close"),
@@ -2238,7 +2239,7 @@ const formatJobDuration = seconds => {
   return hours ? `${hours}時間 ${minutes}分 ${remainder}秒` : `${minutes}分 ${remainder}秒`;
 };
 
-const jobHistoryTitle = job => {
+const jobHistoryTitle = (job, libraryItems = currentSidebarItems) => {
   const labels = {
     analysis: "曲構成の解析",
     stems: "パート分離",
@@ -2248,10 +2249,16 @@ const jobHistoryTitle = job => {
     "score-extract": "楽譜抽出",
   };
   const operation = labels[job.kind] || localizeJobMessage(job.description) || "処理";
-  return job.display_title ? `${operation} · ${job.display_title}` : operation;
+  const stableId = String(job.source_job_id || job.id || "").split(":history:")[0];
+  const sessionId = stableId.replace(/:(?:stems|stem-export|score-preview|score-extract).*$/, "");
+  const sourceId = sessionId.split("-clip-")[0];
+  const libraryItem = libraryItems.find(item => item.id === sessionId)
+    || libraryItems.find(item => item.id === sourceId || item.id.startsWith(`${sourceId}-clip-`));
+  const title = job.display_title || libraryItem?.title;
+  return title ? `${operation} · ${title}` : `${operation} · 対象情報なし`;
 };
 
-const renderJobHistory = jobs => {
+const renderJobHistory = (jobs, libraryItems = currentSidebarItems) => {
   const completed = jobs.filter(job => job.done && !job.error && !job.canceled).length;
   const failed = jobs.filter(job => job.error).length;
   const running = jobs.filter(job => !job.done).length;
@@ -2272,7 +2279,7 @@ const renderJobHistory = jobs => {
     const duration = job.duration_seconds ?? (job.done && job.started_at && job.updated_at ? job.updated_at - job.started_at : null);
     return `<article class="job-history-item ${stateClass}">
       <div class="job-history-item-main">
-        <strong>${escapeHtml(jobHistoryTitle(job))}</strong>
+        <strong>${escapeHtml(jobHistoryTitle(job, libraryItems))}</strong>
         <span class="job-history-state">${state}</span>
       </div>
       <div class="job-history-meta"><span>${escapeHtml(started)}</span><span class="job-history-duration"><i data-lucide="timer"></i>${escapeHtml(formatJobDuration(duration))}</span></div>
@@ -2286,9 +2293,15 @@ const loadJobHistory = async () => {
   if (!hasServer || !SELECTORS.jobHistoryList) return;
   SELECTORS.jobHistoryRefresh.disabled = true;
   try {
-    const response = await fetch("/jobs/history", { cache: "no-store" });
+    const [response, manifestResponse] = await Promise.all([
+      fetch("/jobs/history", { cache: "no-store" }),
+      fetch("results/manifest.json", { cache: "no-store" }).catch(() => null),
+    ]);
     if (!response.ok) throw new Error(`履歴を取得できません (${response.status})`);
-    renderJobHistory(await response.json());
+    const libraryItems = manifestResponse?.ok
+      ? await manifestResponse.json().catch(() => currentSidebarItems)
+      : currentSidebarItems;
+    renderJobHistory(await response.json(), Array.isArray(libraryItems) ? libraryItems : currentSidebarItems);
   } catch (error) {
     SELECTORS.jobHistoryList.innerHTML = `<div class="job-history-empty error">${escapeHtml(error.message)}</div>`;
   } finally {
@@ -2302,22 +2315,34 @@ const openJobHistory = () => {
   void loadJobHistory();
 };
 
+const queueOperationLabel = kind => ({
+  analysis: "曲構成の解析",
+  stems: "パート分離",
+  "stem-export": "パート書き出し",
+  "score-preview": "楽譜プレビュー",
+  "score-extract": "楽譜抽出",
+  "cloud-sync": "端末間同期",
+})[kind] || "処理";
+
 const renderQueueDock = () => {
   if (!SELECTORS.queueDock || !SELECTORS.queueList || !SELECTORS.queueCount) return;
   const jobs = [...trackedJobs.values()].sort((a, b) => b.createdAt - a.createdAt);
   SELECTORS.queueDock.hidden = jobs.length === 0;
+  const interruptedJobs = jobs.filter(item => item.status?.interrupted && item.status?.resumable);
+  if (SELECTORS.queueClearInterrupted) SELECTORS.queueClearInterrupted.hidden = interruptedJobs.length === 0;
   SELECTORS.queueCount.textContent = String(jobs.filter(item => !item.status?.done || item.status?.resumable).length);
   SELECTORS.queueList.innerHTML = jobs.map(item => {
     const status = item.status || { stage: "queued", message: "サーバーを待っています" };
     const startedAt = status.started_at || item.createdAt / 1000;
     const elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startedAt));
+    const stageText = status.resumable ? localizeJobStage(status.stage) : `${localizeJobStage(status.stage)} · ${elapsed}秒`;
     return `
       <div class="queue-item ${queueItemClass(status)}">
-        <div class="queue-title" title="${escapeHtml(status.display_title || item.label)}">${escapeHtml(status.display_title ? `${item.kind === "analysis" ? "解析" : "処理"} · ${status.display_title}${item.rangeLabel || ""}` : item.label)}</div>
-        <div class="queue-stage">${escapeHtml(localizeJobStage(status.stage))} · ${elapsed}秒</div>
+        <div class="queue-title" title="${escapeHtml(status.display_title || item.label)}">${escapeHtml(status.display_title ? `${queueOperationLabel(item.kind)} · ${status.display_title}${item.rangeLabel || ""}` : item.label)}</div>
+        <div class="queue-stage">${escapeHtml(stageText)}</div>
         <div class="queue-message">${escapeHtml(status.error || localizeJobMessage(status.message))}</div>
         ${status.resumable
-          ? `<button class="queue-cancel queue-resume" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="resume">再開</button>`
+          ? `<div class="queue-actions"><button class="queue-cancel queue-resume" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="resume">再開</button><button class="queue-cancel queue-discard" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="discard" title="再開情報を破棄してキャンセル">キャンセル</button></div>`
           : item.kind === "stem-export" && status.done && status.result?.downloadUrl
           ? `<a class="queue-cancel queue-download" href="${escapeHtml(status.result.downloadUrl)}" download="${escapeHtml(status.result.filename || "stem-mix.mp3")}">ダウンロード</a>`
           : item.kind === "score-extract" && status.done && status.result
@@ -2418,6 +2443,40 @@ const resumeQueuedJob = async jobId => {
   }
 };
 
+const discardInterruptedJob = async jobId => {
+  const response = await fetch(`/jobs/${encodeURIComponent(jobId)}/cancel-interrupted`, { method: "DELETE" });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) {
+    throw new Error("このアプリはキャンセル処理に未対応です。バックエンドを含む修正版へ更新してください");
+  }
+  if (!response.ok) throw new Error(payload.detail || "再開待ちの処理をキャンセルできませんでした");
+  trackedJobs.delete(jobId);
+  renderQueueDock();
+};
+
+const discardAllInterruptedJobs = async () => {
+  const ids = [...trackedJobs.values()]
+    .filter(item => item.status?.interrupted && item.status?.resumable)
+    .map(item => item.id);
+  SELECTORS.queueClearInterrupted.disabled = true;
+  try {
+    await Promise.all(ids.map(discardInterruptedJob));
+  } catch (error) {
+    await showAlert(error.message, { title: "処理一覧" });
+  } finally {
+    SELECTORS.queueClearInterrupted.disabled = false;
+  }
+};
+
+const restoredJobLabel = status => {
+  const operation = queueOperationLabel(status.kind);
+  const stableId = String(status.source_job_id || status.id || "").split(":history:")[0];
+  const sessionId = stableId.replace(/:(?:stems|stem-export|score-preview|score-extract).*$/, "");
+  const libraryTitle = currentSidebarItems.find(item => item.id === sessionId)?.title;
+  const title = status.display_title || libraryTitle;
+  return title ? `${operation} · ${title}` : `${operation} · 対象情報なし`;
+};
+
 const restoreInterruptedJobs = async () => {
   if (!hasServer || staticLibraryMode) return;
   try {
@@ -2427,10 +2486,10 @@ const restoreInterruptedJobs = async () => {
     for (const status of jobs) {
       trackedJobs.set(status.id, {
         id: status.id,
-        label: localizeJobMessage(status.description) || status.id,
+        label: restoredJobLabel(status),
         kind: status.kind,
         retainDone: true,
-        createdAt: (status.started_at || status.updated_at || Date.now() / 1000) * 1000,
+        createdAt: Date.now(),
         status,
       });
     }
@@ -4785,8 +4844,13 @@ SELECTORS.queueList?.addEventListener("click", event => {
     resumeQueuedJob(button.dataset.jobId);
     return;
   }
+  if (button.dataset.jobAction === "discard") {
+    discardInterruptedJob(button.dataset.jobId).catch(error => showAlert(error.message, { title: "処理一覧" }));
+    return;
+  }
   cancelQueuedJob(button.dataset.jobId);
 });
+SELECTORS.queueClearInterrupted?.addEventListener("click", discardAllInterruptedJobs);
 SELECTORS.scoreRegenerateBtn?.addEventListener("click", () => regenerateScore());
 SELECTORS.scoreEditSettingsBtn?.addEventListener("click", () => editScoreSettings());
 SELECTORS.scoreHistoryList?.addEventListener("click", async event => {

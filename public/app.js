@@ -2388,6 +2388,7 @@ var SELECTORS = {
   queueDock: document.getElementById("queue-dock"),
   queueList: document.getElementById("queue-list"),
   queueCount: document.getElementById("queue-count"),
+  queueClearInterrupted: document.getElementById("queue-clear-interrupted"),
   btnJobHistory: document.getElementById("btn-job-history"),
   jobHistoryDialog: document.getElementById("job-history-dialog"),
   jobHistoryClose: document.getElementById("job-history-close"),
@@ -4386,7 +4387,7 @@ var formatJobDuration = (seconds) => {
   const remainder = total % 60;
   return hours ? `${hours}\u6642\u9593 ${minutes}\u5206 ${remainder}\u79D2` : `${minutes}\u5206 ${remainder}\u79D2`;
 };
-var jobHistoryTitle = (job) => {
+var jobHistoryTitle = (job, libraryItems = currentSidebarItems) => {
   const labels = {
     analysis: "\u66F2\u69CB\u6210\u306E\u89E3\u6790",
     stems: "\u30D1\u30FC\u30C8\u5206\u96E2",
@@ -4396,9 +4397,14 @@ var jobHistoryTitle = (job) => {
     "score-extract": "\u697D\u8B5C\u62BD\u51FA"
   };
   const operation = labels[job.kind] || localizeJobMessage(job.description) || "\u51E6\u7406";
-  return job.display_title ? `${operation} \xB7 ${job.display_title}` : operation;
+  const stableId = String(job.source_job_id || job.id || "").split(":history:")[0];
+  const sessionId = stableId.replace(/:(?:stems|stem-export|score-preview|score-extract).*$/, "");
+  const sourceId = sessionId.split("-clip-")[0];
+  const libraryItem = libraryItems.find((item) => item.id === sessionId) || libraryItems.find((item) => item.id === sourceId || item.id.startsWith(`${sourceId}-clip-`));
+  const title = job.display_title || libraryItem?.title;
+  return title ? `${operation} \xB7 ${title}` : `${operation} \xB7 \u5BFE\u8C61\u60C5\u5831\u306A\u3057`;
 };
-var renderJobHistory = (jobs) => {
+var renderJobHistory = (jobs, libraryItems = currentSidebarItems) => {
   const completed = jobs.filter((job) => job.done && !job.error && !job.canceled).length;
   const failed = jobs.filter((job) => job.error).length;
   const running = jobs.filter((job) => !job.done).length;
@@ -4419,7 +4425,7 @@ var renderJobHistory = (jobs) => {
     const duration = job.duration_seconds ?? (job.done && job.started_at && job.updated_at ? job.updated_at - job.started_at : null);
     return `<article class="job-history-item ${stateClass}">
       <div class="job-history-item-main">
-        <strong>${escapeHtml(jobHistoryTitle(job))}</strong>
+        <strong>${escapeHtml(jobHistoryTitle(job, libraryItems))}</strong>
         <span class="job-history-state">${state}</span>
       </div>
       <div class="job-history-meta"><span>${escapeHtml(started)}</span><span class="job-history-duration"><i data-lucide="timer"></i>${escapeHtml(formatJobDuration(duration))}</span></div>
@@ -4432,9 +4438,13 @@ var loadJobHistory = async () => {
   if (!hasServer || !SELECTORS.jobHistoryList) return;
   SELECTORS.jobHistoryRefresh.disabled = true;
   try {
-    const response = await fetch("/jobs/history", { cache: "no-store" });
+    const [response, manifestResponse] = await Promise.all([
+      fetch("/jobs/history", { cache: "no-store" }),
+      fetch("results/manifest.json", { cache: "no-store" }).catch(() => null)
+    ]);
     if (!response.ok) throw new Error(`\u5C65\u6B74\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093 (${response.status})`);
-    renderJobHistory(await response.json());
+    const libraryItems = manifestResponse?.ok ? await manifestResponse.json().catch(() => currentSidebarItems) : currentSidebarItems;
+    renderJobHistory(await response.json(), Array.isArray(libraryItems) ? libraryItems : currentSidebarItems);
   } catch (error) {
     SELECTORS.jobHistoryList.innerHTML = `<div class="job-history-empty error">${escapeHtml(error.message)}</div>`;
   } finally {
@@ -4446,21 +4456,32 @@ var openJobHistory = () => {
   SELECTORS.jobHistoryDialog.showModal();
   void loadJobHistory();
 };
+var queueOperationLabel = (kind) => ({
+  analysis: "\u66F2\u69CB\u6210\u306E\u89E3\u6790",
+  stems: "\u30D1\u30FC\u30C8\u5206\u96E2",
+  "stem-export": "\u30D1\u30FC\u30C8\u66F8\u304D\u51FA\u3057",
+  "score-preview": "\u697D\u8B5C\u30D7\u30EC\u30D3\u30E5\u30FC",
+  "score-extract": "\u697D\u8B5C\u62BD\u51FA",
+  "cloud-sync": "\u7AEF\u672B\u9593\u540C\u671F"
+})[kind] || "\u51E6\u7406";
 var renderQueueDock = () => {
   if (!SELECTORS.queueDock || !SELECTORS.queueList || !SELECTORS.queueCount) return;
   const jobs = [...trackedJobs.values()].sort((a3, b2) => b2.createdAt - a3.createdAt);
   SELECTORS.queueDock.hidden = jobs.length === 0;
+  const interruptedJobs = jobs.filter((item) => item.status?.interrupted && item.status?.resumable);
+  if (SELECTORS.queueClearInterrupted) SELECTORS.queueClearInterrupted.hidden = interruptedJobs.length === 0;
   SELECTORS.queueCount.textContent = String(jobs.filter((item) => !item.status?.done || item.status?.resumable).length);
   SELECTORS.queueList.innerHTML = jobs.map((item) => {
     const status = item.status || { stage: "queued", message: "\u30B5\u30FC\u30D0\u30FC\u3092\u5F85\u3063\u3066\u3044\u307E\u3059" };
     const startedAt = status.started_at || item.createdAt / 1e3;
     const elapsed = Math.max(0, Math.floor(Date.now() / 1e3 - startedAt));
+    const stageText = status.resumable ? localizeJobStage(status.stage) : `${localizeJobStage(status.stage)} \xB7 ${elapsed}\u79D2`;
     return `
       <div class="queue-item ${queueItemClass(status)}">
-        <div class="queue-title" title="${escapeHtml(status.display_title || item.label)}">${escapeHtml(status.display_title ? `${item.kind === "analysis" ? "\u89E3\u6790" : "\u51E6\u7406"} \xB7 ${status.display_title}${item.rangeLabel || ""}` : item.label)}</div>
-        <div class="queue-stage">${escapeHtml(localizeJobStage(status.stage))} \xB7 ${elapsed}\u79D2</div>
+        <div class="queue-title" title="${escapeHtml(status.display_title || item.label)}">${escapeHtml(status.display_title ? `${queueOperationLabel(item.kind)} \xB7 ${status.display_title}${item.rangeLabel || ""}` : item.label)}</div>
+        <div class="queue-stage">${escapeHtml(stageText)}</div>
         <div class="queue-message">${escapeHtml(status.error || localizeJobMessage(status.message))}</div>
-        ${status.resumable ? `<button class="queue-cancel queue-resume" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="resume">\u518D\u958B</button>` : item.kind === "stem-export" && status.done && status.result?.downloadUrl ? `<a class="queue-cancel queue-download" href="${escapeHtml(status.result.downloadUrl)}" download="${escapeHtml(status.result.filename || "stem-mix.mp3")}">\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9</a>` : item.kind === "score-extract" && status.done && status.result ? `<button class="queue-cancel queue-view-result" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="view-score">\u7D50\u679C\u3092\u898B\u308B</button>` : `<button class="queue-cancel" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="cancel" ${status.done || status.cancel_requested ? "disabled" : ""}>\u30AD\u30E3\u30F3\u30BB\u30EB</button>`}
+        ${status.resumable ? `<div class="queue-actions"><button class="queue-cancel queue-resume" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="resume">\u518D\u958B</button><button class="queue-cancel queue-discard" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="discard" title="\u518D\u958B\u60C5\u5831\u3092\u7834\u68C4\u3057\u3066\u30AD\u30E3\u30F3\u30BB\u30EB">\u30AD\u30E3\u30F3\u30BB\u30EB</button></div>` : item.kind === "stem-export" && status.done && status.result?.downloadUrl ? `<a class="queue-cancel queue-download" href="${escapeHtml(status.result.downloadUrl)}" download="${escapeHtml(status.result.filename || "stem-mix.mp3")}">\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9</a>` : item.kind === "score-extract" && status.done && status.result ? `<button class="queue-cancel queue-view-result" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="view-score">\u7D50\u679C\u3092\u898B\u308B</button>` : `<button class="queue-cancel" type="button" data-job-id="${escapeHtml(item.id)}" data-job-action="cancel" ${status.done || status.cancel_requested ? "disabled" : ""}>\u30AD\u30E3\u30F3\u30BB\u30EB</button>`}
       </div>
     `;
   }).join("");
@@ -4550,6 +4571,35 @@ var resumeQueuedJob = async (jobId) => {
     renderQueueDock();
   }
 };
+var discardInterruptedJob = async (jobId) => {
+  const response = await fetch(`/jobs/${encodeURIComponent(jobId)}/cancel-interrupted`, { method: "DELETE" });
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) {
+    throw new Error("\u3053\u306E\u30A2\u30D7\u30EA\u306F\u30AD\u30E3\u30F3\u30BB\u30EB\u51E6\u7406\u306B\u672A\u5BFE\u5FDC\u3067\u3059\u3002\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9\u3092\u542B\u3080\u4FEE\u6B63\u7248\u3078\u66F4\u65B0\u3057\u3066\u304F\u3060\u3055\u3044");
+  }
+  if (!response.ok) throw new Error(payload.detail || "\u518D\u958B\u5F85\u3061\u306E\u51E6\u7406\u3092\u30AD\u30E3\u30F3\u30BB\u30EB\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+  trackedJobs.delete(jobId);
+  renderQueueDock();
+};
+var discardAllInterruptedJobs = async () => {
+  const ids = [...trackedJobs.values()].filter((item) => item.status?.interrupted && item.status?.resumable).map((item) => item.id);
+  SELECTORS.queueClearInterrupted.disabled = true;
+  try {
+    await Promise.all(ids.map(discardInterruptedJob));
+  } catch (error) {
+    await showAlert(error.message, { title: "\u51E6\u7406\u4E00\u89A7" });
+  } finally {
+    SELECTORS.queueClearInterrupted.disabled = false;
+  }
+};
+var restoredJobLabel = (status) => {
+  const operation = queueOperationLabel(status.kind);
+  const stableId = String(status.source_job_id || status.id || "").split(":history:")[0];
+  const sessionId = stableId.replace(/:(?:stems|stem-export|score-preview|score-extract).*$/, "");
+  const libraryTitle = currentSidebarItems.find((item) => item.id === sessionId)?.title;
+  const title = status.display_title || libraryTitle;
+  return title ? `${operation} \xB7 ${title}` : `${operation} \xB7 \u5BFE\u8C61\u60C5\u5831\u306A\u3057`;
+};
 var restoreInterruptedJobs = async () => {
   if (!hasServer || staticLibraryMode) return;
   try {
@@ -4559,10 +4609,10 @@ var restoreInterruptedJobs = async () => {
     for (const status of jobs) {
       trackedJobs.set(status.id, {
         id: status.id,
-        label: localizeJobMessage(status.description) || status.id,
+        label: restoredJobLabel(status),
         kind: status.kind,
         retainDone: true,
-        createdAt: (status.started_at || status.updated_at || Date.now() / 1e3) * 1e3,
+        createdAt: Date.now(),
         status
       });
     }
@@ -6764,8 +6814,13 @@ SELECTORS.queueList?.addEventListener("click", (event) => {
     resumeQueuedJob(button.dataset.jobId);
     return;
   }
+  if (button.dataset.jobAction === "discard") {
+    discardInterruptedJob(button.dataset.jobId).catch((error) => showAlert(error.message, { title: "\u51E6\u7406\u4E00\u89A7" }));
+    return;
+  }
   cancelQueuedJob(button.dataset.jobId);
 });
+SELECTORS.queueClearInterrupted?.addEventListener("click", discardAllInterruptedJobs);
 SELECTORS.scoreRegenerateBtn?.addEventListener("click", () => regenerateScore());
 SELECTORS.scoreEditSettingsBtn?.addEventListener("click", () => editScoreSettings());
 SELECTORS.scoreHistoryList?.addEventListener("click", async (event) => {

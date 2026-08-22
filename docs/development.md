@@ -72,7 +72,7 @@ python -m pytest -q
 - 処理履歴: `data/jobs.json`
 - 静的出力: `public/results/`、`public/audio/`、`public/video/`、`public/score/`、`public/stems/`
 
-ジョブ履歴は最大200件を保存します。実行中ジョブは再起動時に中断状態へ変更し、利用者が明示的に再開した場合だけ再投入します。処理履歴はローカルAPIの`/jobs/history`で提供し、結果本体と再開用specは一覧レスポンスから除外します。
+ジョブ履歴は最大200件を保存します。実行中ジョブは再起動時に中断状態へ変更し、利用者が明示的に再開した場合だけ再投入します。中断ジョブのキャンセルは`DELETE /jobs/{job_id}/cancel-interrupted`で永続化し、`canceled=true`、`resumable=false`として再開用specを破棄します。履歴にはキャンセルとして残りますが、以後の復元対象にはなりません。処理履歴はローカルAPIの`/jobs/history`で提供し、結果本体と再開用specは一覧レスポンスから除外します。
 
 解析ジョブは取得した曲名を`display_title`へ保存し、UIへ内部の動画IDを表示しません。all-in-one-fixの単曲推論は途中の進捗率を返さないため、UIでは30秒ごとの経過時間を表示します。無出力タイムアウトは使わず、解析全体の上限を30分としています。環境変数`ANALYZER_TIMEOUT_SECONDS`で全体上限を変更でき、`ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS`は互換性のため残していますが既定値は無効です。
 
