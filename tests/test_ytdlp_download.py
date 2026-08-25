@@ -51,11 +51,38 @@ class YtDlpDownloadTests(unittest.TestCase):
                 output.write_bytes(b"audio")
                 return subprocess.CompletedProcess(command, 0, "", "")
 
-            with patch.object(services, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(services.subprocess, "run", side_effect=fake_run):
+            def fake_trim(source, target, *_range):
+                target.write_bytes(source.read_bytes())
+
+            with patch.object(services, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(services.subprocess, "run", side_effect=fake_run), patch.object(services, "trim_audio_range", side_effect=fake_trim) as trim:
                 services.download_wav("https://youtu.be/example", destination, 3, None)
 
             self.assertIn("--cookies-from-browser", commands[1])
+            self.assertNotIn("--download-sections", commands[1])
             self.assertEqual(destination.read_bytes(), b"audio")
+            self.assertEqual(trim.call_args.args[2:], (3.0, None))
+
+    def test_video_range_downloads_full_quality_then_trims_locally(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "result.mp4"
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                output = Path(command[command.index("-o") + 1].replace("%(ext)s", "mp4"))
+                output.write_bytes(b"full-video")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            def fake_trim(source, target, *_range):
+                target.write_bytes(source.read_bytes())
+
+            with patch.object(services, "yt_dlp_browser_session_args", return_value=[]), patch.object(services.subprocess, "run", side_effect=fake_run), patch.object(services, "trim_video_range", side_effect=fake_trim) as trim:
+                services.download_video("https://youtu.be/example", destination, 30.5, 95)
+
+            self.assertEqual(commands[0][commands[0].index("-f") + 1], services.FULL_VIDEO_FORMAT)
+            self.assertNotIn("--download-sections", commands[0])
+            self.assertEqual(trim.call_args.args[2:], (30.5, 95.0))
+            self.assertEqual(destination.read_bytes(), b"full-video")
 
     def test_falls_back_to_progressive_mp4_after_repeated_403(self):
         with tempfile.TemporaryDirectory() as temp_dir:

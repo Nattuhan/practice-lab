@@ -1,6 +1,7 @@
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, sortLibraryItems } from "./library.js";
+import { shouldRestartLoop } from "./loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
@@ -3195,7 +3196,6 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
       getWaveformTimeFromClientX(Math.min(startX, endX)),
       getWaveformTimeFromClientX(Math.max(startX, endX)),
     );
-    seekAudio(getWaveformTimeFromClientX(Math.min(startX, endX)));
   };
   SELECTORS.waveformWrap.onpointercancel = event => {
     if (!waveformDrag || waveformDrag.pointerId !== event.pointerId) return;
@@ -3240,7 +3240,7 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(time);
     if (loopOn && ws.isPlaying() && !SELECTORS.sectionEditor?.open) {
       const loopRange = getLoopRange();
-      if (loopRange && (time < loopRange.start || time >= loopRange.end)) {
+      if (shouldRestartLoop(time, loopRange)) {
         seekAudio(loopRange.start);
       }
     }

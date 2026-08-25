@@ -2275,6 +2275,16 @@ var sortLibraryItems = (items, mode = "manual") => {
   return sorted;
 };
 
+// frontend/src/loop-playback.js
+var LOOP_START_TOLERANCE_SECONDS = 0.1;
+var shouldRestartLoop = (time, range) => {
+  if (!range || !Number.isFinite(time)) return false;
+  const start = Number(range.start);
+  const end = Number(range.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+  return time < start - LOOP_START_TOLERANCE_SECONDS || time >= end;
+};
+
 // frontend/src/section-editor.js
 var mutateSectionDraft = (draft, index, action) => {
   const next = draft.map((section2) => ({ ...section2 }));
@@ -5252,7 +5262,6 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
       getWaveformTimeFromClientX(Math.min(startX, endX)),
       getWaveformTimeFromClientX(Math.max(startX, endX))
     );
-    seekAudio(getWaveformTimeFromClientX(Math.min(startX, endX)));
   };
   SELECTORS.waveformWrap.onpointercancel = (event) => {
     if (!waveformDrag || waveformDrag.pointerId !== event.pointerId) return;
@@ -5295,7 +5304,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(time);
     if (loopOn && ws.isPlaying() && !SELECTORS.sectionEditor?.open) {
       const loopRange = getLoopRange();
-      if (loopRange && (time < loopRange.start || time >= loopRange.end)) {
+      if (shouldRestartLoop(time, loopRange)) {
         seekAudio(loopRange.start);
       }
     }

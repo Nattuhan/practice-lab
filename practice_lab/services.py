@@ -36,7 +36,6 @@ JOB_WORKER_STARTED = False
 RUNNING_PROCESSES: dict[str, subprocess.Popen] = {}
 JOB_STORE_FILE = DATA_DIR / "jobs.json"
 JOB_STORE_LOADED = False
-RANGED_AV_FORMAT = "b[ext=mp4]/b"
 FULL_VIDEO_FALLBACK_FORMAT = "b[ext=mp4][height<=720]/b[height<=720]/b"
 FULL_VIDEO_FORMAT = (
     "bv*[vcodec^=avc1][height<=1080][ext=mp4]+ba[ext=m4a]/"
@@ -491,26 +490,72 @@ def format_seconds(value: float) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
-def _download_section_args(
-    start_sec: float | None, end_sec: float | None, *, force_keyframes: bool = False
-) -> list[str]:
-    start, end = normalize_analysis_range(start_sec, end_sec)
-    if start is None and end is None:
-        return []
-    end_text = "inf" if end is None else f"{end:.3f}"
-    args = ["--download-sections", f"*{(start or 0):.3f}-{end_text}"]
-    if force_keyframes:
-        args.append("--force-keyframes-at-cuts")
-    return args
-
-
 def _download_format(start_sec: float | None, end_sec: float | None, *, video: bool) -> str | None:
-    start, end = normalize_analysis_range(start_sec, end_sec)
-    if start is not None or end is not None:
-        # Cutting separate DASH audio/video streams can give each stream a
-        # different timeline. A progressive format keeps ranged A/V in sync.
-        return RANGED_AV_FORMAT
+    normalize_analysis_range(start_sec, end_sec)
     return FULL_VIDEO_FORMAT if video else None
+
+
+def source_media_cache_paths(source_video_id: str) -> tuple[Path, Path]:
+    cache_dir = DATA_WORK_DIR / "source-media"
+    return cache_dir / f"{source_video_id}.wav", cache_dir / f"{source_video_id}.mp4"
+
+
+def _local_trim_args(start_sec: float | None, end_sec: float | None) -> tuple[list[str], list[str]]:
+    start, end = normalize_analysis_range(start_sec, end_sec)
+    input_args = ["-ss", f"{start:.3f}"] if start is not None else []
+    output_args: list[str] = []
+    if end is not None:
+        output_args = ["-t", f"{end - (start or 0):.3f}"]
+    return input_args, output_args
+
+
+def trim_audio_range(
+    source: Path,
+    destination: Path,
+    start_sec: float | None,
+    end_sec: float | None,
+) -> None:
+    start, end = normalize_analysis_range(start_sec, end_sec)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if start is None and end is None:
+        shutil.copy2(source, destination)
+        return
+    input_args, output_args = _local_trim_args(start, end)
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            *input_args, "-i", str(source), *output_args,
+            "-vn", "-c:a", "pcm_s16le", str(destination), "-y",
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+
+def trim_video_range(
+    source: Path,
+    destination: Path,
+    start_sec: float | None,
+    end_sec: float | None,
+) -> None:
+    start, end = normalize_analysis_range(start_sec, end_sec)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if start is None and end is None:
+        shutil.copy2(source, destination)
+        return
+    input_args, output_args = _local_trim_args(start, end)
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            *input_args, "-i", str(source), *output_args,
+            "-map", "0:v:0", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+            str(destination), "-y",
+        ],
+        capture_output=True,
+        check=True,
+    )
 
 
 def yt_dlp_command(*args: str) -> list[str]:
@@ -579,8 +624,7 @@ def download_wav(
     start_sec: float | None = None,
     end_sec: float | None = None,
 ) -> None:
-    format_selector = _download_format(start_sec, end_sec, video=False)
-    format_args = ["-f", format_selector] if format_selector else []
+    start_sec, end_sec = normalize_analysis_range(start_sec, end_sec)
     session_args = yt_dlp_browser_session_args()
     attempt_args = [[], session_args] if session_args else [[]]
     last_error = "yt-dlp failed"
@@ -589,7 +633,6 @@ def download_wav(
             result = subprocess.run(
                 yt_dlp_command(
                 *extra_args,
-                *format_args,
                 "-x",
                 "--audio-format",
                 "wav",
@@ -598,7 +641,6 @@ def download_wav(
                 "--no-playlist",
                 "--js-runtimes",
                 "node",
-                *_download_section_args(start_sec, end_sec),
                 url,
             ),
                 capture_output=True,
@@ -609,7 +651,10 @@ def download_wav(
                 files = list(Path(temp_dir).glob(f"audio-{index}.wav"))
                 if not files:
                     raise RuntimeError("wav not found")
-                shutil.move(str(files[0]), str(destination))
+                if start_sec is not None or end_sec is not None:
+                    trim_audio_range(files[0], destination, start_sec, end_sec)
+                else:
+                    shutil.move(str(files[0]), str(destination))
                 return
             last_error = yt_dlp_error(result.stderr, "yt-dlp failed")
             if "403" not in last_error and "Forbidden" not in last_error:
@@ -625,10 +670,8 @@ def download_video(
     end_sec: float | None = None,
 ) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    format_selector = _download_format(start_sec, end_sec, video=True)
-    format_candidates = [format_selector]
-    if start_sec is None and end_sec is None and format_selector != FULL_VIDEO_FALLBACK_FORMAT:
-        format_candidates.append(FULL_VIDEO_FALLBACK_FORMAT)
+    start_sec, end_sec = normalize_analysis_range(start_sec, end_sec)
+    format_candidates = [FULL_VIDEO_FORMAT, FULL_VIDEO_FALLBACK_FORMAT]
     last_error = "yt-dlp video download failed"
     session_args = yt_dlp_browser_session_args()
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -654,7 +697,6 @@ def download_video(
                         "--no-playlist",
                         "--js-runtimes",
                         "node",
-                        *_download_section_args(start_sec, end_sec, force_keyframes=True),
                         url,
                     ),
                     capture_output=True,
@@ -665,7 +707,10 @@ def download_video(
                     files = list(Path(temp_dir).glob(f"{output_base}*.mp4"))
                     if not files:
                         raise RuntimeError("mp4 not found")
-                    shutil.move(str(files[0]), str(destination))
+                    if start_sec is not None or end_sec is not None:
+                        trim_video_range(files[0], destination, start_sec, end_sec)
+                    else:
+                        shutil.move(str(files[0]), str(destination))
                     return
                 last_error = yt_dlp_error(result.stderr, "yt-dlp video download failed")
                 if "403" not in last_error and "Forbidden" not in last_error:
@@ -1357,6 +1402,7 @@ def analyze_url(
     video_file = DATA_VIDEO_DIR / f"{video_id}.mp4"
     public_audio_file = PUBLIC_AUDIO_DIR / f"{video_id}.mp3"
     public_video_file = PUBLIC_VIDEO_DIR / f"{video_id}.mp4"
+    source_audio_file, source_video_file = source_media_cache_paths(source_video_id)
 
     if not force and result_file.exists() and audio_file.exists() and public_audio_file.exists() and public_video_file.exists():
         data = attach_session_assets(json.loads(result_file.read_text(encoding="utf-8")))
@@ -1366,26 +1412,46 @@ def analyze_url(
 
     raise_if_job_canceled(job_id)
     if force:
-        for path in (result_file, audio_file, video_file, public_audio_file, public_video_file):
+        for path in (
+            result_file,
+            audio_file,
+            video_file,
+            public_audio_file,
+            public_video_file,
+            source_audio_file,
+            source_video_file,
+        ):
             path.unlink(missing_ok=True)
 
     set_job_status(job_id, "downloading", "Fetching title")
     title = get_title(url)
     set_job_display_title(job_id, title)
 
+    if not source_audio_file.exists():
+        raise_if_job_canceled(job_id)
+        set_job_status(job_id, "downloading", "Downloading full-quality source audio")
+        source_audio_file.parent.mkdir(parents=True, exist_ok=True)
+        download_wav(url, source_audio_file)
+    else:
+        set_job_status(job_id, "downloading", "Using cached source audio")
+
+    if not source_video_file.exists():
+        raise_if_job_canceled(job_id)
+        set_job_status(job_id, "downloading", "Downloading full-quality source video")
+        source_video_file.parent.mkdir(parents=True, exist_ok=True)
+        download_video(url, source_video_file)
+    else:
+        set_job_status(job_id, "downloading", "Using cached source video")
+
     if not audio_file.exists():
         raise_if_job_canceled(job_id)
-        set_job_status(job_id, "downloading", "Downloading audio")
-        download_wav(url, audio_file, start_sec, end_sec)
-    else:
-        set_job_status(job_id, "downloading", "Using cached audio")
+        set_job_status(job_id, "downloading", "Preparing analysis audio locally")
+        trim_audio_range(source_audio_file, audio_file, start_sec, end_sec)
 
-    if not video_file.exists() or force:
+    if not video_file.exists():
         raise_if_job_canceled(job_id)
-        set_job_status(job_id, "downloading", "Downloading video")
-        download_video(url, video_file, start_sec, end_sec)
-    else:
-        set_job_status(job_id, "downloading", "Using cached video")
+        set_job_status(job_id, "downloading", "Trimming playback video locally")
+        trim_video_range(source_video_file, video_file, start_sec, end_sec)
 
     if not public_audio_file.exists() or force:
         raise_if_job_canceled(job_id)

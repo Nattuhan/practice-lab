@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { filterLibraryItems, sortLibraryItems } from "../src/library.js";
+import { shouldRestartLoop } from "../src/loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor.js";
 import { formatBytes } from "../src/storage.js";
 import { extractWaveformPeaks } from "../src/waveform-peaks.js";
@@ -10,6 +11,13 @@ const sessions = [
   { id: "a", title: "Beta", tags: ["ライブ"], date: "2026-01-01", lastPracticedAt: null },
   { id: "b", title: "Alpha", tags: [], date: "2026-02-01", lastPracticedAt: "2026-03-01T00:00:00Z" },
 ];
+
+test("ループ開始直後のメディア時刻の丸め誤差を再シークしない", () => {
+  const range = { start: 29.042, end: 38.723 };
+  assert.equal(shouldRestartLoop(29.0, range), false);
+  assert.equal(shouldRestartLoop(28.8, range), true);
+  assert.equal(shouldRestartLoop(38.723, range), true);
+});
 
 test("ライブラリを曲名・タグ・未練習で絞り込める", () => {
   assert.deepEqual(filterLibraryItems(sessions, { query: "ライブ" }).map(item => item.id), ["a"]);

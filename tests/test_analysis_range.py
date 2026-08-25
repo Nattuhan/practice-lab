@@ -9,9 +9,7 @@ from practice_lab import app as app_module
 from practice_lab import services
 from practice_lab.services import (
     FULL_VIDEO_FORMAT,
-    RANGED_AV_FORMAT,
     _download_format,
-    _download_section_args,
     build_analysis_session_id,
     normalize_analysis_range,
 )
@@ -28,15 +26,9 @@ class AnalysisRangeTests(unittest.TestCase):
             "abc123-clip-30500-95000",
         )
 
-    def test_download_section_arguments_include_accurate_video_cut(self):
-        self.assertEqual(
-            _download_section_args(30.5, 95, force_keyframes=True),
-            ["--download-sections", "*30.500-95.000", "--force-keyframes-at-cuts"],
-        )
-
-    def test_range_uses_single_file_format_for_synchronized_audio_and_video(self):
-        self.assertEqual(_download_format(30.5, 95, video=False), RANGED_AV_FORMAT)
-        self.assertEqual(_download_format(30.5, 95, video=True), RANGED_AV_FORMAT)
+    def test_range_download_keeps_full_quality_source_formats(self):
+        self.assertIsNone(_download_format(30.5, 95, video=False))
+        self.assertEqual(_download_format(30.5, 95, video=True), FULL_VIDEO_FORMAT)
 
     def test_full_download_keeps_high_quality_video_format(self):
         self.assertIsNone(_download_format(None, None, video=False))
@@ -87,7 +79,7 @@ class AnalysisRangeTests(unittest.TestCase):
         self.assertEqual(response.json()["jobId"], "abc123-clip-30500-95000")
         self.assertEqual(captured["job_id"], "abc123-clip-30500-95000")
 
-    def test_range_analysis_downloads_only_requested_section(self):
+    def test_range_analysis_caches_full_source_and_trims_locally(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             paths = {
@@ -107,6 +99,9 @@ class AnalysisRangeTests(unittest.TestCase):
             def fake_publish(source, destination):
                 destination.write_bytes(source.read_bytes())
 
+            def fake_trim(source, destination, *_range):
+                destination.write_bytes(source.read_bytes())
+
             analysis = {
                 "bpm": 120.0,
                 "total_bars": 1,
@@ -120,6 +115,8 @@ class AnalysisRangeTests(unittest.TestCase):
                 patch.object(services, "get_title", return_value="Demo"),
                 patch.object(services, "download_wav", side_effect=fake_download) as download_audio,
                 patch.object(services, "download_video", side_effect=fake_download) as download_video,
+                patch.object(services, "trim_audio_range", side_effect=fake_trim) as trim_audio,
+                patch.object(services, "trim_video_range", side_effect=fake_trim) as trim_video,
                 patch.object(services, "convert_wav_to_mp3", side_effect=lambda _src, dst: dst.write_bytes(b"mp3")),
                 patch.object(services, "publish_video", side_effect=fake_publish),
                 patch.object(services, "run_analyzer", return_value=analysis),
@@ -139,8 +136,12 @@ class AnalysisRangeTests(unittest.TestCase):
             self.assertEqual(result["analysisStartSec"], 30.5)
             self.assertEqual(result["analysisEndSec"], 95.0)
             self.assertEqual(result["title"], "Demo (0:30–1:35)")
-            self.assertEqual(download_audio.call_args.args[2:], (30.5, 95.0))
-            self.assertEqual(download_video.call_args.args[2:], (30.5, 95.0))
+            self.assertEqual(download_audio.call_args.args[2:], ())
+            self.assertEqual(download_video.call_args.args[2:], ())
+            self.assertEqual(download_audio.call_args.args[1].name, "abc123.wav")
+            self.assertEqual(download_video.call_args.args[1].name, "abc123.mp4")
+            self.assertEqual(trim_audio.call_args.args[2:], (30.5, 95.0))
+            self.assertEqual(trim_video.call_args.args[2:], (30.5, 95.0))
 
 
 if __name__ == "__main__":
