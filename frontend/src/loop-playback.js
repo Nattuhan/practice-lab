@@ -1,3 +1,6 @@
+// Media backends can report a slightly earlier time immediately after a seek,
+// especially below 1x. Without this tolerance that rounding error seeks to the
+// loop start again on every timeupdate and playback never advances.
 export const LOOP_START_TOLERANCE_SECONDS = 0.1;
 
 export const shouldRestartLoop = (time, range) => {

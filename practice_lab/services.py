@@ -496,6 +496,11 @@ def _download_format(start_sec: float | None, end_sec: float | None, *, video: b
 
 
 def source_media_cache_paths(source_video_id: str) -> tuple[Path, Path]:
+    """Return full-source cache files shared by every clip of one video.
+
+    Keeping the untrimmed source lets another range reuse the original quality
+    without downloading the same YouTube video again.
+    """
     cache_dir = DATA_WORK_DIR / "source-media"
     return cache_dir / f"{source_video_id}.wav", cache_dir / f"{source_video_id}.mp4"
 
@@ -515,6 +520,7 @@ def trim_audio_range(
     start_sec: float | None,
     end_sec: float | None,
 ) -> None:
+    """Create analysis PCM locally so remote range selection cannot lower quality."""
     start, end = normalize_analysis_range(start_sec, end_sec)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if start is None and end is None:
@@ -538,6 +544,7 @@ def trim_video_range(
     start_sec: float | None,
     end_sec: float | None,
 ) -> None:
+    """Cut locally and re-encode to keep an exact range with synchronized A/V."""
     start, end = normalize_analysis_range(start_sec, end_sec)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if start is None and end is None:
@@ -624,6 +631,7 @@ def download_wav(
     start_sec: float | None = None,
     end_sec: float | None = None,
 ) -> None:
+    """Download the complete source audio, then apply any range locally."""
     start_sec, end_sec = normalize_analysis_range(start_sec, end_sec)
     session_args = yt_dlp_browser_session_args()
     attempt_args = [[], session_args] if session_args else [[]]
@@ -669,6 +677,11 @@ def download_video(
     start_sec: float | None = None,
     end_sec: float | None = None,
 ) -> None:
+    """Download a high-quality complete video, then apply any range locally.
+
+    yt-dlp range downloads tend to select a progressive MP4, which can be only
+    360p even when a higher-quality DASH video stream exists.
+    """
     destination.parent.mkdir(parents=True, exist_ok=True)
     start_sec, end_sec = normalize_analysis_range(start_sec, end_sec)
     format_candidates = [FULL_VIDEO_FORMAT, FULL_VIDEO_FALLBACK_FORMAT]
@@ -1402,6 +1415,8 @@ def analyze_url(
     video_file = DATA_VIDEO_DIR / f"{video_id}.mp4"
     public_audio_file = PUBLIC_AUDIO_DIR / f"{video_id}.mp3"
     public_video_file = PUBLIC_VIDEO_DIR / f"{video_id}.mp4"
+    # Cache one full-quality source per YouTube video. Session-specific clips
+    # are derived below, locally, so range selection never controls stream quality.
     source_audio_file, source_video_file = source_media_cache_paths(source_video_id)
 
     if not force and result_file.exists() and audio_file.exists() and public_audio_file.exists() and public_video_file.exists():
