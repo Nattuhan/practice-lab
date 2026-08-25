@@ -7,12 +7,7 @@ from fastapi.testclient import TestClient
 
 from practice_lab import app as app_module
 from practice_lab import services
-from practice_lab.services import (
-    FULL_VIDEO_FORMAT,
-    _download_format,
-    build_analysis_session_id,
-    normalize_analysis_range,
-)
+from practice_lab.services import build_analysis_session_id, normalize_analysis_range
 
 
 class AnalysisRangeTests(unittest.TestCase):
@@ -25,14 +20,6 @@ class AnalysisRangeTests(unittest.TestCase):
             build_analysis_session_id("abc123", 30.5, 95),
             "abc123-clip-30500-95000",
         )
-
-    def test_range_download_keeps_full_quality_source_formats(self):
-        self.assertIsNone(_download_format(30.5, 95, video=False))
-        self.assertEqual(_download_format(30.5, 95, video=True), FULL_VIDEO_FORMAT)
-
-    def test_full_download_keeps_high_quality_video_format(self):
-        self.assertIsNone(_download_format(None, None, video=False))
-        self.assertEqual(_download_format(None, None, video=True), FULL_VIDEO_FORMAT)
 
     def test_rejects_reversed_range(self):
         with self.assertRaisesRegex(ValueError, "終了時間"):
