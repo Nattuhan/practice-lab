@@ -97,9 +97,13 @@ test("デスクトップ版は同期済み動画とパートをローカルか�
     if (request.url().startsWith("https://media.example.test/")) cloudRequests.push(request.url());
   });
 
+  // The fixture has no real MP4, so the video element removes its src after
+  // the expected 404. Observe the request itself to verify local URL routing.
+  const localVideoRequest = page.waitForRequest(request =>
+    /\/video\/e2e-baseline\.mp4\?v=/.test(request.url()),
+  );
   await page.goto("/");
-  await expect(page.locator("#video-player")).toHaveAttribute("src", /video\/e2e-baseline\.mp4\?v=/);
-  await expect(page.locator("#video-player")).not.toHaveAttribute("src", /media\.example\.test/);
+  await localVideoRequest;
   expect(cloudRequests).toEqual([]);
 });
 
