@@ -51,3 +51,35 @@ for library in libcrypto.3.dylib libssl.3.dylib; do
   fi
   cp "$source_library" "$backend_internal/$library"
 done
+
+# Bind Python's SSL extensions directly to the copies beside the packaged
+# runtime. A generic @rpath lookup can otherwise reuse OpenCV's incompatible
+# libcrypto when Electron launches the backend, even though a direct runtime
+# check succeeds. Also remove the build machine's absolute Python.framework
+# dependency from libssl so clean Macs use the bundled copy.
+packaged_ssl_module="$(find "$backend_internal/lib-dynload" -maxdepth 1 -name '_ssl*.so' -print -quit)"
+packaged_hashlib_module="$(find "$backend_internal/lib-dynload" -maxdepth 1 -name '_hashlib*.so' -print -quit)"
+if [[ ! -f "$packaged_ssl_module" || ! -f "$packaged_hashlib_module" ]]; then
+  echo "Packaged Python SSL extensions were not found" >&2
+  exit 1
+fi
+install_name_tool -id '@rpath/libcrypto.3.dylib' "$backend_internal/libcrypto.3.dylib"
+install_name_tool -id '@rpath/libssl.3.dylib' "$backend_internal/libssl.3.dylib"
+install_name_tool \
+  -change "$(otool -L "$backend_internal/libssl.3.dylib" | awk '$1 ~ /\/libcrypto\.3\.dylib$/ { print $1; exit }')" \
+  '@loader_path/libcrypto.3.dylib' \
+  "$backend_internal/libssl.3.dylib"
+install_name_tool -change '@rpath/libssl.3.dylib' '@loader_path/../libssl.3.dylib' "$packaged_ssl_module"
+install_name_tool -change '@rpath/libcrypto.3.dylib' '@loader_path/../libcrypto.3.dylib' "$packaged_ssl_module"
+install_name_tool -change '@rpath/libcrypto.3.dylib' '@loader_path/../libcrypto.3.dylib' "$packaged_hashlib_module"
+
+# install_name_tool invalidates the PyInstaller-provided ad-hoc signatures.
+# Sign every modified Mach-O explicitly; signing only the outer .app does not
+# cover arbitrary extension modules nested under Resources/backend.
+for component in \
+  "$backend_internal/libcrypto.3.dylib" \
+  "$backend_internal/libssl.3.dylib" \
+  "$packaged_ssl_module" \
+  "$packaged_hashlib_module"; do
+  codesign --force --sign - "$component"
+done
