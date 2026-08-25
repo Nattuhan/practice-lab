@@ -2277,6 +2277,26 @@ var sortLibraryItems = (items, mode = "manual") => {
 
 // frontend/src/loop-playback.js
 var LOOP_START_TOLERANCE_SECONDS = 0.1;
+var MIN_CUSTOM_LOOP_SECONDS = 0.1;
+var clampCustomLoopRange = (start, end, duration) => {
+  const mediaDuration = Number(duration);
+  const rangeStart = Number(start);
+  const rangeEnd = Number(end);
+  if (!(mediaDuration > 0) || !Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd)) return null;
+  const clampedStart = Math.min(mediaDuration, Math.max(0, rangeStart));
+  const clampedEnd = Math.min(mediaDuration, Math.max(clampedStart, rangeEnd));
+  if (clampedEnd - clampedStart < MIN_CUSTOM_LOOP_SECONDS) return null;
+  return { start: clampedStart, end: clampedEnd, kind: "custom" };
+};
+var moveCustomLoopRange = (range, delta, duration) => {
+  const rangeDuration = range.end - range.start;
+  if (!(rangeDuration > 0) || !(duration > 0) || !Number.isFinite(delta)) return null;
+  const start = Math.min(
+    Math.max(0, range.start + delta),
+    Math.max(0, duration - rangeDuration)
+  );
+  return { start, end: start + rangeDuration, kind: "custom" };
+};
 var shouldRestartLoop = (time, range) => {
   if (!range || !Number.isFinite(time)) return false;
   const start = Number(range.start);
@@ -4993,10 +5013,8 @@ var getWaveformTimeFromClientX = (clientX) => {
 };
 var getMovedLoopRange = (drag, clientX) => {
   const duration = ws?.getDuration() ?? 0;
-  const rangeDuration = drag.rangeEnd - drag.rangeStart;
   const delta = getWaveformTimeFromClientX(clientX) - drag.startTime;
-  const start = Math.min(Math.max(0, drag.rangeStart + delta), Math.max(0, duration - rangeDuration));
-  return { start, end: start + rangeDuration, kind: "custom" };
+  return moveCustomLoopRange({ start: drag.rangeStart, end: drag.rangeEnd }, delta, duration);
 };
 var clearCustomLoopRange = ({ clearSelection = false } = {}) => {
   customLoopRange = null;
@@ -5024,18 +5042,16 @@ var applySectionLoopRange = (indexes) => {
 };
 var applyCustomLoopRange = (start, end) => {
   const duration = ws?.getDuration() ?? 0;
-  if (!(duration > 0)) return;
-  const clampedStart = Math.min(duration, Math.max(0, start));
-  const clampedEnd = Math.min(duration, Math.max(clampedStart, end));
-  if (clampedEnd - clampedStart < 0.1) {
+  const range = clampCustomLoopRange(start, end, duration);
+  if (!range) {
     clearCustomLoopRange();
     return;
   }
   selectedIdxs = /* @__PURE__ */ new Set();
-  customLoopRange = { start: clampedStart, end: clampedEnd, kind: "custom" };
+  customLoopRange = range;
   renderCustomLoopRange();
   updateSelectionUI();
-  playFromTime(clampedStart);
+  playFromTime(range.start);
 };
 var renderStemPanel = (assets) => {
   const available = hasStemAssets(assets);

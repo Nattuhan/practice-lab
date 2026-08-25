@@ -1,7 +1,7 @@
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, sortLibraryItems } from "./library.js";
-import { shouldRestartLoop } from "./loop-playback.js";
+import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "./loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
@@ -2914,10 +2914,8 @@ const getWaveformTimeFromClientX = clientX => {
 
 const getMovedLoopRange = (drag, clientX) => {
   const duration = ws?.getDuration() ?? 0;
-  const rangeDuration = drag.rangeEnd - drag.rangeStart;
   const delta = getWaveformTimeFromClientX(clientX) - drag.startTime;
-  const start = Math.min(Math.max(0, drag.rangeStart + delta), Math.max(0, duration - rangeDuration));
-  return { start, end: start + rangeDuration, kind: "custom" };
+  return moveCustomLoopRange({ start: drag.rangeStart, end: drag.rangeEnd }, delta, duration);
 };
 
 const clearCustomLoopRange = ({ clearSelection = false } = {}) => {
@@ -2948,18 +2946,16 @@ const applySectionLoopRange = indexes => {
 
 const applyCustomLoopRange = (start, end) => {
   const duration = ws?.getDuration() ?? 0;
-  if (!(duration > 0)) return;
-  const clampedStart = Math.min(duration, Math.max(0, start));
-  const clampedEnd = Math.min(duration, Math.max(clampedStart, end));
-  if (clampedEnd - clampedStart < 0.1) {
+  const range = clampCustomLoopRange(start, end, duration);
+  if (!range) {
     clearCustomLoopRange();
     return;
   }
   selectedIdxs = new Set();
-  customLoopRange = { start: clampedStart, end: clampedEnd, kind: "custom" };
+  customLoopRange = range;
   renderCustomLoopRange();
   updateSelectionUI();
-  playFromTime(clampedStart);
+  playFromTime(range.start);
 };
 
 const renderStemPanel = assets => {

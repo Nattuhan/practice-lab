@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { filterLibraryItems, sortLibraryItems } from "../src/library.js";
-import { shouldRestartLoop } from "../src/loop-playback.js";
+import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "../src/loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor.js";
 import { formatBytes } from "../src/storage.js";
 import { extractWaveformPeaks } from "../src/waveform-peaks.js";
@@ -17,6 +17,17 @@ test("ループ開始直後のメディア時刻の丸め誤差を再シーク�
   assert.equal(shouldRestartLoop(29.0, range), false);
   assert.equal(shouldRestartLoop(28.8, range), true);
   assert.equal(shouldRestartLoop(38.723, range), true);
+});
+
+test("ドラッグ範囲を曲内に収め、誤クリック相当の短い範囲を無視する", () => {
+  assert.deepEqual(clampCustomLoopRange(-2, 12, 10), { start: 0, end: 10, kind: "custom" });
+  assert.equal(clampCustomLoopRange(3, 3.05, 10), null);
+});
+
+test("ドラッグ範囲の長さを保ったまま曲端で止める", () => {
+  const range = { start: 3, end: 5 };
+  assert.deepEqual(moveCustomLoopRange(range, 10, 8), { start: 6, end: 8, kind: "custom" });
+  assert.deepEqual(moveCustomLoopRange(range, -10, 8), { start: 0, end: 2, kind: "custom" });
 });
 
 test("ライブラリを曲名・タグ・未練習で絞り込める", () => {
