@@ -75,6 +75,34 @@ test("主要画面をネットワークCDNなしで開ける", async ({ page }) 
   expect(dependencyRequests).toEqual([]);
 });
 
+test("デスクトップ版は同期済み動画とパートをローカルから再生する", async ({ page }) => {
+  const cloudAssets = {
+    result: "https://media.example.test/sessions/e2e-baseline/session.json",
+    audio: "https://media.example.test/sessions/e2e-baseline/audio.mp3",
+    video: "https://media.example.test/sessions/e2e-baseline/video.mp4",
+    stems: Object.fromEntries(
+      ["vocals", "drums", "bass", "other"].map(name => [name, `https://media.example.test/sessions/e2e-baseline/stems/${name}.mp3`]),
+    ),
+  };
+  await page.route("**/results/manifest.json", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify([{ ...baselineSession, assets: cloudAssets }]),
+  }));
+  await page.route("**/results/e2e-baseline.json", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ ...baselineResult, assets: cloudAssets }),
+  }));
+  const cloudRequests = [];
+  page.on("request", request => {
+    if (request.url().startsWith("https://media.example.test/")) cloudRequests.push(request.url());
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#video-player")).toHaveAttribute("src", /video\/e2e-baseline\.mp4\?v=/);
+  await expect(page.locator("#video-player")).not.toHaveAttribute("src", /media\.example\.test/);
+  expect(cloudRequests).toEqual([]);
+});
+
 test("可視操作を小さく潰さず文字を切らない", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/");

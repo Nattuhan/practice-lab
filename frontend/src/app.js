@@ -917,13 +917,16 @@ const versionedVideoUrl = url => {
 const sessionAssets = session => {
   const hasExplicitVideo = !!session?.assets && Object.prototype.hasOwnProperty.call(session.assets, "video");
   if (!staticLibraryMode) {
+    const localStems = session?.assets?.stems
+      ? Object.fromEntries(STEM_NAMES.map(stem => [stem, `stems/${session.id}/${stem}.mp3`]))
+      : null;
     return {
       result: `results/${session.id}.json`,
       audio: `audio/${session.id}.mp3`,
-      video: hasExplicitVideo
-        ? (session.assets.video ? versionedVideoUrl(session.assets.video) : "")
+      video: hasExplicitVideo && !session.assets.video
+        ? ""
         : versionedVideoUrl(`video/${session.id}.mp4`),
-      stems: session?.assets?.stems || null,
+      stems: localStems,
     };
   }
   const staticVideo = hasExplicitVideo
