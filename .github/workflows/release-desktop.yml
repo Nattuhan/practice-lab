@@ -44,6 +44,11 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           npm version $version --no-git-tag-version --allow-same-version
+      - name: Build optional Windows score extraction pack
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          .venv\Scripts\python.exe scripts\build_score_feature_pack.py "desktop\dist\installer\PracticeLab-Score-Windows-$version.zip"
       - name: Collect Node and FFmpeg
         shell: pwsh
         run: |
@@ -56,6 +61,30 @@ jobs:
       - name: Verify bundled backend runtime
         shell: pwsh
         run: desktop\dist\backend\practice-lab-backend\practice-lab-backend.exe --check-runtime windows
+      - name: Verify the optional Windows score pack
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $featureHome = Join-Path $env:RUNNER_TEMP "practice-lab-score-test"
+          $featureDir = Join-Path $featureHome "runtime\score\$version"
+          New-Item -ItemType Directory -Force -Path $featureDir | Out-Null
+          Expand-Archive "desktop\dist\installer\PracticeLab-Score-Windows-$version.zip" -DestinationPath $featureDir
+          $env:PRACTICE_LAB_HOME = $featureHome
+          $env:PRACTICE_LAB_VERSION = $version
+          desktop\dist\backend\practice-lab-backend\practice-lab-backend.exe --check-runtime score
+      - name: Install optional Windows CPU analysis dependencies
+        run: |
+          .venv\Scripts\python.exe -m pip install "torch==2.6.0" "torchaudio==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          .venv\Scripts\python.exe -m pip install "natten==0.17.5" --no-build-isolation
+          .venv\Scripts\python.exe -m pip install "https://github.com/openmirlab/all-in-one-fix/archive/9ba8cac49d441f54e2d89aaefbd44acde8ee2c38.zip" --no-build-isolation
+          .venv\Scripts\python.exe scripts\patch_natten_cpu.py
+      - name: Build optional Windows CPU analysis pack
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_desktop_cpu_runtime.ps1
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $archive = "desktop\dist\installer\PracticeLab-Windows-CPU-$version.zip"
+          Compress-Archive -Path desktop\dist\features\practice-lab-cpu-runtime -DestinationPath $archive -CompressionLevel Optimal
       - name: Build tagged installer
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -67,6 +96,12 @@ jobs:
         run: npm run desktop:dist -- --publish=never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Verify Electron provides the JavaScript runtime
+        shell: pwsh
+        run: |
+          $env:ELECTRON_RUN_AS_NODE = "1"
+          $nodeVersion = & desktop\dist\installer\win-unpacked\PracticeLab.exe -p "process.versions.node"
+          if (-not $nodeVersion) { throw "Electron Node runtime is unavailable" }
       - name: Verify the Windows installer signature status
         shell: pwsh
         run: |
@@ -87,6 +122,8 @@ jobs:
             desktop/dist/installer/*.exe
             desktop/dist/installer/*.yml
             desktop/dist/installer/*.blockmap
+            desktop/dist/installer/*Windows-CPU-*.zip
+            desktop/dist/installer/*Score-Windows-*.zip
             desktop/dist/installer/*sbom*.json
             desktop/dist/installer/*dependencies*.json
 
@@ -133,6 +170,10 @@ jobs:
       - name: Use the tag as the app version
         if: startsWith(github.ref, 'refs/tags/')
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - name: Build optional Apple Silicon score extraction pack
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          .venv/bin/python scripts/build_score_feature_pack.py "desktop/dist/installer/PracticeLab-Score-macOS-arm64-$version.zip"
       - name: Prepare bundled tools and backend
         run: npm run desktop:backend:mac
       - name: Verify bundled Mac analysis runtime
@@ -141,6 +182,15 @@ jobs:
           "$backend" --check-runtime macos-analysis
           "$backend" scripts/analyze_audio.py --help
           "$backend" scripts/split_stems.py --help
+      - name: Verify the optional Apple Silicon score pack
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          feature_home="$(mktemp -d)"
+          feature_dir="$feature_home/runtime/score/$version"
+          mkdir -p "$feature_dir"
+          unzip -q "desktop/dist/installer/PracticeLab-Score-macOS-arm64-$version.zip" -d "$feature_dir"
+          PRACTICE_LAB_HOME="$feature_home" PRACTICE_LAB_VERSION="$version" \
+            desktop/dist/backend/practice-lab-backend/practice-lab-backend --check-runtime score
       - name: Build tagged ad-hoc signed DMG
         if: startsWith(github.ref, 'refs/tags/')
         run: npm run desktop:dist:mac -- --publish=never
@@ -188,6 +238,11 @@ jobs:
           done
           cat "$log_file" >&2
           exit 1
+      - name: Verify Electron provides the JavaScript runtime
+        run: |
+          app="desktop/dist/installer/mac-arm64/PracticeLab.app"
+          node_version="$(ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/PracticeLab" -p 'process.versions.node')"
+          test -n "$node_version"
       - name: Verify the Mac application bundle integrity
         run: |
           dmg="$(find desktop/dist/installer -maxdepth 1 -name 'PracticeLab-*-arm64.dmg' -print -quit)"
@@ -207,6 +262,7 @@ jobs:
           name: PracticeLab-macOS-Apple-Silicon
           path: |
             desktop/dist/installer/*.dmg
+            desktop/dist/installer/*Score-macOS-arm64-*.zip
 
   release-metadata:
     if: startsWith(github.ref, 'refs/tags/')
@@ -219,6 +275,15 @@ jobs:
           pattern: PracticeLab-*
           path: release-artifacts
           merge-multiple: true
+      - name: Create SHA-256 checksums
+        working-directory: release-artifacts
+        run: |
+          sha256sum \
+            PracticeLab-Setup-*.exe \
+            PracticeLab-*-arm64.dmg \
+            PracticeLab-Windows-CPU-*.zip \
+            PracticeLab-Score-*.zip \
+            > PracticeLab-SHA256SUMS.txt
       - name: Upload installers and publish the completed release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,5 +296,8 @@ jobs:
             release-artifacts/PracticeLab-Setup-*.exe.blockmap \
             release-artifacts/latest.yml \
             release-artifacts/PracticeLab-*-arm64.dmg \
+            release-artifacts/PracticeLab-Windows-CPU-*.zip \
+            release-artifacts/PracticeLab-Score-*.zip \
+            release-artifacts/PracticeLab-SHA256SUMS.txt \
             --clobber
           gh release edit "$GITHUB_REF_NAME" --title "PracticeLab $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --draft=false --latest

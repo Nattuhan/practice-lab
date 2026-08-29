@@ -4,10 +4,12 @@ import os
 import platform
 import shutil
 import subprocess
+import importlib.util
 from pathlib import Path
 
 from .analyzer_backend import to_wsl_path
 from .config import ROOT_DIR, SOURCE_ROOT, default_wsl_python
+from .optional_features import windows_cpu_runtime_executable
 
 
 def _run(command: list[str], *, timeout: int = 12) -> subprocess.CompletedProcess[str] | None:
@@ -28,19 +30,34 @@ def _run(command: list[str], *, timeout: int = 12) -> subprocess.CompletedProces
 def get_system_status() -> dict:
     system = platform.system()
     desktop = os.environ.get("PRACTICE_LAB_DESKTOP") == "1"
+    requested_mode = os.environ.get("PRACTICE_LAB_ANALYSIS_MODE", "cpu").strip().lower()
+    analysis_mode = "nvidia" if system == "Windows" and requested_mode == "nvidia" else "cpu"
     status = {
         "desktop": desktop,
         "platform": system,
+        "analysisMode": analysis_mode,
+        "analysisLabel": "NVIDIA GPU・WSL2 CUDA" if analysis_mode == "nvidia" else ("Apple Silicon CPU" if system == "Darwin" else "CPU"),
         "nvidia": {"available": False, "name": None},
         "wsl": {"available": False, "cudaAvailable": False},
         "runtime": {"available": False},
         "ready": system != "Windows",
-        "setupSupported": desktop and system == "Windows",
+        "setupSupported": desktop and system == "Windows" and analysis_mode == "nvidia",
+        "cpuSetupSupported": desktop and system == "Windows" and analysis_mode == "cpu",
     }
     if not desktop:
         status["ready"] = True
         return status
     if system != "Windows":
+        status["runtime"]["available"] = True
+        return status
+
+    if analysis_mode == "cpu":
+        required_modules = ("torch", "allin1fix", "demucs_infer")
+        bundled_runtime = all(importlib.util.find_spec(name) is not None for name in required_modules)
+        status["runtime"]["available"] = bundled_runtime or windows_cpu_runtime_executable().is_file()
+        status["ready"] = status["runtime"]["available"]
+        if not status["ready"]:
+            status["message"] = "CPU解析機能を追加すると、NVIDIA環境なしで解析できます"
         return status
 
     nvidia_smi = shutil.which("nvidia-smi.exe") or shutil.which("nvidia-smi")

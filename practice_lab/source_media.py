@@ -104,6 +104,11 @@ def yt_dlp_command(*args: str) -> list[str]:
     return [sys.executable, "-m", "yt_dlp", *args]
 
 
+def yt_dlp_js_runtime() -> str:
+    electron_path = os.environ.get("PRACTICE_LAB_NODE_PATH", "").strip()
+    return f"node:{electron_path}" if electron_path else "node"
+
+
 def yt_dlp_browser_session_args() -> list[str]:
     """Return a local browser session fallback for YouTube's signed streams.
 
@@ -152,7 +157,7 @@ def yt_dlp_error(stderr: str, fallback: str) -> str:
 
 def get_title(url: str) -> str:
     result = subprocess.run(
-        yt_dlp_command("--print", "title", "--no-playlist", "--js-runtimes", "node", url),
+        yt_dlp_command("--print", "title", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url),
         capture_output=True,
         text=True,
         timeout=30,
@@ -183,7 +188,7 @@ def download_wav(
                     os.path.join(temp_dir, f"audio-{index}.%(ext)s"),
                     "--no-playlist",
                     "--js-runtimes",
-                    "node",
+                    yt_dlp_js_runtime(),
                     url,
                 ),
                 capture_output=True,
@@ -244,7 +249,7 @@ def download_video(
                         os.path.join(temp_dir, f"{output_base}.%(ext)s"),
                         "--no-playlist",
                         "--js-runtimes",
-                        "node",
+                        yt_dlp_js_runtime(),
                         url,
                     ),
                     capture_output=True,

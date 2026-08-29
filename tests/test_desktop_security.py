@@ -31,3 +31,10 @@ def test_desktop_backend_requires_matching_host_origin_and_token():
         assert response.status_code == 200
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["cross-origin-resource-policy"] == "same-origin"
+
+        media_response = client.get("/video/missing.mp4", headers={
+            "host": "127.0.0.1:50067",
+            "origin": origin,
+            "x-practice-lab-desktop-token": "desktop-secret",
+        })
+        assert media_response.headers["cache-control"] == "no-store"

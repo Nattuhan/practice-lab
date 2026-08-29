@@ -28,12 +28,19 @@ from .models import (
     StemExportRequest,
     StorageCleanupRequest,
 )
-from .score_extractor import cleanup_canceled_score_job, extract_score, prepare_score_preview
 from .services import analyze_local_audio, analyze_url, build_analysis_session_id, cancel_interrupted_job, cancel_job, cleanup_canceled_analysis, cleanup_canceled_stems, cleanup_stem_mix_export, cleanup_uploaded_analysis, create_stem_mix_export, create_stems, delete_result, delete_results, extract_video_id, get_job_status, get_resumable_job_spec, initialize_job_store, list_job_history, list_job_statuses, normalize_analysis_range, publish_folders_to_cloud, rename_result, save_bpm_correction, save_sections, save_uploaded_audio, set_job_status, submit_queued_job, sync_cloud_library, update_library_metadata
 from .storage import bootstrap_public_data, export_static_assets, load_folders, save_folders
 from .storage_usage import cleanup_storage, storage_report
 from .system_status import get_system_status, launch_nvidia_setup
+from .optional_features import feature_status, install_score_runtime, install_windows_cpu_runtime, score_runtime_available, uninstall_score_runtime, uninstall_windows_cpu_runtime
 from .cloud_storage import get_r2_config, test_r2_connection
+
+
+def _score_module():
+    if not score_runtime_available():
+        raise RuntimeError("楽譜抽出機能が追加されていません。設定の「追加機能」から追加してください")
+    from . import score_extractor
+    return score_extractor
 
 
 def submit_job_spec(spec: dict) -> dict:
@@ -115,29 +122,51 @@ def submit_job_spec(spec: dict) -> dict:
             spec=spec,
             kind="cloud-sync",
         )
+    if job_type == "feature_install_windows_cpu":
+        return submit_queued_job(
+            job_id,
+            "Queued Windows CPU feature installation",
+            lambda: install_windows_cpu_runtime(
+                progress=lambda message: set_job_status(job_id, "installing", message),
+            ),
+            spec=spec,
+            kind="feature-install",
+        )
+    if job_type == "feature_install_score":
+        return submit_queued_job(
+            job_id,
+            "Queued score feature installation",
+            lambda: install_score_runtime(
+                progress=lambda message: set_job_status(job_id, "installing", message),
+            ),
+            spec=spec,
+            kind="feature-install",
+        )
     if job_type == "score_preview":
+        score = _score_module()
         video_id = spec["videoId"]
         return submit_queued_job(
             job_id,
             "Queued score preview",
-            lambda: prepare_score_preview(
+            lambda: score.prepare_score_preview(
                 spec["request"],
                 progress=lambda stage, message: set_job_status(job_id, stage, message),
             ),
-            cleanup=lambda: cleanup_canceled_score_job(video_id),
+            cleanup=lambda: score.cleanup_canceled_score_job(video_id),
             spec=spec,
             kind="score-preview",
         )
     if job_type == "score_extract":
+        score = _score_module()
         video_id = spec["videoId"]
         return submit_queued_job(
             job_id,
             "Queued score extraction",
-            lambda: extract_score(
+            lambda: score.extract_score(
                 spec["request"],
                 progress=lambda stage, message: set_job_status(job_id, stage, message),
             ),
-            cleanup=lambda: cleanup_canceled_score_job(video_id),
+            cleanup=lambda: score.cleanup_canceled_score_job(video_id),
             spec=spec,
             kind="score-extract",
         )
@@ -171,6 +200,8 @@ def create_app() -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        if expected_token and request.url.path.startswith(("/audio/", "/video/", "/stems/", "/score/")):
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.get("/healthz")
@@ -181,6 +212,39 @@ def create_app() -> FastAPI:
     @app.get("/system/status")
     async def system_status():
         return await run_in_threadpool(get_system_status)
+
+    @app.get("/features")
+    async def optional_feature_status():
+        return await run_in_threadpool(feature_status)
+
+    @app.post("/features/windows-cpu/install", response_model=JobSubmissionResponse)
+    async def install_windows_cpu_feature():
+        try:
+            return JobSubmissionResponse(**submit_job_spec({
+                "type": "feature_install_windows_cpu",
+                "jobId": "feature:windows-cpu",
+            }))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.delete("/features/windows-cpu")
+    async def remove_windows_cpu_feature():
+        if any(not job.get("done") for job in list_job_statuses()):
+            raise HTTPException(status_code=409, detail="処理中のジョブがあるためCPU解析機能を削除できません")
+        return await run_in_threadpool(uninstall_windows_cpu_runtime)
+
+    @app.post("/features/score/install", response_model=JobSubmissionResponse)
+    async def install_score_feature():
+        return JobSubmissionResponse(**submit_job_spec({
+            "type": "feature_install_score",
+            "jobId": "feature:score",
+        }))
+
+    @app.delete("/features/score")
+    async def remove_score_feature():
+        if any(not job.get("done") for job in list_job_statuses()):
+            raise HTTPException(status_code=409, detail="処理中のジョブがあるため楽譜抽出機能を削除できません")
+        return await run_in_threadpool(uninstall_score_runtime)
 
     @app.post("/system/setup-nvidia")
     async def setup_nvidia(x_practice_lab_desktop_token: str | None = Header(default=None)):
@@ -452,6 +516,8 @@ def create_app() -> FastAPI:
 
     @app.post("/score/preview", response_model=JobSubmissionResponse)
     async def score_preview(request: ScorePreviewRequest):
+        if not score_runtime_available():
+            raise HTTPException(status_code=409, detail="楽譜抽出機能が追加されていません")
         video_id = extract_video_id(request.url)
         if not video_id:
             raise HTTPException(status_code=400, detail="YouTube URLが不正です")
@@ -465,6 +531,8 @@ def create_app() -> FastAPI:
 
     @app.post("/score/extract", response_model=JobSubmissionResponse)
     async def score_extract(request: ScoreExtractRequest):
+        if not score_runtime_available():
+            raise HTTPException(status_code=409, detail="楽譜抽出機能が追加されていません")
         video_id = extract_video_id(request.url or "")
         if not video_id:
             raise HTTPException(status_code=400, detail="YouTube URLが不正です")

@@ -20,12 +20,17 @@ fi
   --onedir \
   --name practice-lab-backend \
   --paths "$repo_root" \
-  --collect-all rapidocr_onnxruntime \
   --collect-all yt_dlp \
   --collect-all torch \
   --collect-all natten \
   --collect-all allin1fix \
   --collect-all demucs_infer \
+  --hidden-import practice_lab.score_extractor \
+  --exclude-module cv2 \
+  --exclude-module rapidocr_onnxruntime \
+  --exclude-module onnxruntime \
+  --exclude-module pyclipper \
+  --exclude-module shapely \
   --hidden-import practice_lab.compute_device \
   --hidden-import practice_lab.jpop_sections \
   --hidden-import practice_lab.timing \
@@ -34,14 +39,15 @@ fi
   --specpath "$repo_root/desktop/build" \
   "$repo_root/desktop/backend_entry.py"
 
-# OpenCV bundles its own OpenSSL under cv2/.dylibs. Leaving that copy in place
-# can make the dynamic loader choose a libcrypto that is incompatible with
-# Python's ssl module, so the packaged backend exits before startup. Replace
-# the duplicates with the exact libraries used by the build Python.
+# Bind the packaged SSL module to the exact OpenSSL libraries used by the build
+# Python. Older all-in-one builds also contained OpenCV's private copies; keep
+# the cleanup conditional so the base app can exclude the optional score pack.
 backend_internal="$repo_root/desktop/dist/backend/practice-lab-backend/_internal"
 cv2_dylibs="$backend_internal/cv2/.dylibs"
 python_ssl_module="$("$python_bin" -c 'import _ssl; print(_ssl.__file__)')"
-find "$cv2_dylibs" -maxdepth 1 -type f \( -name 'libcrypto.3.dylib' -o -name 'libssl.3.dylib' \) -delete
+if [[ -d "$cv2_dylibs" ]]; then
+  find "$cv2_dylibs" -maxdepth 1 -type f \( -name 'libcrypto.3.dylib' -o -name 'libssl.3.dylib' \) -delete
+fi
 find "$backend_internal" -maxdepth 1 -type l \( -name 'libcrypto.3.dylib' -o -name 'libssl.3.dylib' \) -delete
 for library in libcrypto.3.dylib libssl.3.dylib; do
   source_library="$(otool -L "$python_ssl_module" | awk -v suffix="/$library" '$1 ~ suffix "$" { print $1; exit }')"

@@ -23,6 +23,7 @@ from .cloud_storage import build_r2_session_assets, configure_bucket_cors, delet
 from .cloud_sync import sync_cloud_incremental
 from .device_sync import record_session_deletions
 from .source_media import download_video, download_wav, get_title, normalize_analysis_range, source_media_cache_paths, trim_audio_range, trim_video_range
+from .optional_features import windows_cpu_runtime_executable
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 from .timing import normalize_section_bar_ranges, normalize_tempo_grid
 
@@ -471,8 +472,21 @@ def format_seconds(value: float) -> str:
 
 def publish_video(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if not destination.exists() or source.stat().st_mtime_ns != destination.stat().st_mtime_ns:
-        shutil.copy2(source, destination)
+    if destination.exists() and os.path.samefile(source, destination):
+        return
+    if destination.exists() and source.stat().st_mtime_ns == destination.stat().st_mtime_ns:
+        return
+    with tempfile.NamedTemporaryFile(prefix=f".{destination.name}-", dir=destination.parent, delete=False) as temporary:
+        temporary_path = Path(temporary.name)
+    temporary_path.unlink(missing_ok=True)
+    try:
+        try:
+            os.link(source, temporary_path)
+        except OSError:
+            shutil.copy2(source, temporary_path)
+        temporary_path.replace(destination)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def convert_wav_to_mp3(source: Path, destination: Path) -> None:
@@ -821,12 +835,16 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
     work_dir.mkdir(parents=True, exist_ok=True)
     runtime_config = get_analyzer_runtime_config()
     backend = resolve_backend(wsl_python=WSL_PYTHON)
+    native_executable = windows_cpu_runtime_executable() if sys.platform == "win32" and backend.device == "cpu" else None
+    if native_executable is not None and not native_executable.is_file():
+        raise RuntimeError("Windows CPU解析機能が未インストールです。設定の「追加機能」から追加してください")
     command, process_cwd = analyzer_command(
         backend,
         script=ANALYZE_SCRIPT,
         audio_path=audio_path,
         work_dir=work_dir,
         wsl_python=WSL_PYTHON,
+        native_executable=native_executable,
     )
     process = subprocess.Popen(
         command,
@@ -942,6 +960,9 @@ def run_stem_splitter(audio_path: Path, video_id: str, job_id: str | None = None
         shutil.rmtree(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     backend = resolve_backend(purpose="stems", wsl_python=WSL_PYTHON)
+    native_executable = windows_cpu_runtime_executable() if sys.platform == "win32" and backend.device == "cpu" else None
+    if native_executable is not None and not native_executable.is_file():
+        raise RuntimeError("Windows CPU解析機能が未インストールです。設定の「追加機能」から追加してください")
     output_dir = DATA_STEMS_DIR / video_id
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -954,6 +975,7 @@ def run_stem_splitter(audio_path: Path, video_id: str, job_id: str | None = None
         output_dir=output_dir,
         work_dir=work_dir,
         wsl_python=WSL_PYTHON,
+        native_executable=native_executable,
     )
     set_job_status(job_id, "stems", f"Separating stems on {backend.label}")
     process = subprocess.Popen(

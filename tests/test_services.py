@@ -62,6 +62,21 @@ class AudioConversionTests(unittest.TestCase):
         self.assertEqual(first_call.kwargs["errors"], "replace")
 
 
+class PublishedVideoStorageTests(unittest.TestCase):
+    def test_publish_video_reuses_the_source_file_on_the_same_volume(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "data" / "video.mp4"
+            destination = root / "public" / "video.mp4"
+            source.parent.mkdir()
+            source.write_bytes(b"video-data")
+
+            services.publish_video(source, destination)
+
+            self.assertEqual(destination.read_bytes(), b"video-data")
+            self.assertTrue(os.path.samefile(source, destination))
+
+
 class JobQueueTests(unittest.TestCase):
     def test_job_display_title_replaces_internal_id_for_clients(self):
         job_id = "opaque-video-id"

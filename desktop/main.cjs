@@ -14,6 +14,7 @@ const {
 const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require("./legacy-cloud-settings.cjs");
 const { sanitizePlayerSettings } = require("./player-settings.cjs");
 const { RELEASES_LATEST_URL, getUpdateMode } = require("./update-policy.cjs");
+const { analysisEnvironment, sanitizeAnalysisMode } = require("./analysis-settings.cjs");
 
 let mainWindow = null;
 let backend = null;
@@ -24,6 +25,7 @@ const selectedConnectionFiles = new Map();
 
 const defaultDesktopSettings = Object.freeze({
   autoUpdate: true,
+  analysisMode: "cpu",
   cloud: {
     enabled: false,
     bucket: "",
@@ -51,6 +53,7 @@ function readDesktopSettings() {
   const saved = readJson(settingsFile(), {});
   return {
     autoUpdate: saved.autoUpdate !== false,
+    analysisMode: sanitizeAnalysisMode(saved.analysisMode, process.platform),
     cloud: { ...defaultDesktopSettings.cloud, ...(saved.cloud || {}) },
   };
 }
@@ -97,6 +100,7 @@ function settingsForRenderer() {
     dataPath: app.getPath("userData"),
     version: app.getVersion(),
     packaged: app.isPackaged,
+    platform: process.platform,
     updateMode: getUpdateMode({ packaged: app.isPackaged, platform: process.platform }),
   };
 }
@@ -121,7 +125,11 @@ function writeDesktopSettings(input = {}) {
   if (cloud.enabled && !String(cloudInput.secretAccessKey || "") && !currentSecrets.r2SecretAccessKey) {
     throw new Error("R2のシークレットアクセスキーを入力してください");
   }
-  const settings = { autoUpdate: input.autoUpdate !== false, cloud };
+  const settings = {
+    autoUpdate: input.autoUpdate !== false,
+    analysisMode: sanitizeAnalysisMode(input.analysisMode, process.platform),
+    cloud,
+  };
   fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2), "utf8");
 
   const nextSecret = String(cloudInput.secretAccessKey || "");
@@ -262,6 +270,7 @@ async function startBackend() {
   const desktopSettings = readDesktopSettings();
   const desktopSecrets = readDesktopSecrets();
   const cloud = desktopSettings.cloud;
+  const analysis = analysisEnvironment(desktopSettings.analysisMode, process.platform);
   let lastError = null;
   for (let startAttempt = 1; startAttempt <= 4; startAttempt += 1) {
     const port = await findFreePort();
@@ -279,11 +288,15 @@ async function startBackend() {
       PRACTICE_LAB_DESKTOP_TOKEN: desktopToken,
       PRACTICE_LAB_INSTANCE_ID: instanceId,
       PRACTICE_LAB_DEVICE_NAME: os.hostname(),
-      ANALYZER_EXECUTOR: process.platform === "win32" ? "wsl" : "auto",
-      ANALYZER_DEVICE: process.platform === "win32" ? "cuda" : (process.platform === "darwin" ? "cpu" : "auto"),
+      PRACTICE_LAB_VERSION: app.getVersion(),
+      PRACTICE_LAB_NODE_PATH: process.execPath,
+      ELECTRON_RUN_AS_NODE: "1",
+      PRACTICE_LAB_ANALYSIS_MODE: analysis.mode,
+      ANALYZER_EXECUTOR: analysis.analyzerExecutor,
+      ANALYZER_DEVICE: analysis.analyzerDevice,
       ANALYZER_TIMEOUT_SECONDS: "1800",
       ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS: "0",
-      STEM_DEVICE: process.platform === "win32" ? "cuda" : (process.platform === "darwin" ? "cpu" : "auto"),
+      STEM_DEVICE: analysis.stemDevice,
       PRACTICE_LAB_SKIP_ENV_FILE: "1",
       R2_ENABLED: cloud.enabled ? "1" : "0",
       R2_BUCKET: cloud.bucket,
@@ -552,6 +565,14 @@ ipcMain.on("desktop:save-player-settings", (event, payload) => {
 ipcMain.handle("desktop:get-settings", event => {
   requireTrustedIpc(event);
   return settingsForRenderer();
+});
+ipcMain.handle("desktop:clear-cache", async event => {
+  requireTrustedIpc(event);
+  const browserSession = event.sender.session;
+  const beforeBytes = await browserSession.getCacheSize();
+  await browserSession.clearCache();
+  const afterBytes = await browserSession.getCacheSize();
+  return { removedBytes: Math.max(0, beforeBytes - afterBytes) };
 });
 ipcMain.handle("desktop:save-settings", (event, payload) => {
   requireTrustedIpc(event);

@@ -18,6 +18,7 @@ import cv2
 from PIL import Image, ImageChops, ImageOps, ImageStat
 
 from .config import DATA_AUDIO_DIR, DATA_RESULTS_DIR, DATA_SCORE_DIR, PUBLIC_SCORE_DIR
+from .source_media import yt_dlp_js_runtime
 
 MAX_OUTPUT_HEIGHT = 30000
 A4_RATIO = 297 / 210
@@ -91,7 +92,7 @@ def download_source_video(url: str, destination: Path) -> None:
                 os.path.join(temp_dir, "source.%(ext)s"),
                 "--no-playlist",
                 "--js-runtimes",
-                "node",
+                yt_dlp_js_runtime(),
                 url,
             ),
             capture_output=True,
@@ -109,7 +110,7 @@ def download_source_video(url: str, destination: Path) -> None:
 def get_video_title(url: str, fallback: str) -> str:
     result = subprocess.run(
         yt_dlp_command(
-            "--encoding", "utf-8", "--print", "title", "--no-playlist", "--js-runtimes", "node", url
+            "--encoding", "utf-8", "--print", "title", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url
         ),
         capture_output=True,
         text=True,

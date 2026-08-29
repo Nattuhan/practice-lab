@@ -12,8 +12,13 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to install PyInstaller." }
     --onedir `
     --name practice-lab-backend `
     --paths $RepoRoot `
-    --collect-all rapidocr_onnxruntime `
     --collect-all yt_dlp `
+    --hidden-import practice_lab.score_extractor `
+    --exclude-module cv2 `
+    --exclude-module rapidocr_onnxruntime `
+    --exclude-module onnxruntime `
+    --exclude-module pyclipper `
+    --exclude-module shapely `
     --exclude-module torch `
     --exclude-module torchvision `
     --exclude-module torchaudio `

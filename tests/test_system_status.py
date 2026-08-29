@@ -44,7 +44,7 @@ class SystemStatusTests(unittest.TestCase):
             patch("practice_lab.system_status.shutil.which", side_effect=lambda name: name),
             patch("practice_lab.system_status.os.path.lexists", return_value=True),
             patch("practice_lab.system_status._run", side_effect=fake_run),
-            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1"}, clear=True),
+            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1", "PRACTICE_LAB_ANALYSIS_MODE": "nvidia"}, clear=True),
         ):
             status = system_status.get_system_status()
         self.assertTrue(status["ready"])
@@ -60,7 +60,7 @@ class SystemStatusTests(unittest.TestCase):
             patch("practice_lab.system_status.platform.system", return_value="Windows"),
             patch("practice_lab.system_status.shutil.which", side_effect=which),
             patch("practice_lab.system_status._run", return_value=completed([], stdout="RTX 4090\n")),
-            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1"}, clear=True),
+            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1", "PRACTICE_LAB_ANALYSIS_MODE": "nvidia"}, clear=True),
         ):
             status = system_status.get_system_status()
         self.assertFalse(status["ready"])
@@ -83,11 +83,33 @@ class SystemStatusTests(unittest.TestCase):
                 patch("practice_lab.system_status.os.path.lexists", return_value=False),
                 patch("practice_lab.system_status.default_wsl_python", return_value=wsl_python),
                 patch("practice_lab.system_status._run", side_effect=fake_run),
-                patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1"}, clear=True),
+                patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1", "PRACTICE_LAB_ANALYSIS_MODE": "nvidia"}, clear=True),
             ):
                 status = system_status.get_system_status()
         self.assertTrue(status["runtime"]["available"])
         self.assertTrue(status["ready"])
+
+    def test_windows_cpu_mode_does_not_require_nvidia(self):
+        with (
+            patch("practice_lab.system_status.platform.system", return_value="Windows"),
+            patch("practice_lab.system_status.importlib.util.find_spec", return_value=object()),
+            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1", "PRACTICE_LAB_ANALYSIS_MODE": "cpu"}, clear=True),
+        ):
+            status = system_status.get_system_status()
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["analysisMode"], "cpu")
+        self.assertFalse(status["setupSupported"])
+
+    def test_windows_cpu_mode_reports_missing_optional_runtime(self):
+        with (
+            patch("practice_lab.system_status.platform.system", return_value="Windows"),
+            patch("practice_lab.system_status.importlib.util.find_spec", return_value=None),
+            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1", "PRACTICE_LAB_ANALYSIS_MODE": "cpu"}, clear=True),
+        ):
+            status = system_status.get_system_status()
+        self.assertFalse(status["ready"])
+        self.assertTrue(status["cpuSetupSupported"])
+        self.assertIn("CPU解析機能", status["message"])
 
     def test_nvidia_setup_endpoint_requires_desktop_token(self):
         with patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP_TOKEN": "secret"}, clear=False):

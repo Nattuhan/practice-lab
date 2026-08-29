@@ -65,10 +65,11 @@ def analyzer_command(
     audio_path: Path,
     work_dir: Path,
     wsl_python: Path,
+    native_executable: Path | None = None,
 ) -> tuple[list[str], Path | None]:
     if backend.executor == "native":
         return (
-            [sys.executable, str(script), str(audio_path), "--device", backend.device],
+            [str(native_executable or sys.executable), str(script), str(audio_path), "--device", backend.device],
             work_dir,
         )
     shell_command = (
@@ -88,6 +89,7 @@ def stem_command(
     output_dir: Path,
     work_dir: Path,
     wsl_python: Path,
+    native_executable: Path | None = None,
 ) -> tuple[list[str], Path | None]:
     args = [
         "--device", backend.device,
@@ -96,7 +98,7 @@ def stem_command(
         str(audio_path),
     ]
     if backend.executor == "native":
-        return ([sys.executable, str(script), *args], work_dir)
+        return ([str(native_executable or sys.executable), str(script), *args], work_dir)
     shell_command = (
         f"export PYTHONPATH={shlex.quote(to_wsl_path(script.parent.parent))}:$PYTHONPATH && "
         f"cd {shlex.quote(to_wsl_path(work_dir))} && "

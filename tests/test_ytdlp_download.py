@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 import unittest
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,6 +9,11 @@ from practice_lab import source_media
 
 
 class YtDlpDownloadTests(unittest.TestCase):
+    def test_packaged_app_uses_electron_as_the_node_runtime(self):
+        with patch.dict(os.environ, {"PRACTICE_LAB_NODE_PATH": "/Applications/PracticeLab.app/Contents/MacOS/PracticeLab"}, clear=False):
+            runtime = source_media.yt_dlp_js_runtime()
+        self.assertEqual(runtime, "node:/Applications/PracticeLab.app/Contents/MacOS/PracticeLab")
+
     def test_filters_python_deprecation_from_download_error(self):
         message = source_media.yt_dlp_error(
             "Deprecated Feature: Support for Python version 3.10 has been deprecated. Please update to Python 3.11 or above\n"
