@@ -66,7 +66,7 @@ jobs:
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $featureHome = Join-Path $env:RUNNER_TEMP "practice-lab-score-test"
-          $featureDir = Join-Path $featureHome "runtime\score\$version"
+          $featureDir = Join-Path $featureHome "runtime\score\abi-1"
           New-Item -ItemType Directory -Force -Path $featureDir | Out-Null
           Expand-Archive "desktop\dist\installer\PracticeLab-Score-Windows-$version.zip" -DestinationPath $featureDir
           $env:PRACTICE_LAB_HOME = $featureHome
@@ -186,7 +186,7 @@ jobs:
         run: |
           version="$(node -p 'require("./package.json").version')"
           feature_home="$(mktemp -d)"
-          feature_dir="$feature_home/runtime/score/$version"
+          feature_dir="$feature_home/runtime/score/abi-1"
           mkdir -p "$feature_dir"
           unzip -q "desktop/dist/installer/PracticeLab-Score-macOS-arm64-$version.zip" -d "$feature_dir"
           PRACTICE_LAB_HOME="$feature_home" PRACTICE_LAB_VERSION="$version" \

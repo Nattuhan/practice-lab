@@ -20,6 +20,8 @@ from .config import ROOT_DIR
 RELEASE_API = "https://api.github.com/repos/Nattuhan/practice-lab/releases/tags/v{version}"
 CPU_FEATURE_KEY = "windows-cpu"
 SCORE_FEATURE_KEY = "score"
+CPU_RUNTIME_ABI = "abi-1"
+SCORE_RUNTIME_ABI = "abi-1"
 
 
 def app_version() -> str:
@@ -33,14 +35,70 @@ def windows_cpu_asset_name(version: str | None = None) -> str:
     return f"PracticeLab-Windows-CPU-{resolved}.zip"
 
 
-def windows_cpu_runtime_dir(version: str | None = None) -> Path:
-    resolved = version or app_version()
-    return ROOT_DIR / "runtime" / CPU_FEATURE_KEY / resolved
+def _feature_root(feature_key: str) -> Path:
+    return ROOT_DIR / "runtime" / feature_key
 
 
-def windows_cpu_runtime_executable(version: str | None = None) -> Path:
+def _stable_runtime_dir(feature_key: str, runtime_abi: str) -> Path:
+    return _feature_root(feature_key) / runtime_abi
+
+
+def _cleanup_legacy_runtimes(feature_root: Path, keep: Path) -> None:
+    if not feature_root.is_dir():
+        return
+    for child in feature_root.iterdir():
+        managed_name = child.name.startswith("abi-") or all(part.isdigit() for part in child.name.split("."))
+        if child == keep or not child.is_dir() or not managed_name:
+            continue
+        try:
+            shutil.rmtree(child)
+        except OSError:
+            # A running Windows executable can temporarily keep DLLs locked.
+            # The compatible runtime remains usable and cleanup is retried on
+            # the next feature check or installation.
+            continue
+
+
+def _resolve_compatible_runtime(feature_key: str, runtime_abi: str, marker: Path) -> Path:
+    feature_root = _feature_root(feature_key)
+    stable = feature_root / runtime_abi
+    if (stable / marker).exists():
+        _cleanup_legacy_runtimes(feature_root, stable)
+        return stable
+    if not feature_root.is_dir():
+        return stable
+    candidates = sorted(
+        (
+            child for child in feature_root.iterdir()
+            if child.is_dir() and child != stable and not child.name.startswith("abi-")
+        ),
+        key=lambda child: child.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for candidate in candidates:
+        if not (candidate / marker).exists():
+            continue
+        try:
+            candidate.replace(stable)
+        except OSError:
+            return candidate
+        _cleanup_legacy_runtimes(feature_root, stable)
+        return stable
+    return stable
+
+
+def windows_cpu_runtime_dir() -> Path:
+    executable_name = "practice-lab-cpu-runtime.exe" if platform.system() == "Windows" else "practice-lab-cpu-runtime"
+    return _resolve_compatible_runtime(
+        CPU_FEATURE_KEY,
+        CPU_RUNTIME_ABI,
+        Path("practice-lab-cpu-runtime") / executable_name,
+    )
+
+
+def windows_cpu_runtime_executable() -> Path:
     name = "practice-lab-cpu-runtime.exe" if platform.system() == "Windows" else "practice-lab-cpu-runtime"
-    return windows_cpu_runtime_dir(version) / "practice-lab-cpu-runtime" / name
+    return windows_cpu_runtime_dir() / "practice-lab-cpu-runtime" / name
 
 
 def score_platform_name() -> str:
@@ -58,13 +116,16 @@ def score_asset_name(version: str | None = None) -> str:
     return f"PracticeLab-Score-{score_platform_name()}-{resolved}.zip"
 
 
-def score_runtime_dir(version: str | None = None) -> Path:
-    resolved = version or app_version()
-    return ROOT_DIR / "runtime" / SCORE_FEATURE_KEY / resolved
+def score_runtime_dir() -> Path:
+    return _resolve_compatible_runtime(
+        SCORE_FEATURE_KEY,
+        SCORE_RUNTIME_ABI,
+        Path("score-pack") / "site-packages" / "rapidocr_onnxruntime",
+    )
 
 
-def score_site_packages(version: str | None = None) -> Path:
-    return score_runtime_dir(version) / "score-pack" / "site-packages"
+def score_site_packages() -> Path:
+    return score_runtime_dir() / "score-pack" / "site-packages"
 
 
 def _directory_size(path: Path) -> int:
@@ -158,9 +219,9 @@ def install_windows_cpu_runtime(progress: Callable[[str], None] | None = None) -
     version = app_version()
     asset_name = windows_cpu_asset_name(version)
     asset = _release_asset(version, asset_name, "CPU解析パック")
-    destination = windows_cpu_runtime_dir(version)
+    destination = _stable_runtime_dir(CPU_FEATURE_KEY, CPU_RUNTIME_ABI)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=destination.parent) as temp_dir:
+    with tempfile.TemporaryDirectory(prefix=".install-", dir=destination.parent) as temp_dir:
         temp_root = Path(temp_dir)
         archive = temp_root / asset_name
         if progress:
@@ -180,13 +241,14 @@ def install_windows_cpu_runtime(progress: Callable[[str], None] | None = None) -
         if destination.exists():
             shutil.rmtree(destination)
         staged.replace(destination)
+    _cleanup_legacy_runtimes(destination.parent, destination)
     return feature_status()[CPU_FEATURE_KEY]
 
 
 def uninstall_windows_cpu_runtime() -> dict:
-    destination = windows_cpu_runtime_dir()
-    if destination.exists():
-        shutil.rmtree(destination)
+    feature_root = _feature_root(CPU_FEATURE_KEY)
+    if feature_root.exists():
+        shutil.rmtree(feature_root)
     return feature_status()[CPU_FEATURE_KEY]
 
 
@@ -196,9 +258,9 @@ def install_score_runtime(progress: Callable[[str], None] | None = None) -> dict
     version = app_version()
     asset_name = score_asset_name(version)
     asset = _release_asset(version, asset_name, "楽譜抽出パック")
-    destination = score_runtime_dir(version)
+    destination = _stable_runtime_dir(SCORE_FEATURE_KEY, SCORE_RUNTIME_ABI)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=destination.parent) as temp_dir:
+    with tempfile.TemporaryDirectory(prefix=".install-", dir=destination.parent) as temp_dir:
         temp_root = Path(temp_dir)
         archive = temp_root / asset_name
         if progress:
@@ -217,13 +279,14 @@ def install_score_runtime(progress: Callable[[str], None] | None = None) -> dict
         if destination.exists():
             shutil.rmtree(destination)
         staged.replace(destination)
+    _cleanup_legacy_runtimes(destination.parent, destination)
     if not score_runtime_available():
         raise RuntimeError("楽譜抽出パックを読み込めませんでした")
     return feature_status()[SCORE_FEATURE_KEY]
 
 
 def uninstall_score_runtime() -> dict:
-    destination = score_runtime_dir()
-    if destination.exists():
-        shutil.rmtree(destination)
+    feature_root = _feature_root(SCORE_FEATURE_KEY)
+    if feature_root.exists():
+        shutil.rmtree(feature_root)
     return {"available": score_platform_name() != "unsupported", "installed": False, "version": app_version(), "bytes": 0}
