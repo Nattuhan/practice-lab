@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   windows-nvidia:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -86,11 +86,26 @@ jobs:
           $env:PRACTICE_LAB_VERSION = $version
           desktop\dist\backend\practice-lab-backend\practice-lab-backend.exe --check-runtime score
       - name: Install optional Windows CPU analysis dependencies
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
         run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsInstallPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsInstallPath) { throw "Visual Studio C++ build tools are unavailable" }
+          Import-Module (Join-Path $vsInstallPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+          Enter-VsDevShell -VsInstallPath $vsInstallPath -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
+          $env:CC = "cl.exe"
+          $env:CXX = "cl.exe"
+
           .venv\Scripts\python.exe -m pip install "torch==2.6.0" "torchaudio==2.6.0" --index-url https://download.pytorch.org/whl/cpu
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install CPU PyTorch" }
           .venv\Scripts\python.exe -m pip install "natten==0.17.5" --no-build-isolation
+          if ($LASTEXITCODE -ne 0) { throw "Failed to build CPU NATTEN with MSVC" }
           .venv\Scripts\python.exe -m pip install "https://github.com/openmirlab/all-in-one-fix/archive/9ba8cac49d441f54e2d89aaefbd44acde8ee2c38.zip" --no-build-isolation
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install the CPU analyzer" }
           .venv\Scripts\python.exe scripts\patch_natten_cpu.py
+          if ($LASTEXITCODE -ne 0) { throw "Failed to apply the CPU compatibility patch" }
       - name: Build optional Windows CPU analysis pack
         shell: pwsh
         run: |
