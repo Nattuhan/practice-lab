@@ -47,6 +47,8 @@ jobs:
       - name: Build optional Windows score extraction pack
         shell: pwsh
         run: |
+          .venv\Scripts\python.exe -m pip uninstall --yes opencv-python
+          .venv\Scripts\python.exe -m pip install "opencv-python-headless<4.11"
           $version = (Get-Content package.json | ConvertFrom-Json).version
           .venv\Scripts\python.exe scripts\build_score_feature_pack.py "desktop\dist\installer\PracticeLab-Score-Windows-$version.zip"
       - name: Collect Node and FFmpeg

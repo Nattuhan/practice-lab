@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import platform
 import shutil
 import tempfile
 import zipfile
@@ -8,9 +9,8 @@ from importlib.metadata import PackageNotFoundError, distribution
 from pathlib import Path
 
 
-PACK_DISTRIBUTIONS = (
+BASE_PACK_DISTRIBUTIONS = (
     "rapidocr-onnxruntime",
-    "opencv-python",
     "onnxruntime",
     "pyclipper",
     "shapely",
@@ -22,6 +22,11 @@ PACK_DISTRIBUTIONS = (
     "coloredlogs",
     "humanfriendly",
 )
+
+
+def pack_distributions() -> tuple[str, ...]:
+    opencv_distribution = "opencv-python-headless" if platform.system() == "Windows" else "opencv-python"
+    return (BASE_PACK_DISTRIBUTIONS[0], opencv_distribution, *BASE_PACK_DISTRIBUTIONS[1:])
 
 
 def copy_distribution(name: str, destination: Path, *, required: bool = True) -> int:
@@ -54,7 +59,7 @@ def build_pack(output: Path) -> None:
         staging = Path(temp_dir) / "score-pack" / "site-packages"
         staging.mkdir(parents=True)
         copied = 0
-        for name in PACK_DISTRIBUTIONS:
+        for name in pack_distributions():
             copied += copy_distribution(name, staging, required=name not in {"coloredlogs", "humanfriendly"})
         if not (staging / "rapidocr_onnxruntime").is_dir() or not (staging / "cv2").is_dir():
             raise RuntimeError("Score feature dependencies were not collected")
