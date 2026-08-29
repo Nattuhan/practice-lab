@@ -11,6 +11,7 @@ $Work = Join-Path $RepoRoot "desktop\build\cpu-runtime"
     --onedir `
     --name practice-lab-cpu-runtime `
     --paths $RepoRoot `
+    --collect-all yt_dlp `
     --collect-all torch `
     --collect-all natten `
     --collect-all allin1fix `
