@@ -62,7 +62,18 @@ jobs:
         run: npm run desktop:backend
       - name: Verify bundled backend runtime
         shell: pwsh
-        run: desktop\dist\backend\practice-lab-backend\practice-lab-backend.exe --check-runtime windows
+        run: |
+          if (-not (Test-Path "desktop\dist\backend\practice-lab-backend\python3.dll")) {
+            throw "Stable Python ABI DLL is not bundled"
+          }
+          desktop\dist\backend\practice-lab-backend\practice-lab-backend.exe --check-runtime windows
+      - name: Enable Windows media runtime for OpenCV validation
+        shell: powershell
+        run: |
+          if ((Get-WindowsFeature Server-Media-Foundation).InstallState -ne 'Installed') {
+            $result = Install-WindowsFeature Server-Media-Foundation
+            if (-not $result.Success) { throw "Failed to enable Windows Media Foundation" }
+          }
       - name: Verify the optional Windows score pack
         shell: pwsh
         run: |

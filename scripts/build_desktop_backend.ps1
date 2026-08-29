@@ -29,3 +29,11 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to install PyInstaller." }
     --specpath (Join-Path $RepoRoot "desktop\build") `
     (Join-Path $RepoRoot "desktop\backend_entry.py")
 if ($LASTEXITCODE -ne 0) { throw "Failed to build the desktop backend." }
+
+# Optional feature packs contain stable-ABI extension modules such as cv2.pyd.
+# They load python3.dll directly, so keep the ABI shim beside the frozen
+# executable even though PyInstaller itself primarily uses python310.dll.
+$PythonDll = & $Python -c "import sys; from pathlib import Path; print(Path(sys.base_prefix) / 'python3.dll')"
+if (-not (Test-Path $PythonDll)) { throw "Python stable ABI DLL is missing: $PythonDll" }
+$BackendDir = Join-Path $RepoRoot "desktop\dist\backend\practice-lab-backend"
+Copy-Item -Force $PythonDll (Join-Path $BackendDir "python3.dll")
