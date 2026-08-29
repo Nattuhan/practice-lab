@@ -38,6 +38,23 @@ const baselineResult = {
   assets: { stems: baselineStems },
 };
 
+const installDesktopSettingsMock = page => page.addInitScript(() => {
+  window.practiceLabDesktop = {
+    getSettings: async () => ({
+      autoUpdate: true,
+      updateMode: "manual",
+      platform: "darwin",
+      dataPath: "/Users/tester/Library/Application Support/PracticeLab",
+      version: "1.1.4",
+      cloud: { enabled: false, prefix: "sessions", hasSecret: false },
+    }),
+    saveSettings: async settings => settings,
+    getToken: async () => "test-token",
+    onUpdateStatus: () => () => {},
+    onCommand: () => () => {},
+  };
+});
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/cloud/status", route => route.fulfill({
     contentType: "application/json",
@@ -163,6 +180,7 @@ test("曲構成と楽譜抽出を切り替えられる", async ({ page }) => {
 });
 
 test("処理履歴に所要時間と結果を表示する", async ({ page }) => {
+  await installDesktopSettingsMock(page);
   await page.route("**/jobs/history", route => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify([{
@@ -181,11 +199,9 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
   }));
 
   await page.goto("/");
-  const historyButton = page.getByRole("button", { name: "処理履歴", exact: true });
-  await expect(historyButton).toContainText("処理履歴");
-  await expect(historyButton.locator("svg")).toBeVisible();
-  await historyButton.click();
-  const dialog = page.getByRole("dialog");
+  await page.locator("#btn-top-settings").click();
+  const dialog = page.locator("#settings-dialog");
+  await dialog.getByRole("button", { name: "処理履歴", exact: true }).click();
   const placement = await dialog.evaluate(element => {
     const rect = element.getBoundingClientRect();
     return {
@@ -201,6 +217,7 @@ test("処理履歴に所要時間と結果を表示する", async ({ page }) => 
 });
 
 test("古い処理履歴にもライブラリから曲名を補完する", async ({ page }) => {
+  await installDesktopSettingsMock(page);
   await page.route("**/jobs/history", route => route.fulfill({
     contentType: "application/json",
     body: JSON.stringify([{
@@ -216,8 +233,10 @@ test("古い処理履歴にもライブラリから曲名を補完する", async
     }]),
   }));
   await page.goto("/");
-  await page.getByRole("button", { name: "処理履歴", exact: true }).click();
-  await expect(page.getByRole("dialog").getByText("パート分離 · E2E Baseline", { exact: true })).toBeVisible();
+  await page.locator("#btn-top-settings").click();
+  const dialog = page.locator("#settings-dialog");
+  await dialog.getByRole("button", { name: "処理履歴", exact: true }).click();
+  await expect(dialog.getByText("パート分離 · E2E Baseline", { exact: true })).toBeVisible();
 });
 
 test("R2静的閲覧版では処理履歴を表示しない", async ({ page }) => {
@@ -454,6 +473,7 @@ test("セクションを分割して保存できる", async ({ page }) => {
 });
 
 test("容量を確認して再生成可能なキャッシュだけを整理できる", async ({ page }) => {
+  await installDesktopSettingsMock(page);
   let cleanupRequest = null;
   const report = {
     totalBytes: 3072,

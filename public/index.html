@@ -67,7 +67,6 @@
       <span id="offline-badge" hidden>オフライン</span>
       <button class="desktop-update" id="desktop-update" type="button" hidden></button>
       <button class="btn-top btn-sync topbar-sync" id="btn-cloud-sync" type="button" hidden><span class="topbar-sync-content"><i data-lucide="refresh-cw"></i><span>端末間同期</span></span></button>
-      <button class="btn-top topbar-job-history" id="btn-job-history" type="button" aria-label="処理履歴" title="処理履歴" hidden><i data-lucide="history"></i><span>処理履歴</span></button>
       <button class="btn-top topbar-settings" id="btn-top-settings" type="button" hidden><i data-lucide="settings-2"></i><span>設定</span></button>
       <button class="btn-top action-primary topbar-new-analysis" id="btn-new-url" type="button" hidden><i data-lucide="plus"></i><span>新しい解析</span></button>
     </div>
@@ -488,8 +487,10 @@
       <div class="settings-brand"><i data-lucide="settings"></i><span>設定</span></div>
       <button class="settings-nav-item active" type="button" data-settings-section="general"><i data-lucide="sliders-horizontal"></i><span>一般</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="analysis"><i data-lucide="cpu"></i><span>解析環境</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="features"><i data-lucide="package-plus"></i><span>追加機能</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="cloud"><i data-lucide="cloud"></i><span>クラウド連携</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="storage"><i data-lucide="hard-drive"></i><span>ストレージ</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="history"><i data-lucide="history"></i><span>処理履歴</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="updates"><i data-lucide="refresh-cw"></i><span>アップデート</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="about"><i data-lucide="info"></i><span>このアプリについて</span></button>
     </aside>
@@ -512,11 +513,43 @@
           </div>
         </section>
 
+        <section class="settings-section" data-settings-panel="features">
+          <div class="settings-feature-grid">
+            <article class="settings-feature-card" id="settings-feature-cpu" hidden>
+              <div class="settings-feature-icon"><i data-lucide="cpu"></i></div>
+              <div class="settings-feature-copy"><h3>Windows CPU解析</h3><p>NVIDIA GPUやCUDAを使わず、CPUだけで曲構成解析とパート分離を実行します。</p><small id="settings-feature-cpu-status">確認中...</small></div>
+              <div class="settings-feature-actions">
+                <button class="settings-secondary" id="settings-feature-cpu-install" type="button">追加</button>
+                <button class="settings-secondary danger" id="settings-feature-cpu-remove" type="button" hidden>削除</button>
+              </div>
+            </article>
+            <article class="settings-feature-card" id="settings-feature-score">
+              <div class="settings-feature-icon"><i data-lucide="music-2"></i></div>
+              <div class="settings-feature-copy"><h3>楽譜抽出</h3><p>動画から楽譜画像を抽出するOCR・画像処理ライブラリを追加します。</p><small id="settings-feature-score-status">確認中...</small></div>
+              <div class="settings-feature-actions">
+                <button class="settings-secondary" id="settings-feature-score-install" type="button">追加</button>
+                <button class="settings-secondary danger" id="settings-feature-score-remove" type="button" hidden>削除</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <section class="settings-section" data-settings-panel="analysis">
           <div class="settings-group">
             <h3>解析環境</h3>
-            <div class="settings-status-card" id="settings-analysis-status"><span class="spin"></span>GPUと解析ライブラリを確認しています</div>
-            <button class="settings-secondary" id="settings-nvidia-setup" type="button"><i data-lucide="wrench"></i>NVIDIA環境をセットアップ・修復</button>
+            <div class="settings-analysis-modes" id="settings-analysis-modes" hidden>
+              <label class="settings-choice">
+                <input id="settings-analysis-cpu" name="settings-analysis-mode" type="radio" value="cpu" checked>
+                <span><strong>CPU</strong><small>NVIDIA環境なしで動作します。解析には時間がかかります。</small></span>
+              </label>
+              <label class="settings-choice">
+                <input id="settings-analysis-nvidia" name="settings-analysis-mode" type="radio" value="nvidia">
+                <span><strong>NVIDIA GPU</strong><small>WSL2とCUDAを使用して高速に解析します。</small></span>
+              </label>
+            </div>
+            <div class="settings-status-card" id="settings-analysis-status"><span class="spin"></span>解析環境を確認しています</div>
+            <button class="settings-secondary" id="settings-cpu-setup" type="button" hidden><i data-lucide="download"></i>CPU解析機能を追加</button>
+            <button class="settings-secondary" id="settings-nvidia-setup" type="button" hidden><i data-lucide="wrench"></i>NVIDIA環境をセットアップ・修復</button>
           </div>
         </section>
 
@@ -549,9 +582,24 @@
 
         <section class="settings-section" data-settings-panel="storage">
           <div class="settings-group">
-            <h3>ストレージ管理</h3>
-            <p>解析結果や元データを残したまま、再生成できるキャッシュだけを整理できます。</p>
-            <button class="settings-secondary" id="settings-open-storage" type="button"><i data-lucide="hard-drive"></i>使用容量とキャッシュを確認</button>
+            <div class="settings-panel-heading">
+              <div><h3>ストレージ管理</h3><p>解析結果や元データを残したまま、再生成できるキャッシュだけを整理できます。</p></div>
+              <button class="settings-secondary" id="settings-storage-refresh" type="button"><i data-lucide="refresh-cw"></i>再計算</button>
+            </div>
+            <strong class="settings-storage-total" id="storage-total">計算中...</strong>
+            <div class="storage-list settings-storage-list" id="storage-list"></div>
+            <div class="storage-note">元音声・動画・stems・解析JSON・楽譜成果物は、個別に確認せず削除しません。</div>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="history">
+          <div class="settings-group">
+            <div class="settings-panel-heading">
+              <div><h3>処理履歴</h3><p>解析・同期・書き出しにかかった時間を確認できます。</p></div>
+              <button class="settings-secondary" id="job-history-refresh" type="button"><i data-lucide="refresh-cw"></i>更新</button>
+            </div>
+            <div class="job-history-summary" id="job-history-summary"></div>
+            <div class="job-history-list settings-history-list" id="job-history-list"><div class="job-history-empty">読み込んでいます...</div></div>
           </div>
         </section>
 
@@ -637,34 +685,6 @@
       <button class="btn-analyze section-save" id="btn-save-sections" type="button">保存</button>
     </div>
   </form>
-</dialog>
-
-<dialog class="storage-dialog" id="storage-dialog">
-  <form method="dialog" class="storage-card">
-    <div class="section-editor-head">
-      <div><strong>容量とキャッシュ</strong><small id="storage-total">計算中...</small></div>
-      <button class="icon-btn" value="cancel" aria-label="閉じる"><i data-lucide="x"></i></button>
-    </div>
-    <div class="storage-list" id="storage-list"></div>
-    <div class="storage-note">元音声・動画・stems・解析JSON・楽譜成果物は、この画面から削除しません。</div>
-  </form>
-</dialog>
-
-<dialog class="job-history-dialog" id="job-history-dialog">
-  <div class="job-history-card">
-    <div class="job-history-head">
-      <div>
-        <strong>処理履歴</strong>
-        <small>解析・同期・書き出しにかかった時間</small>
-      </div>
-      <div class="job-history-head-actions">
-        <button class="icon-btn" id="job-history-refresh" type="button" aria-label="履歴を更新" title="履歴を更新"><i data-lucide="refresh-cw"></i></button>
-        <button class="icon-btn" id="job-history-close" type="button" aria-label="閉じる"><i data-lucide="x"></i></button>
-      </div>
-    </div>
-    <div class="job-history-summary" id="job-history-summary"></div>
-    <div class="job-history-list" id="job-history-list"><div class="job-history-empty">読み込んでいます...</div></div>
-  </div>
 </dialog>
 
 <div class="context-menu" id="context-menu" hidden></div>

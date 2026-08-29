@@ -45,8 +45,6 @@ const SELECTORS = {
   queueCount: document.getElementById("queue-count"),
   queueClearInterrupted: document.getElementById("queue-clear-interrupted"),
   btnJobHistory: document.getElementById("btn-job-history"),
-  jobHistoryDialog: document.getElementById("job-history-dialog"),
-  jobHistoryClose: document.getElementById("job-history-close"),
   jobHistoryRefresh: document.getElementById("job-history-refresh"),
   jobHistorySummary: document.getElementById("job-history-summary"),
   jobHistoryList: document.getElementById("job-history-list"),
@@ -62,7 +60,6 @@ const SELECTORS = {
   appDialogClose: document.getElementById("app-dialog-close"),
   appDialogCancel: document.getElementById("app-dialog-cancel"),
   appDialogConfirm: document.getElementById("app-dialog-confirm"),
-  storageDialog: document.getElementById("storage-dialog"),
   storageTotal: document.getElementById("storage-total"),
   storageList: document.getElementById("storage-list"),
   settingsDialog: document.getElementById("settings-dialog"),
@@ -76,7 +73,19 @@ const SELECTORS = {
   settingsDataPath: document.getElementById("settings-data-path"),
   settingsOpenData: document.getElementById("settings-open-data"),
   settingsAnalysisStatus: document.getElementById("settings-analysis-status"),
+  settingsAnalysisModes: document.getElementById("settings-analysis-modes"),
+  settingsAnalysisCpu: document.getElementById("settings-analysis-cpu"),
+  settingsAnalysisNvidia: document.getElementById("settings-analysis-nvidia"),
+  settingsCpuSetup: document.getElementById("settings-cpu-setup"),
   settingsNvidiaSetup: document.getElementById("settings-nvidia-setup"),
+  settingsFeatureCpu: document.getElementById("settings-feature-cpu"),
+  settingsFeatureCpuStatus: document.getElementById("settings-feature-cpu-status"),
+  settingsFeatureCpuInstall: document.getElementById("settings-feature-cpu-install"),
+  settingsFeatureCpuRemove: document.getElementById("settings-feature-cpu-remove"),
+  settingsFeatureScore: document.getElementById("settings-feature-score"),
+  settingsFeatureScoreStatus: document.getElementById("settings-feature-score-status"),
+  settingsFeatureScoreInstall: document.getElementById("settings-feature-score-install"),
+  settingsFeatureScoreRemove: document.getElementById("settings-feature-score-remove"),
   settingsCloudEnabled: document.getElementById("settings-cloud-enabled"),
   settingsCloudFields: document.getElementById("settings-cloud-fields"),
   settingsCloudAccount: document.getElementById("settings-cloud-account"),
@@ -89,7 +98,7 @@ const SELECTORS = {
   settingsCloudState: document.getElementById("settings-cloud-state"),
   settingsCloudExport: document.getElementById("settings-cloud-export"),
   settingsCloudImport: document.getElementById("settings-cloud-import"),
-  settingsOpenStorage: document.getElementById("settings-open-storage"),
+  settingsStorageRefresh: document.getElementById("settings-storage-refresh"),
   settingsVersion: document.getElementById("settings-version"),
   settingsCheckUpdate: document.getElementById("settings-check-update"),
   settingsCheckUpdateLabel: document.getElementById("settings-check-update-label"),
@@ -287,6 +296,7 @@ const showReveal = (message, value, options) => appDialog.reveal(message, value,
 const setScoreFeatureVisible = visible => {
   SELECTORS.tabScore.hidden = !visible;
   SELECTORS.scorePanel.hidden = true;
+  if (!visible && currentFeature === "score") setActiveTab("structure");
 };
 
 let ws = null;
@@ -2314,9 +2324,8 @@ const loadJobHistory = async () => {
 };
 
 const openJobHistory = () => {
-  if (!SELECTORS.jobHistoryDialog || !hasServer) return;
-  SELECTORS.jobHistoryDialog.showModal();
-  void loadJobHistory();
+  if (!hasServer) return;
+  void openSettings("history");
 };
 
 const queueOperationLabel = kind => ({
@@ -2504,8 +2513,10 @@ const restoreInterruptedJobs = async () => {
 const SETTINGS_SECTION_TITLES = {
   general: "一般設定",
   analysis: "解析環境",
+  features: "追加機能",
   cloud: "クラウド連携",
   storage: "ストレージ",
+  history: "処理履歴",
   updates: "アップデート",
   about: "このアプリについて",
 };
@@ -2519,6 +2530,12 @@ const selectSettingsSection = section => {
     panel.classList.toggle("active", panel.dataset.settingsPanel === selected);
   });
   SELECTORS.settingsTitle.textContent = SETTINGS_SECTION_TITLES[selected];
+  const editable = selected === "general"
+    || selected === "cloud"
+    || (selected === "analysis" && desktopSettings?.platform === "win32");
+  SELECTORS.settingsSave.hidden = !editable;
+  SELECTORS.settingsCancel.textContent = editable ? "キャンセル" : "閉じる";
+  SELECTORS.settingsSaveStatus.textContent = "";
 };
 
 const syncCloudFieldsState = () => {
@@ -2549,18 +2566,90 @@ const refreshCloudStatus = async () => {
 const refreshSettingsAnalysisStatus = async () => {
   if (!SELECTORS.settingsAnalysisStatus) return;
   SELECTORS.settingsAnalysisStatus.className = "settings-status-card";
-  SELECTORS.settingsAnalysisStatus.innerHTML = `<span class="spin"></span>GPUと解析ライブラリを確認しています`;
+  SELECTORS.settingsAnalysisStatus.innerHTML = `<span class="spin"></span>解析環境を確認しています`;
   try {
     const response = await fetch("/system/status", { cache: "no-store" });
     const status = await response.json();
     if (!response.ok) throw new Error("解析環境を確認できませんでした");
     SELECTORS.settingsAnalysisStatus.className = `settings-status-card${status.ready ? " ok" : ""}`;
-    SELECTORS.settingsAnalysisStatus.textContent = status.ready
-      ? `${status.nvidia?.name || "GPU"} · WSL2 CUDA · 解析ライブラリ確認済み`
-      : (status.message || "NVIDIA解析環境のセットアップが必要です");
+    if (status.ready && status.analysisMode === "nvidia") {
+      SELECTORS.settingsAnalysisStatus.textContent = `${status.nvidia?.name || "NVIDIA GPU"} · WSL2 CUDA · 解析ライブラリ確認済み`;
+    } else if (status.ready) {
+      SELECTORS.settingsAnalysisStatus.textContent = `${status.analysisLabel || "CPU"} · 解析ライブラリ確認済み`;
+    } else {
+      SELECTORS.settingsAnalysisStatus.textContent = status.message || "選択した解析環境の準備が必要です";
+    }
+    SELECTORS.settingsCpuSetup.hidden = !status.cpuSetupSupported || status.ready;
+    SELECTORS.settingsNvidiaSetup.hidden = !status.setupSupported;
   } catch (error) {
     SELECTORS.settingsAnalysisStatus.textContent = error.message;
+    SELECTORS.settingsCpuSetup.hidden = true;
+    SELECTORS.settingsNvidiaSetup.hidden = true;
   }
+};
+
+const renderOptionalFeatures = features => {
+  const cpu = features?.["windows-cpu"] || {};
+  const score = features?.score || {};
+  SELECTORS.settingsFeatureCpu.hidden = !cpu.available;
+  SELECTORS.settingsFeatureCpuStatus.textContent = cpu.installed
+    ? `追加済み${cpu.bytes ? ` · ${formatBytes(cpu.bytes)}` : ""}`
+    : "未追加 · NVIDIAなしで解析する場合に必要です";
+  SELECTORS.settingsFeatureCpuInstall.hidden = !!cpu.installed;
+  SELECTORS.settingsFeatureCpuRemove.hidden = !cpu.installed;
+  SELECTORS.settingsFeatureScore.hidden = !score.available;
+  SELECTORS.settingsFeatureScoreStatus.textContent = score.installed
+    ? `追加済み${score.bytes ? ` · ${formatBytes(score.bytes)}` : ""}`
+    : "未追加 · 基本アプリの容量には含まれません";
+  SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed;
+  SELECTORS.settingsFeatureScoreRemove.hidden = !score.installed;
+  setScoreFeatureVisible(!!score.installed);
+};
+
+const loadOptionalFeatures = async () => {
+  if (!hasServer || staticLibraryMode) return;
+  try {
+    const response = await fetch("/features", { cache: "no-store" });
+    const features = await response.json();
+    if (!response.ok) throw new Error(features.detail || "追加機能を確認できませんでした");
+    renderOptionalFeatures(features);
+  } catch (error) {
+    SELECTORS.settingsFeatureScoreStatus.textContent = error.message;
+  }
+};
+
+const startScoreFeatureSetup = async () => {
+  SELECTORS.settingsFeatureScoreInstall.disabled = true;
+  try {
+    const response = await fetch("/features/score/install", { method: "POST" });
+    const submitted = await response.json();
+    if (!response.ok) throw new Error(submitted.detail || "楽譜抽出機能を追加できませんでした");
+    trackQueuedJob(submitted.jobId, {
+      label: "楽譜抽出機能を追加",
+      retainDone: true,
+      onDone: loadOptionalFeatures,
+    });
+    SELECTORS.settingsFeatureScoreStatus.textContent = "ダウンロードを開始しました。処理一覧で進行状況を確認できます。";
+  } catch (error) {
+    await showAlert(error.message, { title: "楽譜抽出機能" });
+  } finally {
+    SELECTORS.settingsFeatureScoreInstall.disabled = false;
+  }
+};
+
+const removeOptionalFeature = async feature => {
+  const label = feature === "score" ? "楽譜抽出機能" : "Windows CPU解析機能";
+  if (!await showConfirm(`${label}をこのPCから削除しますか？保存済みの曲や成果物は削除されません。`, {
+    title: `${label}を削除`, confirmLabel: "削除する", danger: true,
+  })) return;
+  const response = await fetch(`/features/${feature === "score" ? "score" : "windows-cpu"}`, { method: "DELETE" });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    await showAlert(result.detail || `${label}を削除できませんでした`, { title: label });
+    return;
+  }
+  await loadOptionalFeatures();
+  await refreshSettingsAnalysisStatus();
 };
 
 const openSettings = async (section = "general") => {
@@ -2571,6 +2660,12 @@ const openSettings = async (section = "general") => {
   }
   desktopSettings = await desktop.getSettings();
   const cloud = desktopSettings.cloud || {};
+  const isWindows = desktopSettings.platform === "win32";
+  SELECTORS.settingsAnalysisModes.hidden = !isWindows;
+  SELECTORS.settingsAnalysisCpu.checked = desktopSettings.analysisMode !== "nvidia";
+  SELECTORS.settingsAnalysisNvidia.checked = desktopSettings.analysisMode === "nvidia";
+  SELECTORS.settingsCpuSetup.hidden = true;
+  SELECTORS.settingsNvidiaSetup.hidden = true;
   SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
   const manualUpdates = desktopSettings.updateMode === "manual";
   SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
@@ -2615,6 +2710,9 @@ const openSettings = async (section = "general") => {
   SELECTORS.settingsDialog.showModal();
   lucide.createIcons();
   if (section === "analysis") void refreshSettingsAnalysisStatus();
+  if (section === "features") void loadOptionalFeatures();
+  if (section === "storage") void loadStorageReport();
+  if (section === "history") void loadJobHistory();
 };
 
 const closeSettings = () => SELECTORS.settingsDialog?.close();
@@ -2633,6 +2731,7 @@ const saveSettings = async () => {
     localStorage.setItem("practice_lab_settings_saved", enabled ? "test-cloud" : "saved");
     await desktop.saveSettings({
       autoUpdate: SELECTORS.settingsAutoUpdate.checked,
+      analysisMode: SELECTORS.settingsAnalysisNvidia?.checked ? "nvidia" : "cpu",
       cloud: {
         enabled,
         accountId: SELECTORS.settingsCloudAccount.value,
@@ -3873,18 +3972,17 @@ const renderStorageReport = report => {
     <div class="storage-row">
       <span>${escapeHtml(category.label)}</span>
       <span class="storage-size">${formatBytes(category.bytes)} · ${Number(category.files || 0)}件</span>
-      ${category.cleanup
+      ${category.cleanup || category.desktopCleanup
         ? `<button class="storage-clean" type="button" data-storage-clean="${escapeHtml(category.key)}">整理</button>`
         : "<span></span>"}
     </div>
   `).join("");
 };
 
-const openStorageDialog = async () => {
+const loadStorageReport = async () => {
   if (!hasServer || staticLibraryMode) return;
   SELECTORS.storageTotal.textContent = "計算中...";
   SELECTORS.storageList.innerHTML = "";
-  SELECTORS.storageDialog.showModal();
   lucide.createIcons();
   try {
     const response = await fetch("/storage", { cache: "no-store" });
@@ -3896,11 +3994,19 @@ const openStorageDialog = async () => {
   }
 };
 
+const openStorageSettings = () => openSettings("storage");
+
 const cleanStorageCategory = async key => {
   if (!await showConfirm("再生成可能なキャッシュを削除しますか？", { title: "キャッシュを整理", confirmLabel: "整理する", danger: true })) return;
   const button = SELECTORS.storageList.querySelector(`[data-storage-clean="${CSS.escape(key)}"]`);
   if (button) button.disabled = true;
   try {
+    if (key === "browser-cache" && window.practiceLabDesktop?.clearCache) {
+      const result = await window.practiceLabDesktop.clearCache();
+      await loadStorageReport();
+      SELECTORS.storageTotal.textContent += `（${formatBytes(result.removedBytes)}削除）`;
+      return;
+    }
     const response = await fetch("/storage/cleanup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4461,7 +4567,7 @@ const detectServer = async () => {
     SELECTORS.btnBpmSave.hidden = true;
     SELECTORS.btnAddFolder.hidden = true;
     SELECTORS.btnStorage.hidden = true;
-    SELECTORS.btnJobHistory.hidden = true;
+    if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = true;
     setScoreFeatureVisible(false);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "静的ライブラリモード";
@@ -4474,13 +4580,13 @@ const detectServer = async () => {
     SELECTORS.btnReanalyze.hidden = true;
     SELECTORS.btnCloudSync.hidden = true;
     SELECTORS.btnStorage.hidden = true;
-    SELECTORS.btnJobHistory.hidden = true;
+    if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = true;
     return;
   }
 
   SELECTORS.btnCloudSync.hidden = false;
   SELECTORS.btnStorage.hidden = false;
-  SELECTORS.btnJobHistory.hidden = false;
+  if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = false;
   SELECTORS.btnNewUrl.hidden = currentFeature === "score";
 };
 
@@ -4492,7 +4598,17 @@ const renderDesktopSystemStatus = status => {
   }
   SELECTORS.desktopStatus.hidden = false;
   SELECTORS.desktopStatus.classList.remove("ready");
+  if (status.analysisMode === "cpu") {
+    SELECTORS.desktopStatus.classList.remove("error");
+    SELECTORS.desktopStatusAction.hidden = !status.cpuSetupSupported;
+    SELECTORS.desktopStatusAction.dataset.setupKind = "cpu";
+    SELECTORS.desktopStatusAction.textContent = "CPU解析機能を追加";
+    SELECTORS.desktopStatusTitle.textContent = "CPU解析機能の追加が必要です";
+    SELECTORS.desktopStatusMessage.textContent = status.message || "NVIDIA環境なしで使えるCPU解析機能を準備してください。";
+    return;
+  }
   SELECTORS.desktopStatus.classList.toggle("error", !status.nvidia?.available);
+  SELECTORS.desktopStatusAction.dataset.setupKind = "nvidia";
   SELECTORS.desktopStatusAction.hidden = !status.setupSupported;
   if (!status.nvidia?.available) {
     SELECTORS.desktopStatusTitle.textContent = "NVIDIA GPUを確認できません";
@@ -4545,6 +4661,35 @@ const startDesktopNvidiaSetup = async () => {
     SELECTORS.desktopStatusAction.disabled = false;
   }
 };
+
+const startDesktopCpuSetup = async () => {
+  SELECTORS.settingsCpuSetup.disabled = true;
+  SELECTORS.desktopStatusAction.disabled = true;
+  try {
+    const response = await fetch("/features/windows-cpu/install", { method: "POST" });
+    const submitted = await response.json();
+    if (!response.ok) throw new Error(submitted.detail || "CPU解析機能を追加できませんでした");
+    trackQueuedJob(submitted.jobId, {
+      label: "CPU解析機能を追加",
+      retainDone: true,
+      onDone: async () => {
+        await refreshDesktopSystemStatus();
+        await refreshSettingsAnalysisStatus();
+        await loadOptionalFeatures();
+      },
+    });
+    SELECTORS.settingsAnalysisStatus.textContent = "CPU解析機能のダウンロードを開始しました。処理一覧で進行状況を確認できます。";
+  } catch (error) {
+    await showAlert(error.message, { title: "CPU解析機能" });
+  } finally {
+    SELECTORS.settingsCpuSetup.disabled = false;
+    SELECTORS.desktopStatusAction.disabled = false;
+  }
+};
+
+const startDesktopAnalysisSetup = () => SELECTORS.desktopStatusAction?.dataset.setupKind === "cpu"
+  ? startDesktopCpuSetup()
+  : startDesktopNvidiaSetup();
 
 const initDesktopUpdates = () => {
   const desktop = window.practiceLabDesktop;
@@ -4688,13 +4833,9 @@ SELECTORS.inputCard.addEventListener("drop", event => {
 });
 SELECTORS.scoreProcessingMode?.addEventListener("change", syncScoreOptionAvailability);
 SELECTORS.btnCloudSync?.addEventListener("click", syncCloudLibrary);
-SELECTORS.btnStorage?.addEventListener("click", openStorageDialog);
+SELECTORS.btnStorage?.addEventListener("click", openStorageSettings);
 SELECTORS.btnJobHistory?.addEventListener("click", openJobHistory);
-SELECTORS.jobHistoryClose?.addEventListener("click", () => SELECTORS.jobHistoryDialog.close());
 SELECTORS.jobHistoryRefresh?.addEventListener("click", loadJobHistory);
-SELECTORS.jobHistoryDialog?.addEventListener("click", event => {
-  if (event.target === SELECTORS.jobHistoryDialog) SELECTORS.jobHistoryDialog.close();
-});
 SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);
@@ -4707,14 +4848,19 @@ SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach(bu
   button.addEventListener("click", () => {
     selectSettingsSection(button.dataset.settingsSection);
     if (button.dataset.settingsSection === "analysis") void refreshSettingsAnalysisStatus();
+    if (button.dataset.settingsSection === "features") void loadOptionalFeatures();
+    if (button.dataset.settingsSection === "storage") void loadStorageReport();
+    if (button.dataset.settingsSection === "history") void loadJobHistory();
   });
 });
 SELECTORS.settingsOpenData?.addEventListener("click", () => window.practiceLabDesktop?.openDataFolder());
-SELECTORS.settingsOpenStorage?.addEventListener("click", () => {
-  closeSettings();
-  openStorageDialog();
-});
+SELECTORS.settingsStorageRefresh?.addEventListener("click", loadStorageReport);
 SELECTORS.settingsNvidiaSetup?.addEventListener("click", startDesktopNvidiaSetup);
+SELECTORS.settingsCpuSetup?.addEventListener("click", startDesktopCpuSetup);
+SELECTORS.settingsFeatureCpuInstall?.addEventListener("click", startDesktopCpuSetup);
+SELECTORS.settingsFeatureCpuRemove?.addEventListener("click", () => removeOptionalFeature("windows-cpu"));
+SELECTORS.settingsFeatureScoreInstall?.addEventListener("click", startScoreFeatureSetup);
+SELECTORS.settingsFeatureScoreRemove?.addEventListener("click", () => removeOptionalFeature("score"));
 SELECTORS.storageList?.addEventListener("click", event => {
   const button = event.target.closest("[data-storage-clean]");
   if (button) cleanStorageCategory(button.dataset.storageClean);
@@ -4903,7 +5049,7 @@ SELECTORS.scoreHistoryList?.addEventListener("keydown", event => {
 SELECTORS.urlInput.addEventListener("keydown", event => {
   if (event.key === "Enter") doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce);
 });
-SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopNvidiaSetup);
+SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopAnalysisSetup);
 
 lucide.createIcons();
 syncScoreOptionAvailability();
@@ -4915,6 +5061,8 @@ if (SELECTORS.btnTopSettings) {
 initDesktopUpdates();
 initDesktopCommands();
 await refreshCloudStatus();
+if (window.practiceLabDesktop?.getSettings) setScoreFeatureVisible(false);
+await loadOptionalFeatures();
 await loadSharedFolders();
 const initialHistory = await loadHistory();
 // Render the user's library before slower desktop/GPU diagnostics. A cold WSL

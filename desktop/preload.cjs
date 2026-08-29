@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("practiceLabDesktop", {
   chooseCloudConnection: () => ipcRenderer.invoke("desktop:choose-cloud-connection"),
   importCloudConnection: payload => ipcRenderer.invoke("desktop:import-cloud-connection", payload),
   openDataFolder: () => ipcRenderer.invoke("desktop:open-data-folder"),
+  clearCache: () => ipcRenderer.invoke("desktop:clear-cache"),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   onCommand: callback => {

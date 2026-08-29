@@ -2420,8 +2420,6 @@ var SELECTORS = {
   queueCount: document.getElementById("queue-count"),
   queueClearInterrupted: document.getElementById("queue-clear-interrupted"),
   btnJobHistory: document.getElementById("btn-job-history"),
-  jobHistoryDialog: document.getElementById("job-history-dialog"),
-  jobHistoryClose: document.getElementById("job-history-close"),
   jobHistoryRefresh: document.getElementById("job-history-refresh"),
   jobHistorySummary: document.getElementById("job-history-summary"),
   jobHistoryList: document.getElementById("job-history-list"),
@@ -2437,7 +2435,6 @@ var SELECTORS = {
   appDialogClose: document.getElementById("app-dialog-close"),
   appDialogCancel: document.getElementById("app-dialog-cancel"),
   appDialogConfirm: document.getElementById("app-dialog-confirm"),
-  storageDialog: document.getElementById("storage-dialog"),
   storageTotal: document.getElementById("storage-total"),
   storageList: document.getElementById("storage-list"),
   settingsDialog: document.getElementById("settings-dialog"),
@@ -2451,7 +2448,19 @@ var SELECTORS = {
   settingsDataPath: document.getElementById("settings-data-path"),
   settingsOpenData: document.getElementById("settings-open-data"),
   settingsAnalysisStatus: document.getElementById("settings-analysis-status"),
+  settingsAnalysisModes: document.getElementById("settings-analysis-modes"),
+  settingsAnalysisCpu: document.getElementById("settings-analysis-cpu"),
+  settingsAnalysisNvidia: document.getElementById("settings-analysis-nvidia"),
+  settingsCpuSetup: document.getElementById("settings-cpu-setup"),
   settingsNvidiaSetup: document.getElementById("settings-nvidia-setup"),
+  settingsFeatureCpu: document.getElementById("settings-feature-cpu"),
+  settingsFeatureCpuStatus: document.getElementById("settings-feature-cpu-status"),
+  settingsFeatureCpuInstall: document.getElementById("settings-feature-cpu-install"),
+  settingsFeatureCpuRemove: document.getElementById("settings-feature-cpu-remove"),
+  settingsFeatureScore: document.getElementById("settings-feature-score"),
+  settingsFeatureScoreStatus: document.getElementById("settings-feature-score-status"),
+  settingsFeatureScoreInstall: document.getElementById("settings-feature-score-install"),
+  settingsFeatureScoreRemove: document.getElementById("settings-feature-score-remove"),
   settingsCloudEnabled: document.getElementById("settings-cloud-enabled"),
   settingsCloudFields: document.getElementById("settings-cloud-fields"),
   settingsCloudAccount: document.getElementById("settings-cloud-account"),
@@ -2464,7 +2473,7 @@ var SELECTORS = {
   settingsCloudState: document.getElementById("settings-cloud-state"),
   settingsCloudExport: document.getElementById("settings-cloud-export"),
   settingsCloudImport: document.getElementById("settings-cloud-import"),
-  settingsOpenStorage: document.getElementById("settings-open-storage"),
+  settingsStorageRefresh: document.getElementById("settings-storage-refresh"),
   settingsVersion: document.getElementById("settings-version"),
   settingsCheckUpdate: document.getElementById("settings-check-update"),
   settingsCheckUpdateLabel: document.getElementById("settings-check-update-label"),
@@ -2660,6 +2669,7 @@ var showReveal = (message, value, options) => appDialog.reveal(message, value, o
 var setScoreFeatureVisible = (visible) => {
   SELECTORS.tabScore.hidden = !visible;
   SELECTORS.scorePanel.hidden = true;
+  if (!visible && currentFeature === "score") setActiveTab("structure");
 };
 var ws = null;
 var hasServer = false;
@@ -4483,9 +4493,8 @@ var loadJobHistory = async () => {
   }
 };
 var openJobHistory = () => {
-  if (!SELECTORS.jobHistoryDialog || !hasServer) return;
-  SELECTORS.jobHistoryDialog.showModal();
-  void loadJobHistory();
+  if (!hasServer) return;
+  void openSettings("history");
 };
 var queueOperationLabel = (kind) => ({
   analysis: "\u66F2\u69CB\u6210\u306E\u89E3\u6790",
@@ -4654,8 +4663,10 @@ var restoreInterruptedJobs = async () => {
 var SETTINGS_SECTION_TITLES = {
   general: "\u4E00\u822C\u8A2D\u5B9A",
   analysis: "\u89E3\u6790\u74B0\u5883",
+  features: "\u8FFD\u52A0\u6A5F\u80FD",
   cloud: "\u30AF\u30E9\u30A6\u30C9\u9023\u643A",
   storage: "\u30B9\u30C8\u30EC\u30FC\u30B8",
+  history: "\u51E6\u7406\u5C65\u6B74",
   updates: "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8",
   about: "\u3053\u306E\u30A2\u30D7\u30EA\u306B\u3064\u3044\u3066"
 };
@@ -4668,6 +4679,10 @@ var selectSettingsSection = (section) => {
     panel.classList.toggle("active", panel.dataset.settingsPanel === selected);
   });
   SELECTORS.settingsTitle.textContent = SETTINGS_SECTION_TITLES[selected];
+  const editable = selected === "general" || selected === "cloud" || selected === "analysis" && desktopSettings?.platform === "win32";
+  SELECTORS.settingsSave.hidden = !editable;
+  SELECTORS.settingsCancel.textContent = editable ? "\u30AD\u30E3\u30F3\u30BB\u30EB" : "\u9589\u3058\u308B";
+  SELECTORS.settingsSaveStatus.textContent = "";
 };
 var syncCloudFieldsState = () => {
   SELECTORS.settingsCloudFields?.classList.toggle("disabled", !SELECTORS.settingsCloudEnabled?.checked);
@@ -4695,16 +4710,84 @@ var refreshCloudStatus = async () => {
 var refreshSettingsAnalysisStatus = async () => {
   if (!SELECTORS.settingsAnalysisStatus) return;
   SELECTORS.settingsAnalysisStatus.className = "settings-status-card";
-  SELECTORS.settingsAnalysisStatus.innerHTML = `<span class="spin"></span>GPU\u3068\u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059`;
+  SELECTORS.settingsAnalysisStatus.innerHTML = `<span class="spin"></span>\u89E3\u6790\u74B0\u5883\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059`;
   try {
     const response = await fetch("/system/status", { cache: "no-store" });
     const status = await response.json();
     if (!response.ok) throw new Error("\u89E3\u6790\u74B0\u5883\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
     SELECTORS.settingsAnalysisStatus.className = `settings-status-card${status.ready ? " ok" : ""}`;
-    SELECTORS.settingsAnalysisStatus.textContent = status.ready ? `${status.nvidia?.name || "GPU"} \xB7 WSL2 CUDA \xB7 \u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u78BA\u8A8D\u6E08\u307F` : status.message || "NVIDIA\u89E3\u6790\u74B0\u5883\u306E\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7\u304C\u5FC5\u8981\u3067\u3059";
+    if (status.ready && status.analysisMode === "nvidia") {
+      SELECTORS.settingsAnalysisStatus.textContent = `${status.nvidia?.name || "NVIDIA GPU"} \xB7 WSL2 CUDA \xB7 \u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u78BA\u8A8D\u6E08\u307F`;
+    } else if (status.ready) {
+      SELECTORS.settingsAnalysisStatus.textContent = `${status.analysisLabel || "CPU"} \xB7 \u89E3\u6790\u30E9\u30A4\u30D6\u30E9\u30EA\u78BA\u8A8D\u6E08\u307F`;
+    } else {
+      SELECTORS.settingsAnalysisStatus.textContent = status.message || "\u9078\u629E\u3057\u305F\u89E3\u6790\u74B0\u5883\u306E\u6E96\u5099\u304C\u5FC5\u8981\u3067\u3059";
+    }
+    SELECTORS.settingsCpuSetup.hidden = !status.cpuSetupSupported || status.ready;
+    SELECTORS.settingsNvidiaSetup.hidden = !status.setupSupported;
   } catch (error) {
     SELECTORS.settingsAnalysisStatus.textContent = error.message;
+    SELECTORS.settingsCpuSetup.hidden = true;
+    SELECTORS.settingsNvidiaSetup.hidden = true;
   }
+};
+var renderOptionalFeatures = (features) => {
+  const cpu = features?.["windows-cpu"] || {};
+  const score = features?.score || {};
+  SELECTORS.settingsFeatureCpu.hidden = !cpu.available;
+  SELECTORS.settingsFeatureCpuStatus.textContent = cpu.installed ? `\u8FFD\u52A0\u6E08\u307F${cpu.bytes ? ` \xB7 ${formatBytes(cpu.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 NVIDIA\u306A\u3057\u3067\u89E3\u6790\u3059\u308B\u5834\u5408\u306B\u5FC5\u8981\u3067\u3059";
+  SELECTORS.settingsFeatureCpuInstall.hidden = !!cpu.installed;
+  SELECTORS.settingsFeatureCpuRemove.hidden = !cpu.installed;
+  SELECTORS.settingsFeatureScore.hidden = !score.available;
+  SELECTORS.settingsFeatureScoreStatus.textContent = score.installed ? `\u8FFD\u52A0\u6E08\u307F${score.bytes ? ` \xB7 ${formatBytes(score.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u57FA\u672C\u30A2\u30D7\u30EA\u306E\u5BB9\u91CF\u306B\u306F\u542B\u307E\u308C\u307E\u305B\u3093";
+  SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed;
+  SELECTORS.settingsFeatureScoreRemove.hidden = !score.installed;
+  setScoreFeatureVisible(!!score.installed);
+};
+var loadOptionalFeatures = async () => {
+  if (!hasServer || staticLibraryMode) return;
+  try {
+    const response = await fetch("/features", { cache: "no-store" });
+    const features = await response.json();
+    if (!response.ok) throw new Error(features.detail || "\u8FFD\u52A0\u6A5F\u80FD\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    renderOptionalFeatures(features);
+  } catch (error) {
+    SELECTORS.settingsFeatureScoreStatus.textContent = error.message;
+  }
+};
+var startScoreFeatureSetup = async () => {
+  SELECTORS.settingsFeatureScoreInstall.disabled = true;
+  try {
+    const response = await fetch("/features/score/install", { method: "POST" });
+    const submitted = await response.json();
+    if (!response.ok) throw new Error(submitted.detail || "\u697D\u8B5C\u62BD\u51FA\u6A5F\u80FD\u3092\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    trackQueuedJob(submitted.jobId, {
+      label: "\u697D\u8B5C\u62BD\u51FA\u6A5F\u80FD\u3092\u8FFD\u52A0",
+      retainDone: true,
+      onDone: loadOptionalFeatures
+    });
+    SELECTORS.settingsFeatureScoreStatus.textContent = "\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3092\u958B\u59CB\u3057\u307E\u3057\u305F\u3002\u51E6\u7406\u4E00\u89A7\u3067\u9032\u884C\u72B6\u6CC1\u3092\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002";
+  } catch (error) {
+    await showAlert(error.message, { title: "\u697D\u8B5C\u62BD\u51FA\u6A5F\u80FD" });
+  } finally {
+    SELECTORS.settingsFeatureScoreInstall.disabled = false;
+  }
+};
+var removeOptionalFeature = async (feature) => {
+  const label = feature === "score" ? "\u697D\u8B5C\u62BD\u51FA\u6A5F\u80FD" : "Windows CPU\u89E3\u6790\u6A5F\u80FD";
+  if (!await showConfirm(`${label}\u3092\u3053\u306EPC\u304B\u3089\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F\u4FDD\u5B58\u6E08\u307F\u306E\u66F2\u3084\u6210\u679C\u7269\u306F\u524A\u9664\u3055\u308C\u307E\u305B\u3093\u3002`, {
+    title: `${label}\u3092\u524A\u9664`,
+    confirmLabel: "\u524A\u9664\u3059\u308B",
+    danger: true
+  })) return;
+  const response = await fetch(`/features/${feature === "score" ? "score" : "windows-cpu"}`, { method: "DELETE" });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    await showAlert(result.detail || `${label}\u3092\u524A\u9664\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F`, { title: label });
+    return;
+  }
+  await loadOptionalFeatures();
+  await refreshSettingsAnalysisStatus();
 };
 var openSettings = async (section = "general") => {
   const desktop = window.practiceLabDesktop;
@@ -4714,6 +4797,12 @@ var openSettings = async (section = "general") => {
   }
   desktopSettings = await desktop.getSettings();
   const cloud = desktopSettings.cloud || {};
+  const isWindows = desktopSettings.platform === "win32";
+  SELECTORS.settingsAnalysisModes.hidden = !isWindows;
+  SELECTORS.settingsAnalysisCpu.checked = desktopSettings.analysisMode !== "nvidia";
+  SELECTORS.settingsAnalysisNvidia.checked = desktopSettings.analysisMode === "nvidia";
+  SELECTORS.settingsCpuSetup.hidden = true;
+  SELECTORS.settingsNvidiaSetup.hidden = true;
   SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
   const manualUpdates = desktopSettings.updateMode === "manual";
   SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
@@ -4750,6 +4839,9 @@ var openSettings = async (section = "general") => {
   SELECTORS.settingsDialog.showModal();
   lucide.createIcons();
   if (section === "analysis") void refreshSettingsAnalysisStatus();
+  if (section === "features") void loadOptionalFeatures();
+  if (section === "storage") void loadStorageReport();
+  if (section === "history") void loadJobHistory();
 };
 var closeSettings = () => SELECTORS.settingsDialog?.close();
 var saveSettings = async () => {
@@ -4766,6 +4858,7 @@ var saveSettings = async () => {
     localStorage.setItem("practice_lab_settings_saved", enabled ? "test-cloud" : "saved");
     await desktop.saveSettings({
       autoUpdate: SELECTORS.settingsAutoUpdate.checked,
+      analysisMode: SELECTORS.settingsAnalysisNvidia?.checked ? "nvidia" : "cpu",
       cloud: {
         enabled,
         accountId: SELECTORS.settingsCloudAccount.value,
@@ -5913,15 +6006,14 @@ var renderStorageReport = (report) => {
     <div class="storage-row">
       <span>${escapeHtml(category.label)}</span>
       <span class="storage-size">${formatBytes(category.bytes)} \xB7 ${Number(category.files || 0)}\u4EF6</span>
-      ${category.cleanup ? `<button class="storage-clean" type="button" data-storage-clean="${escapeHtml(category.key)}">\u6574\u7406</button>` : "<span></span>"}
+      ${category.cleanup || category.desktopCleanup ? `<button class="storage-clean" type="button" data-storage-clean="${escapeHtml(category.key)}">\u6574\u7406</button>` : "<span></span>"}
     </div>
   `).join("");
 };
-var openStorageDialog = async () => {
+var loadStorageReport = async () => {
   if (!hasServer || staticLibraryMode) return;
   SELECTORS.storageTotal.textContent = "\u8A08\u7B97\u4E2D...";
   SELECTORS.storageList.innerHTML = "";
-  SELECTORS.storageDialog.showModal();
   lucide.createIcons();
   try {
     const response = await fetch("/storage", { cache: "no-store" });
@@ -5932,11 +6024,18 @@ var openStorageDialog = async () => {
     SELECTORS.storageTotal.textContent = error.message;
   }
 };
+var openStorageSettings = () => openSettings("storage");
 var cleanStorageCategory = async (key) => {
   if (!await showConfirm("\u518D\u751F\u6210\u53EF\u80FD\u306A\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F", { title: "\u30AD\u30E3\u30C3\u30B7\u30E5\u3092\u6574\u7406", confirmLabel: "\u6574\u7406\u3059\u308B", danger: true })) return;
   const button = SELECTORS.storageList.querySelector(`[data-storage-clean="${CSS.escape(key)}"]`);
   if (button) button.disabled = true;
   try {
+    if (key === "browser-cache" && window.practiceLabDesktop?.clearCache) {
+      const result2 = await window.practiceLabDesktop.clearCache();
+      await loadStorageReport();
+      SELECTORS.storageTotal.textContent += `\uFF08${formatBytes(result2.removedBytes)}\u524A\u9664\uFF09`;
+      return;
+    }
     const response = await fetch("/storage/cleanup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -6476,7 +6575,7 @@ var detectServer = async () => {
     SELECTORS.btnBpmSave.hidden = true;
     SELECTORS.btnAddFolder.hidden = true;
     SELECTORS.btnStorage.hidden = true;
-    SELECTORS.btnJobHistory.hidden = true;
+    if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = true;
     setScoreFeatureVisible(false);
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "\u9759\u7684\u30E9\u30A4\u30D6\u30E9\u30EA\u30E2\u30FC\u30C9";
@@ -6488,12 +6587,12 @@ var detectServer = async () => {
     SELECTORS.btnReanalyze.hidden = true;
     SELECTORS.btnCloudSync.hidden = true;
     SELECTORS.btnStorage.hidden = true;
-    SELECTORS.btnJobHistory.hidden = true;
+    if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = true;
     return;
   }
   SELECTORS.btnCloudSync.hidden = false;
   SELECTORS.btnStorage.hidden = false;
-  SELECTORS.btnJobHistory.hidden = false;
+  if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = false;
   SELECTORS.btnNewUrl.hidden = currentFeature === "score";
 };
 var renderDesktopSystemStatus = (status) => {
@@ -6504,7 +6603,17 @@ var renderDesktopSystemStatus = (status) => {
   }
   SELECTORS.desktopStatus.hidden = false;
   SELECTORS.desktopStatus.classList.remove("ready");
+  if (status.analysisMode === "cpu") {
+    SELECTORS.desktopStatus.classList.remove("error");
+    SELECTORS.desktopStatusAction.hidden = !status.cpuSetupSupported;
+    SELECTORS.desktopStatusAction.dataset.setupKind = "cpu";
+    SELECTORS.desktopStatusAction.textContent = "CPU\u89E3\u6790\u6A5F\u80FD\u3092\u8FFD\u52A0";
+    SELECTORS.desktopStatusTitle.textContent = "CPU\u89E3\u6790\u6A5F\u80FD\u306E\u8FFD\u52A0\u304C\u5FC5\u8981\u3067\u3059";
+    SELECTORS.desktopStatusMessage.textContent = status.message || "NVIDIA\u74B0\u5883\u306A\u3057\u3067\u4F7F\u3048\u308BCPU\u89E3\u6790\u6A5F\u80FD\u3092\u6E96\u5099\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    return;
+  }
   SELECTORS.desktopStatus.classList.toggle("error", !status.nvidia?.available);
+  SELECTORS.desktopStatusAction.dataset.setupKind = "nvidia";
   SELECTORS.desktopStatusAction.hidden = !status.setupSupported;
   if (!status.nvidia?.available) {
     SELECTORS.desktopStatusTitle.textContent = "NVIDIA GPU\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093";
@@ -6554,6 +6663,31 @@ var startDesktopNvidiaSetup = async () => {
     SELECTORS.desktopStatusAction.disabled = false;
   }
 };
+var startDesktopCpuSetup = async () => {
+  SELECTORS.settingsCpuSetup.disabled = true;
+  SELECTORS.desktopStatusAction.disabled = true;
+  try {
+    const response = await fetch("/features/windows-cpu/install", { method: "POST" });
+    const submitted = await response.json();
+    if (!response.ok) throw new Error(submitted.detail || "CPU\u89E3\u6790\u6A5F\u80FD\u3092\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    trackQueuedJob(submitted.jobId, {
+      label: "CPU\u89E3\u6790\u6A5F\u80FD\u3092\u8FFD\u52A0",
+      retainDone: true,
+      onDone: async () => {
+        await refreshDesktopSystemStatus();
+        await refreshSettingsAnalysisStatus();
+        await loadOptionalFeatures();
+      }
+    });
+    SELECTORS.settingsAnalysisStatus.textContent = "CPU\u89E3\u6790\u6A5F\u80FD\u306E\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3092\u958B\u59CB\u3057\u307E\u3057\u305F\u3002\u51E6\u7406\u4E00\u89A7\u3067\u9032\u884C\u72B6\u6CC1\u3092\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002";
+  } catch (error) {
+    await showAlert(error.message, { title: "CPU\u89E3\u6790\u6A5F\u80FD" });
+  } finally {
+    SELECTORS.settingsCpuSetup.disabled = false;
+    SELECTORS.desktopStatusAction.disabled = false;
+  }
+};
+var startDesktopAnalysisSetup = () => SELECTORS.desktopStatusAction?.dataset.setupKind === "cpu" ? startDesktopCpuSetup() : startDesktopNvidiaSetup();
 var initDesktopUpdates = () => {
   const desktop = window.practiceLabDesktop;
   if (!desktop || !SELECTORS.desktopUpdate) return;
@@ -6687,13 +6821,9 @@ SELECTORS.inputCard.addEventListener("drop", (event) => {
 });
 SELECTORS.scoreProcessingMode?.addEventListener("change", syncScoreOptionAvailability);
 SELECTORS.btnCloudSync?.addEventListener("click", syncCloudLibrary);
-SELECTORS.btnStorage?.addEventListener("click", openStorageDialog);
+SELECTORS.btnStorage?.addEventListener("click", openStorageSettings);
 SELECTORS.btnJobHistory?.addEventListener("click", openJobHistory);
-SELECTORS.jobHistoryClose?.addEventListener("click", () => SELECTORS.jobHistoryDialog.close());
 SELECTORS.jobHistoryRefresh?.addEventListener("click", loadJobHistory);
-SELECTORS.jobHistoryDialog?.addEventListener("click", (event) => {
-  if (event.target === SELECTORS.jobHistoryDialog) SELECTORS.jobHistoryDialog.close();
-});
 SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);
@@ -6706,14 +6836,19 @@ SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach((b
   button.addEventListener("click", () => {
     selectSettingsSection(button.dataset.settingsSection);
     if (button.dataset.settingsSection === "analysis") void refreshSettingsAnalysisStatus();
+    if (button.dataset.settingsSection === "features") void loadOptionalFeatures();
+    if (button.dataset.settingsSection === "storage") void loadStorageReport();
+    if (button.dataset.settingsSection === "history") void loadJobHistory();
   });
 });
 SELECTORS.settingsOpenData?.addEventListener("click", () => window.practiceLabDesktop?.openDataFolder());
-SELECTORS.settingsOpenStorage?.addEventListener("click", () => {
-  closeSettings();
-  openStorageDialog();
-});
+SELECTORS.settingsStorageRefresh?.addEventListener("click", loadStorageReport);
 SELECTORS.settingsNvidiaSetup?.addEventListener("click", startDesktopNvidiaSetup);
+SELECTORS.settingsCpuSetup?.addEventListener("click", startDesktopCpuSetup);
+SELECTORS.settingsFeatureCpuInstall?.addEventListener("click", startDesktopCpuSetup);
+SELECTORS.settingsFeatureCpuRemove?.addEventListener("click", () => removeOptionalFeature("windows-cpu"));
+SELECTORS.settingsFeatureScoreInstall?.addEventListener("click", startScoreFeatureSetup);
+SELECTORS.settingsFeatureScoreRemove?.addEventListener("click", () => removeOptionalFeature("score"));
 SELECTORS.storageList?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-storage-clean]");
   if (button) cleanStorageCategory(button.dataset.storageClean);
@@ -6900,7 +7035,7 @@ SELECTORS.scoreHistoryList?.addEventListener("keydown", (event) => {
 SELECTORS.urlInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce);
 });
-SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopNvidiaSetup);
+SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopAnalysisSetup);
 lucide.createIcons();
 syncScoreOptionAvailability();
 renderScoreHistory();
@@ -6911,6 +7046,8 @@ if (SELECTORS.btnTopSettings) {
 initDesktopUpdates();
 initDesktopCommands();
 await refreshCloudStatus();
+if (window.practiceLabDesktop?.getSettings) setScoreFeatureVisible(false);
+await loadOptionalFeatures();
 await loadSharedFolders();
 var initialHistory = await loadHistory();
 void refreshDesktopSystemStatus();
