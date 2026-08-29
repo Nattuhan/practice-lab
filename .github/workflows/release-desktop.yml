@@ -138,8 +138,15 @@ jobs:
         shell: pwsh
         run: |
           $env:ELECTRON_RUN_AS_NODE = "1"
-          $nodeVersion = & desktop\dist\installer\win-unpacked\PracticeLab.exe -p "process.versions.node"
-          if (-not $nodeVersion) { throw "Electron Node runtime is unavailable" }
+          # PracticeLab.exe is a GUI-subsystem executable, so a direct PowerShell
+          # invocation can return before the process and its output are complete.
+          $process = Start-Process `
+            -FilePath "desktop\dist\installer\win-unpacked\PracticeLab.exe" `
+            -ArgumentList "-e", "process.exit(process.versions.node?0:1)" `
+            -NoNewWindow `
+            -Wait `
+            -PassThru
+          if ($process.ExitCode -ne 0) { throw "Electron Node runtime is unavailable" }
       - name: Verify the Windows installer signature status
         shell: pwsh
         run: |
