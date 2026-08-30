@@ -15,6 +15,7 @@ const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require(
 const { sanitizePlayerSettings } = require("./player-settings.cjs");
 const { RELEASES_LATEST_URL, getUpdateMode } = require("./update-policy.cjs");
 const { analysisEnvironment, sanitizeAnalysisMode } = require("./analysis-settings.cjs");
+const { createDesktopSecretsStore } = require("./desktop-secrets.cjs");
 
 let mainWindow = null;
 let backend = null;
@@ -40,6 +41,7 @@ const defaultDesktopSettings = Object.freeze({
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 const secretsFile = () => path.join(app.getPath("userData"), "secrets.bin");
 const playerSettingsFile = () => path.join(app.getPath("userData"), "player-settings.json");
+const desktopSecretsStore = createDesktopSecretsStore({ safeStorage, fs, filePath: secretsFile });
 
 function readJson(file, fallback) {
   try {
@@ -81,15 +83,7 @@ function writePlayerSettings(input) {
   return settings;
 }
 
-function readDesktopSecrets() {
-  try {
-    if (!safeStorage.isEncryptionAvailable() || !fs.existsSync(secretsFile())) return {};
-    const encrypted = fs.readFileSync(secretsFile());
-    return JSON.parse(safeStorage.decryptString(encrypted));
-  } catch {
-    return {};
-  }
-}
+const readDesktopSecrets = () => desktopSecretsStore.read();
 
 function settingsForRenderer() {
   const settings = readDesktopSettings();
@@ -134,10 +128,9 @@ function writeDesktopSettings(input = {}) {
 
   const nextSecret = String(cloudInput.secretAccessKey || "");
   if (nextSecret) {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error("このPCでは認証情報を安全に保存できません");
-    fs.writeFileSync(secretsFile(), safeStorage.encryptString(JSON.stringify({ r2SecretAccessKey: nextSecret })));
+    desktopSecretsStore.write({ r2SecretAccessKey: nextSecret });
   } else if (!cloud.enabled && fs.existsSync(secretsFile())) {
-    fs.rmSync(secretsFile());
+    desktopSecretsStore.clear();
   }
   return settingsForRenderer();
 }
