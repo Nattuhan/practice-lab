@@ -33,7 +33,7 @@ from .services import analyze_local_audio, analyze_url, build_analysis_session_i
 from .storage import bootstrap_public_data, export_static_assets, load_folders, save_folders
 from .storage_usage import cleanup_storage, storage_report
 from .system_status import get_system_status, launch_nvidia_setup
-from .optional_features import feature_status, install_score_runtime, install_windows_cpu_runtime, score_runtime_available, uninstall_score_runtime, uninstall_windows_cpu_runtime
+from .optional_features import feature_status, install_mac_analysis_runtime, install_score_runtime, install_windows_cpu_runtime, score_runtime_available, uninstall_mac_analysis_runtime, uninstall_score_runtime, uninstall_windows_cpu_runtime
 from .cloud_storage import get_r2_config, test_r2_connection
 
 
@@ -128,6 +128,16 @@ def submit_job_spec(spec: dict) -> dict:
             job_id,
             "Queued Windows CPU feature installation",
             lambda: install_windows_cpu_runtime(
+                progress=lambda message: set_job_status(job_id, "installing", message),
+            ),
+            spec=spec,
+            kind="feature-install",
+        )
+    if job_type == "feature_install_mac_analysis":
+        return submit_queued_job(
+            job_id,
+            "Queued Mac analysis feature installation",
+            lambda: install_mac_analysis_runtime(
                 progress=lambda message: set_job_status(job_id, "installing", message),
             ),
             spec=spec,
@@ -262,6 +272,22 @@ def create_app() -> FastAPI:
         if any(not job.get("done") for job in list_job_statuses()):
             raise HTTPException(status_code=409, detail="処理中のジョブがあるためCPU解析機能を削除できません")
         return await run_in_threadpool(uninstall_windows_cpu_runtime)
+
+    @app.post("/features/mac-analysis/install", response_model=JobSubmissionResponse)
+    async def install_mac_analysis_feature():
+        try:
+            return JobSubmissionResponse(**submit_job_spec({
+                "type": "feature_install_mac_analysis",
+                "jobId": "feature:mac-analysis",
+            }))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.delete("/features/mac-analysis")
+    async def remove_mac_analysis_feature():
+        if any(not job.get("done") for job in list_job_statuses()):
+            raise HTTPException(status_code=409, detail="処理中のジョブがあるためMac解析機能を削除できません")
+        return await run_in_threadpool(uninstall_mac_analysis_runtime)
 
     @app.post("/features/score/install", response_model=JobSubmissionResponse)
     async def install_score_feature():

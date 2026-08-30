@@ -21,16 +21,18 @@ fi
   --name practice-lab-backend \
   --paths "$repo_root" \
   --collect-all yt_dlp \
-  --collect-all torch \
-  --collect-all natten \
-  --collect-all allin1fix \
-  --collect-all demucs_infer \
   --hidden-import practice_lab.score_extractor \
   --exclude-module cv2 \
   --exclude-module rapidocr_onnxruntime \
   --exclude-module onnxruntime \
   --exclude-module pyclipper \
   --exclude-module shapely \
+  --exclude-module torch \
+  --exclude-module torchvision \
+  --exclude-module torchaudio \
+  --exclude-module natten \
+  --exclude-module allin1fix \
+  --exclude-module demucs_infer \
   --hidden-import practice_lab.compute_device \
   --hidden-import practice_lab.jpop_sections \
   --hidden-import practice_lab.timing \

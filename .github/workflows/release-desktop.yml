@@ -219,14 +219,14 @@ jobs:
         run: |
           version="$(node -p 'require("./package.json").version')"
           .venv/bin/python scripts/build_score_feature_pack.py "desktop/dist/installer/PracticeLab-Score-macOS-arm64-$version.zip"
+      - name: Build optional Apple Silicon analysis pack
+        run: npm run desktop:analysis:mac
       - name: Prepare bundled tools and backend
         run: npm run desktop:backend:mac
-      - name: Verify bundled Mac analysis runtime
+      - name: Verify lightweight Mac backend runtime
         run: |
           backend="desktop/dist/backend/practice-lab-backend/practice-lab-backend"
-          "$backend" --check-runtime macos-analysis
-          "$backend" scripts/analyze_audio.py --help
-          "$backend" scripts/split_stems.py --help
+          "$backend" --check-runtime base
       - name: Verify the optional Apple Silicon score pack
         run: |
           version="$(node -p 'require("./package.json").version')"
@@ -307,6 +307,7 @@ jobs:
           name: PracticeLab-macOS-Apple-Silicon
           path: |
             desktop/dist/installer/*.dmg
+            desktop/dist/installer/*Analysis-macOS-arm64-*.zip
             desktop/dist/installer/*Score-macOS-arm64-*.zip
 
   release-metadata:
@@ -327,6 +328,7 @@ jobs:
             PracticeLab-Setup-*.exe \
             PracticeLab-*-arm64.dmg \
             PracticeLab-Windows-CPU-*.zip \
+            PracticeLab-Analysis-macOS-arm64-*.zip \
             PracticeLab-Score-*.zip \
             > PracticeLab-SHA256SUMS.txt
       - name: Upload installers and publish the completed release
@@ -342,6 +344,7 @@ jobs:
             release-artifacts/latest.yml \
             release-artifacts/PracticeLab-*-arm64.dmg \
             release-artifacts/PracticeLab-Windows-CPU-*.zip \
+            release-artifacts/PracticeLab-Analysis-macOS-arm64-*.zip \
             release-artifacts/PracticeLab-Score-*.zip \
             release-artifacts/PracticeLab-SHA256SUMS.txt \
             --clobber

@@ -12,9 +12,12 @@ import uvicorn
 from practice_lab.app import create_app
 
 
-COMMON_FROZEN_RUNTIME_MODULES = (
+MEDIA_FROZEN_RUNTIME_MODULES = (
     "numpy",
     "PIL",
+)
+BASE_FROZEN_RUNTIME_MODULES = (
+    *MEDIA_FROZEN_RUNTIME_MODULES,
     "yt_dlp",
     "practice_lab.timing",
 )
@@ -36,15 +39,19 @@ def main() -> None:
 
 def check_frozen_runtime(profile: str) -> None:
     """Import modules used by scripts that the frozen backend executes dynamically."""
-    modules = list(COMMON_FROZEN_RUNTIME_MODULES)
+    modules: list[str]
     if profile == "score":
+        modules = list(BASE_FROZEN_RUNTIME_MODULES)
         from practice_lab.optional_features import score_runtime_available
         if not score_runtime_available():
             raise RuntimeError("Score feature pack is unavailable")
         modules.append("practice_lab.score_extractor")
     elif profile in {"macos-analysis", "windows-cpu"}:
+        modules = list(MEDIA_FROZEN_RUNTIME_MODULES)
         modules.extend(MACOS_ANALYSIS_RUNTIME_MODULES)
-    elif profile != "windows":
+    elif profile in {"windows", "base"}:
+        modules = list(BASE_FROZEN_RUNTIME_MODULES)
+    else:
         raise ValueError(f"Unknown frozen runtime profile: {profile}")
 
     for module in modules:

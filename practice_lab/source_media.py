@@ -103,6 +103,20 @@ def trim_video_range(
     )
 
 
+def extract_wav_from_video(source: Path, destination: Path) -> None:
+    """Create the canonical analysis WAV from the exact playback video timeline."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    run_process(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-i", str(source), "-vn", "-acodec", "pcm_s16le", "-ar", "44100",
+            str(destination), "-y",
+        ],
+        capture_output=True,
+        check=True,
+    )
+
+
 def yt_dlp_command(*args: str) -> list[str]:
     return [sys.executable, "-m", "yt_dlp", *args]
 

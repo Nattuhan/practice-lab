@@ -22,8 +22,8 @@ from .config import DATA_AUDIO_DIR, DATA_DIR, DATA_RESULTS_DIR, DATA_STEMS_DIR, 
 from .cloud_storage import build_r2_session_assets, configure_bucket_cors, delete_session_assets, get_r2_config, upload_file, upload_folders, upload_manifest, upload_session_assets, upload_static_app
 from .cloud_sync import sync_cloud_incremental
 from .device_sync import record_session_deletions
-from .source_media import download_video, download_wav, get_title, normalize_analysis_range, source_media_cache_paths, trim_audio_range, trim_video_range
-from .optional_features import windows_cpu_runtime_executable
+from .source_media import download_video, extract_wav_from_video, get_title, normalize_analysis_range, source_media_cache_paths, trim_audio_range, trim_video_range
+from .optional_features import mac_analysis_runtime_executable, windows_cpu_runtime_executable
 from .process_manager import job_process_context, run_process, running_process, start_process, terminate_process, unregister_process
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 from .timing import normalize_section_bar_ranges, normalize_tempo_grid
@@ -823,9 +823,13 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
     work_dir.mkdir(parents=True, exist_ok=True)
     runtime_config = get_analyzer_runtime_config()
     backend = resolve_backend(wsl_python=WSL_PYTHON)
-    native_executable = windows_cpu_runtime_executable() if sys.platform == "win32" and backend.device == "cpu" else None
+    native_executable = (
+        windows_cpu_runtime_executable()
+        if sys.platform == "win32" and backend.device == "cpu"
+        else mac_analysis_runtime_executable() if sys.platform == "darwin" else None
+    )
     if native_executable is not None and not native_executable.is_file():
-        raise RuntimeError("Windows CPU解析機能が未インストールです。設定の「追加機能」から追加してください")
+        raise RuntimeError("解析機能が未インストールです。設定の「追加機能」から追加してください")
     command, process_cwd = analyzer_command(
         backend,
         script=ANALYZE_SCRIPT,
@@ -948,9 +952,13 @@ def run_stem_splitter(audio_path: Path, video_id: str, job_id: str | None = None
         shutil.rmtree(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     backend = resolve_backend(purpose="stems", wsl_python=WSL_PYTHON)
-    native_executable = windows_cpu_runtime_executable() if sys.platform == "win32" and backend.device == "cpu" else None
+    native_executable = (
+        windows_cpu_runtime_executable()
+        if sys.platform == "win32" and backend.device == "cpu"
+        else mac_analysis_runtime_executable() if sys.platform == "darwin" else None
+    )
     if native_executable is not None and not native_executable.is_file():
-        raise RuntimeError("Windows CPU解析機能が未インストールです。設定の「追加機能」から追加してください")
+        raise RuntimeError("解析機能が未インストールです。設定の「追加機能」から追加してください")
     output_dir = DATA_STEMS_DIR / video_id
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -1218,14 +1226,6 @@ def analyze_url(
     title = get_title(url, source_video_id)
     set_job_display_title(job_id, title)
 
-    if not source_audio_file.exists():
-        raise_if_job_canceled(job_id)
-        set_job_status(job_id, "downloading", "Downloading full-quality source audio")
-        source_audio_file.parent.mkdir(parents=True, exist_ok=True)
-        download_wav(url, source_audio_file)
-    else:
-        set_job_status(job_id, "downloading", "Using cached source audio")
-
     if not source_video_file.exists():
         raise_if_job_canceled(job_id)
         set_job_status(job_id, "downloading", "Downloading full-quality source video")
@@ -1233,6 +1233,17 @@ def analyze_url(
         download_video(url, source_video_file)
     else:
         set_job_status(job_id, "downloading", "Using cached source video")
+
+    audio_needs_refresh = (
+        not source_audio_file.exists()
+        or source_audio_file.stat().st_mtime_ns < source_video_file.stat().st_mtime_ns
+    )
+    if audio_needs_refresh:
+        raise_if_job_canceled(job_id)
+        set_job_status(job_id, "downloading", "Extracting synchronized source audio")
+        extract_wav_from_video(source_video_file, source_audio_file)
+    else:
+        set_job_status(job_id, "downloading", "Using cached source audio")
 
     if not audio_file.exists():
         raise_if_job_canceled(job_id)

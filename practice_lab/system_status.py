@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .analyzer_backend import to_wsl_path
 from .config import ROOT_DIR, SOURCE_ROOT, default_wsl_python
-from .optional_features import windows_cpu_runtime_executable
+from .optional_features import mac_analysis_runtime_executable, windows_cpu_runtime_executable
 
 
 def _run(command: list[str], *, timeout: int = 12) -> subprocess.CompletedProcess[str] | None:
@@ -42,10 +42,18 @@ def get_system_status() -> dict:
         "runtime": {"available": False},
         "ready": system != "Windows",
         "setupSupported": desktop and system == "Windows" and analysis_mode == "nvidia",
-        "cpuSetupSupported": desktop and system == "Windows" and analysis_mode == "cpu",
+        "cpuSetupSupported": desktop and analysis_mode == "cpu" and system in {"Windows", "Darwin"},
     }
     if not desktop:
         status["ready"] = True
+        return status
+    if system == "Darwin":
+        required_modules = ("torch", "allin1fix", "demucs_infer")
+        bundled_runtime = all(importlib.util.find_spec(name) is not None for name in required_modules)
+        status["runtime"]["available"] = bundled_runtime or mac_analysis_runtime_executable().is_file()
+        status["ready"] = status["runtime"]["available"]
+        if not status["ready"]:
+            status["message"] = "Mac解析機能を追加すると、曲構成解析とパート分離を利用できます"
         return status
     if system != "Windows":
         status["runtime"]["available"] = True

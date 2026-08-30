@@ -8,8 +8,8 @@ FFmpegをNSISインストーラーへまとめます。Electron自身をYouTube�
 設定の「追加機能」からCPU解析パックを追加します。NVIDIA GPUを使いたい人だけ、解析環境を
 NVIDIAへ切り替えてWSL2 CUDAランタイムをセットアップします。
 
-Apple Silicon Mac版は同じUIとFastAPIバックエンドに、PyTorch、NATTEN、all-in-one-fix、
-Demucsを含むmacOSネイティブCPU解析環境を同梱します。Intel Macは対象外です。
+Apple Silicon Mac版は同じUIと軽量FastAPIバックエンドを同梱し、PyTorch、NATTEN、
+all-in-one-fix、Demucsを含む解析環境は設定の「追加機能」から必要時に導入します。Intel Macは対象外です。
 Apple Developer IDを使用しない無料配布ビルドには、DMG作成前にアドホック署名を施して
 アプリバンドル内部の整合性を保証します。これはNotarizationの代替ではありません。
 
@@ -18,6 +18,7 @@ Apple Developer IDを使用しない無料配布ビルドには、DMG作成前�
 - アプリ本体: NSISが管理するインストールディレクトリ
 - 曲、解析結果、設定: `%LOCALAPPDATA%\PracticeLab`
 - Windows CPU解析環境: `%LOCALAPPDATA%\PracticeLab\runtime\windows-cpu`
+- Mac解析環境: `~/Library/Application Support/practice-lab/runtime/mac-analysis`
 - CUDA解析環境: `%LOCALAPPDATA%\PracticeLab\runtime\wsl\.venv`
 - 楽譜抽出環境: 利用者データ内の`runtime/score`
 
@@ -50,6 +51,7 @@ npm run desktop:dist -- --publish=never
 - `PracticeLab-Windows-CPU-1.2.3.zip`（アプリから必要時に取得）
 - `PracticeLab-Score-Windows-1.2.3.zip`（アプリから必要時に取得）
 - `PracticeLab-Score-macOS-arm64-1.2.3.zip`（アプリから必要時に取得）
+- `PracticeLab-Analysis-macOS-arm64-1.2.3.zip`（アプリから必要時に取得）
 - `PracticeLab-SHA256SUMS.txt`
 
 Windows版は起動後にGitHub Releasesを確認し、新版を取得します。ダウンロード完了後、

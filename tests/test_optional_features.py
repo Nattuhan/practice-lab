@@ -52,6 +52,14 @@ class OptionalFeatureTests(unittest.TestCase):
             "PracticeLab-Windows-CPU-1.2.3.zip",
         )
 
+    def test_mac_analysis_runtime_uses_stable_abi_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(optional_features, "ROOT_DIR", Path(temp_dir)):
+                executable = optional_features.mac_analysis_runtime_executable()
+
+        self.assertIn(optional_features.MAC_ANALYSIS_RUNTIME_ABI, executable.parts)
+        self.assertEqual(executable.name, "practice-lab-analysis-runtime")
+
     def test_windows_cpu_status_detects_the_compatible_runtime(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with (

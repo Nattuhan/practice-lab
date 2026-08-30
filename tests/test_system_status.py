@@ -33,6 +33,19 @@ class SystemStatusTests(unittest.TestCase):
         self.assertTrue(status["ready"])
         self.assertFalse(status["setupSupported"])
 
+    def test_packaged_mac_reports_missing_optional_analysis_runtime(self):
+        with (
+            patch("practice_lab.system_status.platform.system", return_value="Darwin"),
+            patch("practice_lab.system_status.importlib.util.find_spec", return_value=None),
+            patch("practice_lab.system_status.mac_analysis_runtime_executable", return_value=Path("/missing/runtime")),
+            patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1"}, clear=True),
+        ):
+            status = system_status.get_system_status()
+
+        self.assertFalse(status["ready"])
+        self.assertTrue(status["cpuSetupSupported"])
+        self.assertIn("Mac解析機能", status["message"])
+
     def test_windows_requires_the_complete_cuda_runtime(self):
         def fake_run(command, timeout=12):
             if "--query-gpu=name" in command:

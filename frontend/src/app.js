@@ -2717,13 +2717,17 @@ const refreshSettingsAnalysisStatus = async () => {
 
 const renderOptionalFeatures = features => {
   const cpu = features?.["windows-cpu"] || {};
+  const macAnalysis = features?.["mac-analysis"] || {};
+  const analysis = cpu.available ? cpu : macAnalysis;
+  const analysisKey = cpu.available ? "windows-cpu" : "mac-analysis";
   const score = features?.score || {};
-  SELECTORS.settingsFeatureCpu.hidden = !cpu.available;
-  SELECTORS.settingsFeatureCpuStatus.textContent = cpu.installed
-    ? `追加済み${cpu.bytes ? ` · ${formatBytes(cpu.bytes)}` : ""}`
-    : "未追加 · NVIDIAなしで解析する場合に必要です";
-  SELECTORS.settingsFeatureCpuInstall.hidden = !!cpu.installed;
-  SELECTORS.settingsFeatureCpuRemove.hidden = !cpu.installed;
+  SELECTORS.settingsFeatureCpu.hidden = !analysis.available;
+  SELECTORS.settingsFeatureCpu.dataset.featureKey = analysisKey;
+  SELECTORS.settingsFeatureCpuStatus.textContent = analysis.installed
+    ? `追加済み${analysis.bytes ? ` · ${formatBytes(analysis.bytes)}` : ""}`
+    : "未追加 · 曲構成解析とパート分離を使う場合に必要です";
+  SELECTORS.settingsFeatureCpuInstall.hidden = !!analysis.installed;
+  SELECTORS.settingsFeatureCpuRemove.hidden = !analysis.installed;
   SELECTORS.settingsFeatureScore.hidden = !score.available;
   SELECTORS.settingsFeatureScoreStatus.textContent = score.installed
     ? `追加済み${score.bytes ? ` · ${formatBytes(score.bytes)}` : ""}`
@@ -2765,11 +2769,11 @@ const startScoreFeatureSetup = async () => {
 };
 
 const removeOptionalFeature = async feature => {
-  const label = feature === "score" ? "楽譜抽出機能" : "Windows CPU解析機能";
+  const label = feature === "score" ? "楽譜抽出機能" : "解析機能";
   if (!await showConfirm(`${label}をこのPCから削除しますか？保存済みの曲や成果物は削除されません。`, {
     title: `${label}を削除`, confirmLabel: "削除する", danger: true,
   })) return;
-  const response = await fetch(`/features/${feature === "score" ? "score" : "windows-cpu"}`, { method: "DELETE" });
+  const response = await fetch(`/features/${feature}`, { method: "DELETE" });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     await showAlert(result.detail || `${label}を削除できませんでした`, { title: label });
@@ -4828,7 +4832,9 @@ const startDesktopCpuSetup = async () => {
   SELECTORS.settingsCpuSetup.disabled = true;
   SELECTORS.desktopStatusAction.disabled = true;
   try {
-    const response = await fetch("/features/windows-cpu/install", { method: "POST" });
+    const feature = SELECTORS.settingsFeatureCpu?.dataset.featureKey
+      || (desktopSystemStatus?.platform === "Darwin" ? "mac-analysis" : "windows-cpu");
+    const response = await fetch(`/features/${feature}/install`, { method: "POST" });
     const submitted = await response.json();
     if (!response.ok) throw new Error(submitted.detail || "CPU解析機能を追加できませんでした");
     trackQueuedJob(submitted.jobId, {
@@ -5020,7 +5026,9 @@ SELECTORS.settingsStorageRefresh?.addEventListener("click", loadStorageReport);
 SELECTORS.settingsNvidiaSetup?.addEventListener("click", startDesktopNvidiaSetup);
 SELECTORS.settingsCpuSetup?.addEventListener("click", startDesktopCpuSetup);
 SELECTORS.settingsFeatureCpuInstall?.addEventListener("click", startDesktopCpuSetup);
-SELECTORS.settingsFeatureCpuRemove?.addEventListener("click", () => removeOptionalFeature("windows-cpu"));
+SELECTORS.settingsFeatureCpuRemove?.addEventListener("click", () => removeOptionalFeature(
+  SELECTORS.settingsFeatureCpu?.dataset.featureKey || "windows-cpu",
+));
 SELECTORS.settingsFeatureScoreInstall?.addEventListener("click", startScoreFeatureSetup);
 SELECTORS.settingsFeatureScoreRemove?.addEventListener("click", () => removeOptionalFeature("score"));
 SELECTORS.storageList?.addEventListener("click", event => {

@@ -21,8 +21,10 @@ from .config import ROOT_DIR
 RELEASE_API = "https://api.github.com/repos/Nattuhan/practice-lab/releases/tags/v{version}"
 LATEST_RELEASE_API = "https://api.github.com/repos/Nattuhan/practice-lab/releases/latest"
 CPU_FEATURE_KEY = "windows-cpu"
+MAC_ANALYSIS_FEATURE_KEY = "mac-analysis"
 SCORE_FEATURE_KEY = "score"
 CPU_RUNTIME_ABI = "abi-1"
+MAC_ANALYSIS_RUNTIME_ABI = "abi-1"
 SCORE_RUNTIME_ABI = "abi-1"
 
 
@@ -103,6 +105,25 @@ def windows_cpu_runtime_executable() -> Path:
     return windows_cpu_runtime_dir() / "practice-lab-cpu-runtime" / name
 
 
+def mac_analysis_asset_name(version: str | None = None) -> str:
+    resolved = version or app_version()
+    if not resolved:
+        raise RuntimeError("アプリのバージョンを確認できません")
+    return f"PracticeLab-Analysis-macOS-arm64-{resolved}.zip"
+
+
+def mac_analysis_runtime_dir() -> Path:
+    return _resolve_compatible_runtime(
+        MAC_ANALYSIS_FEATURE_KEY,
+        MAC_ANALYSIS_RUNTIME_ABI,
+        Path("practice-lab-analysis-runtime") / "practice-lab-analysis-runtime",
+    )
+
+
+def mac_analysis_runtime_executable() -> Path:
+    return mac_analysis_runtime_dir() / "practice-lab-analysis-runtime" / "practice-lab-analysis-runtime"
+
+
 def score_platform_name() -> str:
     if platform.system() == "Windows":
         return "Windows"
@@ -164,6 +185,12 @@ def feature_status() -> dict:
             "installed": cpu_executable.is_file(),
             "version": app_version(),
             "bytes": _directory_size(windows_cpu_runtime_dir()),
+        },
+        MAC_ANALYSIS_FEATURE_KEY: {
+            "available": platform.system() == "Darwin" and platform.machine() == "arm64",
+            "installed": mac_analysis_runtime_executable().is_file(),
+            "version": app_version(),
+            "bytes": _directory_size(mac_analysis_runtime_dir()),
         },
         SCORE_FEATURE_KEY: {
             "available": score_platform_name() != "unsupported",
@@ -304,6 +331,54 @@ def uninstall_windows_cpu_runtime() -> dict:
     if feature_root.exists():
         shutil.rmtree(feature_root)
     return feature_status()[CPU_FEATURE_KEY]
+
+
+def install_mac_analysis_runtime(progress: Callable[[str], None] | None = None) -> dict:
+    if (
+        platform.system() != "Darwin"
+        or platform.machine() != "arm64"
+        or os.environ.get("PRACTICE_LAB_DESKTOP") != "1"
+    ):
+        raise RuntimeError("Mac解析パックはApple Silicon Macデスクトップ版でのみ追加できます")
+    version = app_version()
+    asset_name = mac_analysis_asset_name(version)
+    asset = _release_asset(
+        version,
+        asset_name,
+        "PracticeLab-Analysis-macOS-arm64-",
+        "Mac解析パック",
+    )
+    destination = _stable_runtime_dir(MAC_ANALYSIS_FEATURE_KEY, MAC_ANALYSIS_RUNTIME_ABI)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".install-", dir=destination.parent) as temp_dir:
+        temp_root = Path(temp_dir)
+        archive = temp_root / str(asset.get("name") or asset_name)
+        if progress:
+            progress("Mac解析パックを確認しています")
+        actual_digest = _download(str(asset["browser_download_url"]), archive, "Mac解析パック", progress)
+        expected_digest = str(asset["digest"]).removeprefix("sha256:")
+        if actual_digest.lower() != expected_digest.lower():
+            raise RuntimeError("Mac解析パックのSHA-256が一致しません")
+        staged = temp_root / "extracted"
+        staged.mkdir()
+        if progress:
+            progress("Mac解析パックを展開しています")
+        _safe_extract(archive, staged)
+        expected_executable = staged / "practice-lab-analysis-runtime" / "practice-lab-analysis-runtime"
+        if not expected_executable.is_file():
+            raise RuntimeError("Mac解析パックの実行ファイルが見つかりません")
+        if destination.exists():
+            shutil.rmtree(destination)
+        staged.replace(destination)
+    _cleanup_legacy_runtimes(destination.parent, destination)
+    return feature_status()[MAC_ANALYSIS_FEATURE_KEY]
+
+
+def uninstall_mac_analysis_runtime() -> dict:
+    feature_root = _feature_root(MAC_ANALYSIS_FEATURE_KEY)
+    if feature_root.exists():
+        shutil.rmtree(feature_root)
+    return feature_status()[MAC_ANALYSIS_FEATURE_KEY]
 
 
 def install_score_runtime(progress: Callable[[str], None] | None = None) -> dict:

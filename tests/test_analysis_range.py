@@ -100,8 +100,8 @@ class AnalysisRangeTests(unittest.TestCase):
             with (
                 patch.multiple(services, **paths),
                 patch.object(services, "get_title", return_value="Demo"),
-                patch.object(services, "download_wav", side_effect=fake_download) as download_audio,
                 patch.object(services, "download_video", side_effect=fake_download) as download_video,
+                patch.object(services, "extract_wav_from_video", side_effect=fake_trim) as extract_audio,
                 patch.object(services, "trim_audio_range", side_effect=fake_trim) as trim_audio,
                 patch.object(services, "trim_video_range", side_effect=fake_trim) as trim_video,
                 patch.object(services, "convert_wav_to_mp3", side_effect=lambda _src, dst: dst.write_bytes(b"mp3")),
@@ -123,10 +123,10 @@ class AnalysisRangeTests(unittest.TestCase):
             self.assertEqual(result["analysisStartSec"], 30.5)
             self.assertEqual(result["analysisEndSec"], 95.0)
             self.assertEqual(result["title"], "Demo (0:30–1:35)")
-            self.assertEqual(download_audio.call_args.args[2:], ())
             self.assertEqual(download_video.call_args.args[2:], ())
-            self.assertEqual(download_audio.call_args.args[1].name, "abc123.wav")
             self.assertEqual(download_video.call_args.args[1].name, "abc123.mp4")
+            self.assertEqual(extract_audio.call_args.args[0].name, "abc123.mp4")
+            self.assertEqual(extract_audio.call_args.args[1].name, "abc123.wav")
             self.assertEqual(trim_audio.call_args.args[2:], (30.5, 95.0))
             self.assertEqual(trim_video.call_args.args[2:], (30.5, 95.0))
 
