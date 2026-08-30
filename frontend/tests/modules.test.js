@@ -4,6 +4,7 @@ import test from "node:test";
 import { filterLibraryItems, sortLibraryItems } from "../src/library.js";
 import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "../src/loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor.js";
+import { mediaSyncAction, planStemPlayback } from "../src/playback-sync.js";
 import { formatBytes } from "../src/storage.js";
 import { extractWaveformPeaks } from "../src/waveform-peaks.js";
 
@@ -60,6 +61,29 @@ test("自動解析の重複と末尾の空白を連続した小節範囲へ補�
 test("容量を読みやすい単位へ変換する", () => {
   assert.equal(formatBytes(1024), "1.00 KB");
   assert.equal(formatBytes(10 * 1024 * 1024), "10.0 MB");
+});
+
+test("スマホはパート操作まで元音源1本で軽量再生する", () => {
+  const stemNames = ["vocals", "drums", "bass", "other"];
+  const mix = { vocals: 100, drums: 100, bass: 100, other: 100 };
+  assert.deepEqual(planStemPlayback({ stemNames, mix, mobile: true, activated: false }), {
+    useOriginalMix: true,
+    activeStems: [],
+  });
+  assert.deepEqual(planStemPlayback({ stemNames, mix: { ...mix, vocals: 0 }, mobile: true, activated: true }), {
+    useOriginalMix: false,
+    activeStems: ["drums", "bass", "other"],
+  });
+});
+
+test("小さな音ズレは速度で滑らかに補正し、大きなズレは再シークする", () => {
+  const soft = mediaSyncAction({ masterTime: 10, mediaTime: 10.08, playbackRate: 1 });
+  assert.equal(soft.seekTo, null);
+  assert.ok(soft.playbackRate < 1);
+
+  const hard = mediaSyncAction({ masterTime: 10, mediaTime: 10.3, playbackRate: 1, hardDriftSeconds: 0.2 });
+  assert.equal(hard.seekTo, 10);
+  assert.equal(hard.playbackRate, 1);
 });
 
 test("実音源のサンプルから表示用波形を生成する", () => {

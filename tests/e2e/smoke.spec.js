@@ -254,6 +254,35 @@ test("R2静的閲覧版では処理履歴を表示しない", async ({ page }) =
   expect(historyRequested).toBe(false);
 });
 
+test("スマホのR2閲覧版は初回に曲一覧を開き、パート音源を遅延読み込みする", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    window.PRACTICE_LAB_CONFIG = { mode: "static", libraryBaseUrl: "results" };
+  });
+  await page.route("**/results/e2e-baseline/session.json", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(baselineResult),
+  }));
+  await page.route("**/results/e2e-baseline/audio.mp3", route => route.fulfill({
+    contentType: "audio/wav",
+    body: silentWav(),
+  }));
+  const stemRequests = [];
+  page.on("request", request => {
+    if (request.url().includes("/stems/e2e-baseline/")) stemRequests.push(request.url());
+  });
+
+  await page.goto("/");
+  await expect(page.locator("body")).toHaveClass(/sidebar-open/);
+  await expect(page.getByRole("button", { name: "曲を選ぶ" })).toBeVisible();
+  await expect(page.getByText("E2E Baseline", { exact: true })).toBeVisible();
+
+  await page.getByText("E2E Baseline", { exact: true }).click();
+  await expect(page.locator("body")).not.toHaveClass(/sidebar-open/);
+  await expect(page.locator("#stem-status")).toContainText("軽量再生");
+  expect(stemRequests).toEqual([]);
+});
+
 test("パート書き出し操作を右パネル内に収める", async ({ page }) => {
   await page.goto("/");
   const panel = page.locator("#stem-panel");

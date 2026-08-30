@@ -2382,6 +2382,44 @@ var extractWaveformPeaks = (audioBuffer, width) => {
   return peaks;
 };
 
+// frontend/src/playback-sync.js
+var clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+var planStemPlayback = ({ stemNames, mix, mobile, activated }) => {
+  if (mobile && !activated) {
+    return { useOriginalMix: true, activeStems: [] };
+  }
+  const activeStems = stemNames.filter((name) => Number(mix?.[name] ?? 0) > 0);
+  return {
+    useOriginalMix: activeStems.length === 0,
+    activeStems
+  };
+};
+var mediaSyncAction = ({
+  masterTime,
+  mediaTime,
+  playbackRate: playbackRate2 = 1,
+  force = false,
+  hardDriftSeconds = 0.2,
+  softDriftSeconds = 0.035,
+  maxRateCorrection = 0.04
+}) => {
+  const baseRate = Math.max(0.01, Number(playbackRate2) || 1);
+  const drift = Number(mediaTime) - Number(masterTime);
+  if (!Number.isFinite(drift)) return { playbackRate: baseRate, seekTo: null, drift: 0 };
+  if (force || Math.abs(drift) >= hardDriftSeconds) {
+    return { playbackRate: baseRate, seekTo: Math.max(0, Number(masterTime) || 0), drift };
+  }
+  if (Math.abs(drift) < softDriftSeconds) {
+    return { playbackRate: baseRate, seekTo: null, drift };
+  }
+  const correction = clamp(-drift * 0.2, -maxRateCorrection, maxRateCorrection);
+  return {
+    playbackRate: baseRate * (1 + correction),
+    seekTo: null,
+    drift
+  };
+};
+
 // frontend/src/app.js
 var lucide = { createIcons: renderIcons };
 var COLORS = {
@@ -2725,12 +2763,20 @@ var stemSourceNodes = {};
 var stemReady = false;
 var stemsAudible = false;
 var lastStemHardSyncAt = 0;
+var currentStemAssets = null;
+var mobileStemMixActivated = false;
 var stemExportInProgress = false;
 var selectedSessionIds = /* @__PURE__ */ new Set();
 var lastSelectedSessionId = null;
 var sidebarSessionDrag = null;
 var suppressSidebarClickUntil = 0;
 var isMobileViewport = () => window.matchMedia("(max-width: 680px), (pointer: coarse)").matches;
+var currentStemPlaybackPlan = () => planStemPlayback({
+  stemNames: STEM_NAMES,
+  mix: getStemMix(),
+  mobile: isMobileViewport(),
+  activated: mobileStemMixActivated
+});
 var closeMobileSidebar = () => {
   document.body.classList.remove("sidebar-open");
   SELECTORS.sidebarScrim.hidden = true;
@@ -3311,12 +3357,14 @@ var setStemMixMode = (stem, type) => {
   if (currentMode?.stem === stem && currentMode.type === type) {
     saveStemMix({ ...DEFAULT_STEM_MIX, ...cfg().stemMixRestore || {} });
     clearStemMixMode();
+    activateMobileStemMix();
     applyStemMix();
     return;
   }
   if (!currentMode) saveCfg("stemMixRestore", getStemMix());
   saveCfg("stemMixMode", { stem, type });
   saveStemMix(Object.fromEntries(STEM_NAMES.map((name) => [name, name === stem ? 100 : type === "focus" ? 20 : 0])));
+  activateMobileStemMix();
   applyStemMix();
 };
 var hasStemAssets = (assets) => !!assets?.stems && STEM_NAMES.every((stem) => typeof assets.stems[stem] === "string" && assets.stems[stem]);
@@ -3336,9 +3384,31 @@ var destroyStemPlayers = () => {
   stemReady = false;
   stemsAudible = false;
 };
+var updateStemPlaybackStatus = () => {
+  if (!SELECTORS.stemStatus || !currentStemAssets) return;
+  SELECTORS.stemStatus.className = "stem-status ok";
+  SELECTORS.stemStatus.textContent = isMobileViewport() && !mobileStemMixActivated ? "\u8EFD\u91CF\u518D\u751F \xB7 \u5143\u97F3\u6E90\u3092\u4F7F\u7528\uFF08\u30D1\u30FC\u30C8\u64CD\u4F5C\u3067\u5207\u66FF\uFF09" : "\u30D1\u30FC\u30C8\u518D\u751F \xB7 \u81EA\u52D5\u540C\u671F";
+};
+var activateMobileStemMix = () => {
+  if (!isMobileViewport() || mobileStemMixActivated || !currentStemAssets) return;
+  mobileStemMixActivated = true;
+  if (!stemReady) initStemPlayers(currentStemAssets);
+  applyMusicVolume(SELECTORS.volMusic.value);
+  updateStemPlaybackStatus();
+  if (ws?.isPlaying()) void playStems();
+};
+var deactivateMobileStemMix = () => {
+  if (!isMobileViewport()) return;
+  mobileStemMixActivated = false;
+  destroyStemPlayers();
+  applyMusicVolume(SELECTORS.volMusic.value);
+  updateStemPlaybackStatus();
+};
 var applyStemMix = () => {
   const mix = getStemMix();
   const mode = getStemMixMode();
+  const playbackPlan = currentStemPlaybackPlan();
+  const activeStems = new Set(playbackPlan.activeStems);
   const effectiveMusicValue = isMobileViewport() ? 100 : SELECTORS.volMusic.value;
   const masterVolume = Math.min(1, Math.max(0, (Number(effectiveMusicValue) || 0) / 100));
   for (const stem of STEM_NAMES) {
@@ -3362,7 +3432,20 @@ var applyStemMix = () => {
     const gain = stemGainNodes[stem];
     if (gain) gain.gain.value = masterVolume * (value / 100);
     const player = stemPlayers[stem];
-    if (player) player.volume = masterVolume * (value / 100);
+    if (player) {
+      player.volume = masterVolume * (value / 100);
+      if (!activeStems.has(stem)) player.pause();
+      else if (ws?.isPlaying() && player.paused) {
+        if (player.readyState >= 1) {
+          try {
+            player.currentTime = ws.getCurrentTime();
+          } catch {
+          }
+        }
+        void player.play().catch(() => {
+        });
+      }
+    }
   }
 };
 var updateStemExportScopeAvailability = () => {
@@ -3450,20 +3533,44 @@ var exportStemMix = async () => {
 var syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } = {}) => {
   if (!stemReady) return;
   const now = performance.now();
-  for (const player of Object.values(stemPlayers)) {
-    if (Math.abs(player.playbackRate - playbackRate) > 1e-3) player.playbackRate = playbackRate;
-    const drift = Math.abs(player.currentTime - time);
-    if (force || drift > STEM_SYNC_DRIFT_SECONDS && now - lastStemHardSyncAt > STEM_SYNC_COOLDOWN_MS) {
-      player.currentTime = time;
-      lastStemHardSyncAt = now;
+  const playbackPlan = currentStemPlaybackPlan();
+  const activeStems = new Set(playbackPlan.activeStems);
+  const hardSyncAllowed = force || now - lastStemHardSyncAt > (isMobileViewport() ? 650 : STEM_SYNC_COOLDOWN_MS);
+  let hardSynced = false;
+  for (const [stem, player] of Object.entries(stemPlayers)) {
+    if (!activeStems.has(stem) || player.readyState < 1) continue;
+    const action = mediaSyncAction({
+      masterTime: time,
+      mediaTime: player.currentTime,
+      playbackRate,
+      force,
+      hardDriftSeconds: hardSyncAllowed ? isMobileViewport() ? 0.14 : STEM_SYNC_DRIFT_SECONDS : Number.POSITIVE_INFINITY,
+      softDriftSeconds: isMobileViewport() ? 0.025 : 0.04,
+      maxRateCorrection: isMobileViewport() ? 0.05 : 0.03
+    });
+    if (action.seekTo !== null) {
+      try {
+        player.currentTime = action.seekTo;
+        hardSynced = true;
+      } catch {
+      }
     }
+    if (Math.abs(player.playbackRate - action.playbackRate) > 1e-3) player.playbackRate = action.playbackRate;
   }
+  if (hardSynced) lastStemHardSyncAt = now;
 };
 var playStems = () => {
   if (!stemReady) return Promise.resolve(false);
+  const playbackPlan = currentStemPlaybackPlan();
+  const activeStems = new Set(playbackPlan.activeStems);
+  if (playbackPlan.useOriginalMix || activeStems.size === 0) return Promise.resolve(false);
   lastStemHardSyncAt = 0;
   syncStemPlayers(ws?.getCurrentTime?.() ?? 0, { force: true });
-  return Promise.allSettled(Object.values(stemPlayers).map((player) => player.play())).then((results) => {
+  const players = Object.entries(stemPlayers).filter(([stem]) => activeStems.has(stem)).map(([, player]) => player);
+  for (const [stem, player] of Object.entries(stemPlayers)) {
+    if (!activeStems.has(stem)) player.pause();
+  }
+  return Promise.allSettled(players.map((player) => player.play())).then((results) => {
     stemsAudible = results.some((result) => result.status === "fulfilled");
     applyMusicVolume(SELECTORS.volMusic.value);
     if (!stemsAudible) {
@@ -3484,7 +3591,7 @@ var pauseStems = () => {
 var applyMusicVolume = (value) => {
   const effectiveValue = isMobileViewport() ? 100 : value;
   const volume = Math.min(1, Math.max(0, (Number(effectiveValue) || 0) / 100));
-  ws?.setVolume(stemReady ? 0 : volume);
+  ws?.setVolume(stemReady && !currentStemPlaybackPlan().useOriginalMix ? 0 : volume);
   SELECTORS.videoPlayer.volume = volume;
   applyStemMix();
 };
@@ -3521,12 +3628,25 @@ var syncVideoToAudio = (time, { force = false } = {}) => {
   const video = SELECTORS.videoPlayer;
   if (video.readyState < 1) return;
   const now = performance.now();
-  const minInterval = isMobileViewport() ? 900 : 450;
+  const minInterval = isMobileViewport() ? 320 : 450;
   if (!force && now - lastVideoSyncAt < minInterval) return;
   lastVideoSyncAt = now;
-  const drift = Math.abs(video.currentTime - time);
-  const threshold = isMobileViewport() ? 0.42 : 0.22;
-  if (force || drift > threshold) video.currentTime = time;
+  const action = mediaSyncAction({
+    masterTime: time,
+    mediaTime: video.currentTime,
+    playbackRate,
+    force,
+    hardDriftSeconds: isMobileViewport() ? 0.2 : 0.28,
+    softDriftSeconds: isMobileViewport() ? 0.04 : 0.06,
+    maxRateCorrection: isMobileViewport() ? 0.04 : 0.025
+  });
+  if (action.seekTo !== null) {
+    try {
+      video.currentTime = action.seekTo;
+    } catch {
+    }
+  }
+  if (Math.abs(video.playbackRate - action.playbackRate) > 1e-3) video.playbackRate = action.playbackRate;
 };
 var playVideo = () => {
   if (!videoAvailable || !SELECTORS.videoPlayer.src) return;
@@ -3553,7 +3673,7 @@ var setActiveTab = (tab) => {
   SELECTORS.tabScore.classList.toggle("active", scoreActive);
   SELECTORS.structurePanel.hidden = scoreActive;
   SELECTORS.scorePanel.hidden = !scoreActive;
-  SELECTORS.sessionPanel.hidden = scoreActive || sidebarItemsCount === 0;
+  SELECTORS.sessionPanel.hidden = scoreActive || sidebarItemsCount === 0 && !staticLibraryMode;
   SELECTORS.scoreHistoryPanel.hidden = !scoreActive;
   SELECTORS.topbarSong.hidden = scoreActive || !currentId;
   SELECTORS.topbarActions.hidden = scoreActive || !currentId;
@@ -4061,9 +4181,12 @@ var initStemPlayers = (stemAssets) => {
   if (!hasStemAssets({ stems: stemAssets })) return false;
   for (const stem of STEM_NAMES) {
     const player = new Audio(stemAssets[stem]);
-    player.preload = "auto";
+    player.preload = isMobileViewport() ? "metadata" : "auto";
     preserveMediaPitch(player);
     player.playbackRate = playbackRate;
+    player.addEventListener("loadedmetadata", () => {
+      if (ws) syncStemPlayers(ws.getCurrentTime(), { force: true });
+    });
     stemPlayers[stem] = player;
   }
   stemReady = true;
@@ -5157,7 +5280,7 @@ var renderStemPanel = (assets) => {
   if (SELECTORS.stemExportClick.disabled) SELECTORS.stemExportClick.checked = false;
   SELECTORS.btnExportStemMix.disabled = !available || stemExportInProgress;
   SELECTORS.stemStatus.className = available ? "stem-status ok" : "stem-status";
-  SELECTORS.stemStatus.textContent = available ? "\u6E96\u5099\u5B8C\u4E86" : hasServer ? "\u30D1\u30FC\u30C8\u751F\u6210\u307E\u3067\u306F\u5143\u97F3\u6E90\u3092\u518D\u751F\u3057\u307E\u3059" : "\u5143\u97F3\u6E90";
+  SELECTORS.stemStatus.textContent = available ? isMobileViewport() && !mobileStemMixActivated ? "\u8EFD\u91CF\u518D\u751F \xB7 \u5143\u97F3\u6E90\u3092\u4F7F\u7528\uFF08\u30D1\u30FC\u30C8\u64CD\u4F5C\u3067\u5207\u66FF\uFF09" : "\u30D1\u30FC\u30C8\u518D\u751F \xB7 \u81EA\u52D5\u540C\u671F" : hasServer ? "\u30D1\u30FC\u30C8\u751F\u6210\u307E\u3067\u306F\u5143\u97F3\u6E90\u3092\u518D\u751F\u3057\u307E\u3059" : "\u5143\u97F3\u6E90";
   applyStemMix();
   updateStemExportScopeAvailability();
 };
@@ -5199,6 +5322,8 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     ws = null;
   }
   destroyStemPlayers();
+  currentStemAssets = hasStemAssets({ stems: stemAssets }) ? stemAssets : null;
+  mobileStemMixActivated = false;
   initVideoPlayer(videoUrl);
   waveformDrag = null;
   SELECTORS.timeCur.textContent = "00:00";
@@ -5217,7 +5342,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     barRadius: 2,
     plugins: [d2.create()]
   });
-  initStemPlayers(stemAssets);
+  if (currentStemAssets && !isMobileViewport()) initStemPlayers(currentStemAssets);
   applyMusicVolume(SELECTORS.volMusic.value);
   ws.setPlaybackRate?.(playbackRate, true);
   preserveMediaPitch(ws.getMediaElement?.());
@@ -5594,6 +5719,7 @@ var setupControls = () => {
       }
       saveStemLastVolumes(lastVolumes);
       saveStemMix(mix);
+      activateMobileStemMix();
       applyStemMix();
     };
     controls.volume.oninput = () => {
@@ -5607,6 +5733,7 @@ var setupControls = () => {
         saveStemLastVolumes(lastVolumes);
       }
       saveStemMix(mix);
+      activateMobileStemMix();
       applyStemMix();
     };
     controls.solo.onclick = () => setStemMixMode(stem, "solo");
@@ -5616,6 +5743,7 @@ var setupControls = () => {
     clearStemMixMode();
     saveStemMix({ ...DEFAULT_STEM_MIX });
     saveStemLastVolumes({ ...DEFAULT_STEM_MIX });
+    deactivateMobileStemMix();
     applyStemMix();
   };
 };
@@ -5660,8 +5788,8 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   SELECTORS.btnBpmSave.hidden = !hasServer;
   SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
   applyPlaybackRate(playbackRate);
-  renderStemPanel(assets);
   initWaveSurfer(assets.audio, assets.video, assets.stems);
+  renderStemPanel(assets);
   setupControls();
   const maxBars = Math.max(...data.sections.map((section) => section.bar_count));
   SELECTORS.sections.innerHTML = "";
@@ -6051,7 +6179,7 @@ var cleanStorageCategory = async (key) => {
     if (button) button.disabled = false;
   }
 };
-var renderSidebar = (items) => {
+var renderSidebar = (items, { error = "" } = {}) => {
   currentSidebarItems = items;
   SELECTORS.sidebarList.innerHTML = "";
   const visibleItems = filterLibraryItems(items, {
@@ -6062,8 +6190,15 @@ var renderSidebar = (items) => {
   const validIds = new Set(items.map((item) => item.id));
   selectedSessionIds = new Set([...selectedSessionIds].filter((id) => validIds.has(id)));
   if (!selectedSessionIds.has(lastSelectedSessionId)) lastSelectedSessionId = null;
-  SELECTORS.sessionPanel.hidden = currentFeature === "score" || items.length === 0;
-  if (items.length === 0) return;
+  SELECTORS.sessionPanel.hidden = currentFeature === "score" || items.length === 0 && !staticLibraryMode;
+  if (items.length === 0) {
+    SELECTORS.sidebarList.innerHTML = error ? `<div class="library-empty library-empty-error"><strong>\u66F2\u4E00\u89A7\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093\u3067\u3057\u305F</strong><span>${escapeHtml(error)}</span><button class="mini-btn" id="btn-library-retry" type="button">\u518D\u8AAD\u307F\u8FBC\u307F</button></div>` : `<div class="library-empty"><strong>\u307E\u3060\u66F2\u304C\u3042\u308A\u307E\u305B\u3093</strong><span>\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u30A2\u30D7\u30EA\u304B\u3089\u30AF\u30E9\u30A6\u30C9\u540C\u671F\u3059\u308B\u3068\u3001\u3053\u3053\u306B\u8868\u793A\u3055\u308C\u307E\u3059\u3002</span></div>`;
+    SELECTORS.sidebarList.querySelector("#btn-library-retry")?.addEventListener("click", async () => {
+      await loadHistory();
+      if (isMobileViewport()) openMobileSidebar();
+    });
+    return;
+  }
   if (visibleItems.length === 0) {
     SELECTORS.sidebarList.innerHTML = `<div class="library-empty">\u6761\u4EF6\u306B\u4E00\u81F4\u3059\u308B\u66F2\u304C\u3042\u308A\u307E\u305B\u3093</div>`;
     return;
@@ -6304,19 +6439,28 @@ var loadHistory = async () => {
   try {
     const manifestUrl = staticLibraryMode ? STATIC_MANIFEST_URL : "results/manifest.json";
     const response = await fetch(manifestUrl, { cache: "no-store" });
-    if (!response.ok) return;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const items = await response.json();
+    if (!Array.isArray(items)) throw new Error("\u66F2\u4E00\u89A7\u306E\u5F62\u5F0F\u304C\u6B63\u3057\u304F\u3042\u308A\u307E\u305B\u3093");
     renderSidebar(items);
     return items;
-  } catch {
-    renderSidebar([]);
+  } catch (error) {
+    renderSidebar([], { error: error?.message || "\u901A\u4FE1\u3092\u78BA\u8A8D\u3057\u3066\u518D\u8AAD\u307F\u8FBC\u307F\u3057\u3066\u304F\u3060\u3055\u3044" });
+    if (staticLibraryMode && isMobileViewport()) openMobileSidebar();
   }
   return [];
 };
 var restoreLastStructureSession = async (items) => {
-  if (!Array.isArray(items) || items.length === 0 || currentId) return;
+  if (!Array.isArray(items) || items.length === 0 || currentId) {
+    if (staticLibraryMode && isMobileViewport() && !currentId) openMobileSidebar();
+    return;
+  }
   setActiveTab("structure");
   const lastId = cfg()[lastStructureSessionKey];
+  if (staticLibraryMode && isMobileViewport() && !lastId) {
+    openMobileSidebar();
+    return;
+  }
   const session = items.find((item) => item.id === lastId) || items[0];
   await loadResult(session);
 };

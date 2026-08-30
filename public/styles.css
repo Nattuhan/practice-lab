@@ -4106,3 +4106,46 @@ select:focus,
   .section-editor-selection { grid-template-columns: 30px minmax(150px, 1fr) 78px 12px 78px; }
   .section-editor-tools { justify-content: flex-end; }
 }
+
+/* Mobile library discovery and low-overhead practice controls */
+.mobile-library-btn { display: none; }
+.library-empty {
+  display: grid;
+  gap: 8px;
+  padding: 18px 12px;
+  line-height: 1.55;
+}
+.library-empty strong { color: var(--gray-8); font-size: 12px; }
+.library-empty span { color: var(--gray-6); font-size: 11px; }
+.library-empty .mini-btn { width: fit-content; margin-top: 4px; }
+.library-empty-error strong { color: var(--red); }
+
+@media (max-width: 680px) {
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .sidebar {
+    width: min(92vw, 380px);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .topbar { padding-top: calc(7px + env(safe-area-inset-top)); }
+  .mobile-library-btn {
+    display: inline-flex;
+    width: auto;
+    min-width: 92px;
+    height: 36px;
+    gap: 6px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  .mobile-library-btn span { display: inline; white-space: nowrap; }
+  .mobile-library-btn svg { width: 16px; height: 16px; }
+  .library-empty .mini-btn { min-height: 42px; padding-inline: 14px; }
+  .transport-bar {
+    position: sticky;
+    z-index: 16;
+    bottom: env(safe-area-inset-bottom);
+    border-top: 1px solid rgba(255, 255, 255, .08);
+    background: rgba(24, 28, 34, .96);
+  }
+  .stem-row { min-height: 46px; }
+  .main { padding-bottom: calc(54px + env(safe-area-inset-bottom)); }
+}
