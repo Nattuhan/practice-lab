@@ -36,3 +36,26 @@ export const mediaSyncAction = ({
     drift,
   };
 };
+
+export const stemGroupSyncAction = ({
+  masterTime,
+  mediaTimes,
+  playbackRate = 1,
+  force = false,
+  hardDriftSeconds = 0.075,
+}) => {
+  const baseRate = Math.max(0.01, Number(playbackRate) || 1);
+  const target = Math.max(0, Number(masterTime) || 0);
+  const drifts = (mediaTimes || [])
+    .map(time => Number(time) - target)
+    .filter(Number.isFinite);
+  const maximumDrift = drifts.reduce(
+    (maximum, drift) => Math.max(maximum, Math.abs(drift)),
+    0,
+  );
+  return {
+    playbackRate: baseRate,
+    seekTo: force || maximumDrift >= hardDriftSeconds ? target : null,
+    maximumDrift,
+  };
+};

@@ -5,7 +5,7 @@ import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "./
 import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
-import { mediaSyncAction, planStemPlayback } from "./playback-sync.js";
+import { mediaSyncAction, planStemPlayback, stemGroupSyncAction } from "./playback-sync.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -1043,7 +1043,7 @@ const setStemMixMode = (stem, type) => {
 };
 const hasStemAssets = assets =>
   !!assets?.stems && STEM_NAMES.every(stem => typeof assets.stems[stem] === "string" && assets.stems[stem]);
-const STEM_SYNC_DRIFT_SECONDS = 0.45;
+const STEM_SYNC_DRIFT_SECONDS = 0.075;
 const STEM_SYNC_COOLDOWN_MS = 1200;
 
 const destroyStemPlayers = () => {
@@ -1227,28 +1227,29 @@ const syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } =
   const now = performance.now();
   const playbackPlan = currentStemPlaybackPlan();
   const activeStems = new Set(playbackPlan.activeStems);
+  const players = Object.entries(stemPlayers)
+    .filter(([stem, player]) => activeStems.has(stem) && player.readyState >= 1)
+    .map(([, player]) => player);
+  if (!players.length) return;
   const hardSyncAllowed = force || now - lastStemHardSyncAt > (isMobileViewport() ? 650 : STEM_SYNC_COOLDOWN_MS);
-  let hardSynced = false;
-  for (const [stem, player] of Object.entries(stemPlayers)) {
-    if (!activeStems.has(stem) || player.readyState < 1) continue;
-    const action = mediaSyncAction({
-      masterTime: time,
-      mediaTime: player.currentTime,
-      playbackRate,
-      force,
-      hardDriftSeconds: hardSyncAllowed ? (isMobileViewport() ? 0.14 : STEM_SYNC_DRIFT_SECONDS) : Number.POSITIVE_INFINITY,
-      softDriftSeconds: isMobileViewport() ? 0.025 : 0.04,
-      maxRateCorrection: isMobileViewport() ? 0.05 : 0.03,
-    });
+  const action = stemGroupSyncAction({
+    masterTime: time,
+    mediaTimes: players.map(player => player.currentTime),
+    playbackRate,
+    force,
+    hardDriftSeconds: hardSyncAllowed
+      ? (isMobileViewport() ? 0.06 : STEM_SYNC_DRIFT_SECONDS)
+      : Number.POSITIVE_INFINITY,
+  });
+  for (const player of players) {
     if (action.seekTo !== null) {
       try {
         player.currentTime = action.seekTo;
-        hardSynced = true;
       } catch {}
     }
     if (Math.abs(player.playbackRate - action.playbackRate) > 0.001) player.playbackRate = action.playbackRate;
   }
-  if (hardSynced) lastStemHardSyncAt = now;
+  if (action.seekTo !== null) lastStemHardSyncAt = now;
 };
 
 const playStems = () => {

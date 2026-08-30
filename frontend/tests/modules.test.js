@@ -4,7 +4,7 @@ import test from "node:test";
 import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "../src/library.js";
 import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "../src/loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor.js";
-import { mediaSyncAction, planStemPlayback } from "../src/playback-sync.js";
+import { mediaSyncAction, planStemPlayback, stemGroupSyncAction } from "../src/playback-sync.js";
 import { formatBytes } from "../src/storage.js";
 import { extractWaveformPeaks } from "../src/waveform-peaks.js";
 
@@ -90,6 +90,24 @@ test("小さな音ズレは速度で滑らかに補正し、大きなズレは�
   const hard = mediaSyncAction({ masterTime: 10, mediaTime: 10.3, playbackRate: 1, hardDriftSeconds: 0.2 });
   assert.equal(hard.seekTo, 10);
   assert.equal(hard.playbackRate, 1);
+});
+
+test("ステムは個別に速度を変えず全パートを同時刻へ一括同期する", () => {
+  const small = stemGroupSyncAction({
+    masterTime: 10,
+    mediaTimes: [10.03, 9.96, 10.02, 10.01],
+    playbackRate: 1,
+  });
+  assert.equal(small.seekTo, null);
+  assert.equal(small.playbackRate, 1);
+
+  const drifted = stemGroupSyncAction({
+    masterTime: 10,
+    mediaTimes: [10.09, 9.98, 10.01, 10.02],
+    playbackRate: 1,
+  });
+  assert.equal(drifted.seekTo, 10);
+  assert.equal(drifted.playbackRate, 1);
 });
 
 test("実音源のサンプルから表示用波形を生成する", () => {
