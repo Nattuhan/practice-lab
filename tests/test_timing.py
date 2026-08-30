@@ -76,6 +76,32 @@ class TempoGridNormalizationTests(unittest.TestCase):
         self.assertEqual(adjusted["sections"][0]["start_bar"], 1)
         self.assertEqual(adjusted["sections"][1]["start_bar"], adjusted["sections"][0]["end_bar"] + 1)
 
+    def test_backfills_sparse_intro_when_stable_grid_starts_after_24_detected_beats(self):
+        sparse_intro = [
+            1.10, 1.92, 2.73, 3.52, 4.33, 5.14, 5.95, 6.79,
+            7.56, 8.37, 9.18, 9.97, 10.79, 11.49, 12.18, 12.86,
+            13.60, 14.42, 15.21, 16.02, 16.82, 17.64, 18.43, 19.25,
+            20.05, 20.86, 21.65, 22.47, 23.27, 23.84, 24.38, 24.88,
+        ]
+        stable = [round(24.88 + 0.4 * index, 2) for index in range(1, 50)]
+        beats = sparse_intro + stable
+        data = {
+            "bpm": 150.0,
+            "total_bars": 15,
+            "beats": beats,
+            "downbeats": [25.28, 26.88, 28.48, 30.08, 31.68, 33.28],
+            "sections": [],
+        }
+
+        adjusted = normalize_tempo_grid(data)
+
+        self.assertIsNot(adjusted, data)
+        self.assertTrue(all(
+            round(right - left, 2) == 0.4
+            for left, right in zip(adjusted["beats"][:50], adjusted["beats"][1:51])
+        ))
+        self.assertGreater(len(adjusted["beats"]), len(beats))
+
     def test_does_not_flatten_a_short_tempo_change_later_in_song(self):
         beats = [round(index * 0.9, 2) for index in range(40)]
         beats.extend(round(beats[-1] + 0.61 * index, 2) for index in range(1, 30))

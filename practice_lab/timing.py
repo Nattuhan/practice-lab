@@ -50,7 +50,7 @@ def _downbeats_from_grid(beats: list[float], original_downbeats: list[float]) ->
 def _find_stable_leading_transition(beats: list[float], expected: float) -> tuple[int, float] | None:
     intervals = _intervals(beats)
     window_size = 12
-    maximum_index = min(len(intervals) - window_size, 24)
+    maximum_index = len(intervals) - window_size
     for index in range(4, maximum_index + 1):
         window = intervals[index:index + window_size]
         stable_interval = median(window)
