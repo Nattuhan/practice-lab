@@ -1,6 +1,6 @@
 {
   "name": "practice-lab",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "private": true,
   "description": "Music analysis and practice desktop app",
   "author": "Nattuhan",
@@ -12,6 +12,7 @@
     "desktop:start": "electron .",
     "desktop:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_desktop_backend.ps1",
     "desktop:backend:mac": "bash scripts/build_desktop_backend_macos.sh",
+    "desktop:analysis:mac": "bash scripts/build_desktop_analysis_runtime_macos.sh",
     "desktop:prepare": "node scripts/prepare_desktop_binaries.mjs",
     "desktop:prepare:mac": "node scripts/prepare_desktop_binaries.mjs && bash scripts/prepare_macos_icon.sh",
     "desktop:dist": "electron-builder --win nsis",
