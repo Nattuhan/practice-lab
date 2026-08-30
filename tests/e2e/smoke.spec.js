@@ -352,7 +352,9 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
     ...baselineResult,
     duration: 8,
     total_bars: 4,
-    beats: Array.from({ length: 32 }, (_, index) => index * .25),
+    // Keep a future click voice scheduled throughout the drag so cancellation
+    // is deterministic instead of depending on a 55 ms timing window.
+    beats: Array.from({ length: 160 }, (_, index) => index * .05),
     downbeats: [0, 2, 4, 6],
     sections: [{ label: "verse", start_bar: 1, end_bar: 4, bar_count: 4, start_time: 0, end_time: 8, start_time_str: "00:00" }],
   };
