@@ -377,6 +377,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
       mediaPlayCalls: 0,
       oscillatorStopCalls: 0,
       repeatedOscillatorStops: 0,
+      stemNonBaseRateWrites: 0,
     };
     window.Audio = function Audio(...args) {
       audit.audioInstances += 1;
@@ -388,6 +389,32 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
       audit.mediaPlayCalls += 1;
       return nativePlay.apply(this, args);
     };
+    const nativeCurrentTime = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime");
+    Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+      configurable: nativeCurrentTime.configurable,
+      enumerable: nativeCurrentTime.enumerable,
+      get() {
+        const value = nativeCurrentTime.get.call(this);
+        return this.src.includes("/stems/e2e-baseline/vocals.wav") ? value + .09 : value;
+      },
+      set(value) {
+        return nativeCurrentTime.set.call(this, value);
+      },
+    });
+    const nativePlaybackRate = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "playbackRate");
+    Object.defineProperty(HTMLMediaElement.prototype, "playbackRate", {
+      configurable: nativePlaybackRate.configurable,
+      enumerable: nativePlaybackRate.enumerable,
+      get() {
+        return nativePlaybackRate.get.call(this);
+      },
+      set(value) {
+        if (this.src.includes("/stems/e2e-baseline/") && Math.abs(value - 1) > .001) {
+          audit.stemNonBaseRateWrites += 1;
+        }
+        return nativePlaybackRate.set.call(this, value);
+      },
+    });
     const NativeContext = window.AudioContext || window.webkitAudioContext;
     if (NativeContext) {
       const nativeCreateOscillator = NativeContext.prototype.createOscillator;
@@ -434,6 +461,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
   expect(audit.audioInstances).toBe(beforeResize.audioInstances);
   expect(audit.audioInstances).toBe(4);
   expect(audit.repeatedOscillatorStops).toBeGreaterThan(0);
+  expect(audit.stemNonBaseRateWrites).toBe(0);
   expect(audit.mediaPlayCalls - beforeResize.mediaPlayCalls).toBeLessThan(16);
 });
 
