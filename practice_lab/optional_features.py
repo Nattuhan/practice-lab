@@ -292,7 +292,21 @@ def _safe_extract(archive: Path, destination: Path) -> None:
             target = (destination / member.filename).resolve()
             if target != destination_root and destination_root not in target.parents:
                 raise RuntimeError("追加機能パックに不正なパスが含まれています")
-        bundle.extractall(destination)
+            mode = member.external_attr >> 16
+            if not stat.S_ISLNK(mode):
+                bundle.extract(member, destination)
+                continue
+            link_value = bundle.read(member).decode("utf-8")
+            link_target = Path(link_value)
+            resolved_link = (
+                link_target.resolve()
+                if link_target.is_absolute()
+                else (target.parent / link_target).resolve()
+            )
+            if resolved_link != destination_root and destination_root not in resolved_link.parents:
+                raise RuntimeError("追加機能パックに不正なリンクが含まれています")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(link_value)
 
 
 def install_windows_cpu_runtime(progress: Callable[[str], None] | None = None) -> dict:

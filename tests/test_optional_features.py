@@ -4,6 +4,7 @@ import io
 import hashlib
 import json
 import os
+import stat
 import urllib.error
 import zipfile
 from pathlib import Path
@@ -156,6 +157,35 @@ class OptionalFeatureTests(unittest.TestCase):
             with zipfile.ZipFile(archive, "w") as bundle:
                 bundle.writestr("../escape.txt", "unsafe")
             with self.assertRaisesRegex(RuntimeError, "不正なパス"):
+                optional_features._safe_extract(archive, root / "destination")
+
+    @unittest.skipIf(os.name == "nt", "Windowsではシンボリックリンク権限が必要")
+    def test_feature_archive_preserves_safe_relative_symlink(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            archive = root / "feature.zip"
+            link = zipfile.ZipInfo("runtime/Python")
+            link.create_system = 3
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr("runtime/Python.framework/Python", b"binary")
+                bundle.writestr(link, "Python.framework/Python")
+            destination = root / "destination"
+            optional_features._safe_extract(archive, destination)
+            extracted = destination / "runtime" / "Python"
+            self.assertTrue(extracted.is_symlink())
+            self.assertEqual(extracted.read_bytes(), b"binary")
+
+    def test_feature_archive_rejects_escaping_symlink(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            archive = root / "feature.zip"
+            link = zipfile.ZipInfo("runtime/Python")
+            link.create_system = 3
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr(link, "../../outside")
+            with self.assertRaisesRegex(RuntimeError, "不正なリンク"):
                 optional_features._safe_extract(archive, root / "destination")
 
 
