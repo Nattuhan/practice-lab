@@ -4895,11 +4895,15 @@ var refreshSettingsAnalysisStatus = async () => {
 };
 var renderOptionalFeatures = (features) => {
   const cpu = features?.["windows-cpu"] || {};
+  const macAnalysis = features?.["mac-analysis"] || {};
+  const analysis = cpu.available ? cpu : macAnalysis;
+  const analysisKey = cpu.available ? "windows-cpu" : "mac-analysis";
   const score = features?.score || {};
-  SELECTORS.settingsFeatureCpu.hidden = !cpu.available;
-  SELECTORS.settingsFeatureCpuStatus.textContent = cpu.installed ? `\u8FFD\u52A0\u6E08\u307F${cpu.bytes ? ` \xB7 ${formatBytes(cpu.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 NVIDIA\u306A\u3057\u3067\u89E3\u6790\u3059\u308B\u5834\u5408\u306B\u5FC5\u8981\u3067\u3059";
-  SELECTORS.settingsFeatureCpuInstall.hidden = !!cpu.installed;
-  SELECTORS.settingsFeatureCpuRemove.hidden = !cpu.installed;
+  SELECTORS.settingsFeatureCpu.hidden = !analysis.available;
+  SELECTORS.settingsFeatureCpu.dataset.featureKey = analysisKey;
+  SELECTORS.settingsFeatureCpuStatus.textContent = analysis.installed ? `\u8FFD\u52A0\u6E08\u307F${analysis.bytes ? ` \xB7 ${formatBytes(analysis.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u66F2\u69CB\u6210\u89E3\u6790\u3068\u30D1\u30FC\u30C8\u5206\u96E2\u3092\u4F7F\u3046\u5834\u5408\u306B\u5FC5\u8981\u3067\u3059";
+  SELECTORS.settingsFeatureCpuInstall.hidden = !!analysis.installed;
+  SELECTORS.settingsFeatureCpuRemove.hidden = !analysis.installed;
   SELECTORS.settingsFeatureScore.hidden = !score.available;
   SELECTORS.settingsFeatureScoreStatus.textContent = score.installed ? `\u8FFD\u52A0\u6E08\u307F${score.bytes ? ` \xB7 ${formatBytes(score.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u57FA\u672C\u30A2\u30D7\u30EA\u306E\u5BB9\u91CF\u306B\u306F\u542B\u307E\u308C\u307E\u305B\u3093";
   SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed;
@@ -4936,13 +4940,13 @@ var startScoreFeatureSetup = async () => {
   }
 };
 var removeOptionalFeature = async (feature) => {
-  const label = feature === "score" ? "\u697D\u8B5C\u62BD\u51FA\u6A5F\u80FD" : "Windows CPU\u89E3\u6790\u6A5F\u80FD";
+  const label = feature === "score" ? "\u697D\u8B5C\u62BD\u51FA\u6A5F\u80FD" : "\u89E3\u6790\u6A5F\u80FD";
   if (!await showConfirm(`${label}\u3092\u3053\u306EPC\u304B\u3089\u524A\u9664\u3057\u307E\u3059\u304B\uFF1F\u4FDD\u5B58\u6E08\u307F\u306E\u66F2\u3084\u6210\u679C\u7269\u306F\u524A\u9664\u3055\u308C\u307E\u305B\u3093\u3002`, {
     title: `${label}\u3092\u524A\u9664`,
     confirmLabel: "\u524A\u9664\u3059\u308B",
     danger: true
   })) return;
-  const response = await fetch(`/features/${feature === "score" ? "score" : "windows-cpu"}`, { method: "DELETE" });
+  const response = await fetch(`/features/${feature}`, { method: "DELETE" });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     await showAlert(result.detail || `${label}\u3092\u524A\u9664\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F`, { title: label });
@@ -5019,6 +5023,7 @@ var saveSettings = async () => {
   try {
     localStorage.setItem("practice_lab_settings_saved", enabled ? "test-cloud" : "saved");
     await desktop.saveSettings({
+      activateCloud: document.querySelector("[data-settings-section].active")?.dataset.settingsSection === "cloud",
       autoUpdate: SELECTORS.settingsAutoUpdate.checked,
       analysisMode: SELECTORS.settingsAnalysisNvidia?.checked ? "nvidia" : "cpu",
       cloud: {
@@ -5108,6 +5113,15 @@ var verifySavedCloudSettings = async () => {
 };
 var syncCloudLibrary = async () => {
   if (!hasServer || staticLibraryMode) return;
+  if (window.practiceLabDesktop?.prepareCloud) {
+    try {
+      await window.practiceLabDesktop.prepareCloud();
+      await refreshCloudStatus();
+    } catch (error) {
+      await showAlert(error.message, { title: "\u30AF\u30E9\u30A6\u30C9\u9023\u643A\u3092\u6709\u52B9\u306B\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F" });
+      return;
+    }
+  }
   if (!cloudStatus.configured) {
     await openSettings("cloud");
     return;
@@ -6852,7 +6866,8 @@ var startDesktopCpuSetup = async () => {
   SELECTORS.settingsCpuSetup.disabled = true;
   SELECTORS.desktopStatusAction.disabled = true;
   try {
-    const response = await fetch("/features/windows-cpu/install", { method: "POST" });
+    const feature = SELECTORS.settingsFeatureCpu?.dataset.featureKey || (desktopSystemStatus?.platform === "Darwin" ? "mac-analysis" : "windows-cpu");
+    const response = await fetch(`/features/${feature}/install`, { method: "POST" });
     const submitted = await response.json();
     if (!response.ok) throw new Error(submitted.detail || "CPU\u89E3\u6790\u6A5F\u80FD\u3092\u8FFD\u52A0\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
     trackQueuedJob(submitted.jobId, {
@@ -7031,7 +7046,9 @@ SELECTORS.settingsStorageRefresh?.addEventListener("click", loadStorageReport);
 SELECTORS.settingsNvidiaSetup?.addEventListener("click", startDesktopNvidiaSetup);
 SELECTORS.settingsCpuSetup?.addEventListener("click", startDesktopCpuSetup);
 SELECTORS.settingsFeatureCpuInstall?.addEventListener("click", startDesktopCpuSetup);
-SELECTORS.settingsFeatureCpuRemove?.addEventListener("click", () => removeOptionalFeature("windows-cpu"));
+SELECTORS.settingsFeatureCpuRemove?.addEventListener("click", () => removeOptionalFeature(
+  SELECTORS.settingsFeatureCpu?.dataset.featureKey || "windows-cpu"
+));
 SELECTORS.settingsFeatureScoreInstall?.addEventListener("click", startScoreFeatureSetup);
 SELECTORS.settingsFeatureScoreRemove?.addEventListener("click", () => removeOptionalFeature("score"));
 SELECTORS.storageList?.addEventListener("click", (event) => {
