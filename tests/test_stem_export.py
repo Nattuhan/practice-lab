@@ -20,7 +20,7 @@ class StemExportTests(unittest.TestCase):
             with (
                 patch.object(services, "PUBLIC_STEMS_DIR", root / "stems"),
                 patch.object(services, "DATA_WORK_DIR", work_dir),
-                patch.object(services.subprocess, "run") as run,
+                patch.object(services, "run_process") as run,
             ):
                 output = services.export_stem_mix(
                     "video123",
@@ -103,7 +103,7 @@ class StemExportTests(unittest.TestCase):
             with (
                 patch.object(services, "PUBLIC_STEMS_DIR", root / "stems"),
                 patch.object(services, "DATA_WORK_DIR", root / "work"),
-                patch.object(services.subprocess, "run") as run,
+                patch.object(services, "run_process") as run,
             ):
                 services.export_stem_mix(
                     "video123",

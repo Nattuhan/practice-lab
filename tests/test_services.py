@@ -54,7 +54,7 @@ class AudioConversionTests(unittest.TestCase):
           "target_offset": "0.0"
         }"""
 
-        with patch.object(services.subprocess, "run", side_effect=[analysis, MagicMock()]) as run:
+        with patch.object(services, "run_process", side_effect=[analysis, MagicMock()]) as run:
             services.convert_wav_to_mp3(Path("input.wav"), Path("output.mp3"))
 
         first_call = run.call_args_list[0]

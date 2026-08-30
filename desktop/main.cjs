@@ -288,6 +288,8 @@ async function startBackend({ cloudSecret = "" } = {}) {
       ANALYZER_TIMEOUT_SECONDS: "1800",
       ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS: "0",
       STEM_DEVICE: analysis.stemDevice,
+      STEM_TIMEOUT_SECONDS: "3600",
+      STEM_NO_OUTPUT_TIMEOUT_SECONDS: "600",
       PRACTICE_LAB_SKIP_ENV_FILE: "1",
       R2_ENABLED: cloudEnabled ? "1" : "0",
       R2_BUCKET: cloud.bucket,

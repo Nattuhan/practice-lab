@@ -18,6 +18,7 @@ import cv2
 from PIL import Image, ImageChops, ImageOps, ImageStat
 
 from .config import DATA_AUDIO_DIR, DATA_RESULTS_DIR, DATA_SCORE_DIR, PUBLIC_SCORE_DIR
+from .process_manager import run_process
 from .source_media import run_yt_dlp, yt_dlp_js_runtime
 
 MAX_OUTPUT_HEIGHT = 30000
@@ -49,7 +50,7 @@ MINOR_KEY_PROFILE = np.asarray((6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, capture_output=True, text=True, check=True)
+    return run_process(command, capture_output=True, text=True, check=True)
 
 
 def extract_video_id(url: str) -> str | None:
@@ -1681,7 +1682,7 @@ def read_printed_measure_numbers_batch(
                 request_path = Path(temp_dir) / "request.json"
                 response_path = Path(temp_dir) / "response.json"
                 request_path.write_text(json.dumps(payload), encoding="utf-8")
-                process = subprocess.run(
+                process = run_process(
                     [sys.executable, str(worker), str(request_path), str(response_path)],
                     capture_output=True,
                     text=True,

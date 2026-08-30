@@ -8,6 +8,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from .process_manager import run_process
+
 FULL_VIDEO_FALLBACK_FORMAT = "b[ext=mp4][height<=720]/b[height<=720]/b"
 FULL_VIDEO_FORMAT = (
     "bv*[vcodec^=avc1][height<=1080][ext=mp4]+ba[ext=m4a]/"
@@ -63,7 +65,7 @@ def trim_audio_range(
         shutil.copy2(source, destination)
         return
     input_args, output_args = _local_trim_args(start, end)
-    subprocess.run(
+    run_process(
         [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             *input_args, "-i", str(source), *output_args,
@@ -87,7 +89,7 @@ def trim_video_range(
         shutil.copy2(source, destination)
         return
     input_args, output_args = _local_trim_args(start, end)
-    subprocess.run(
+    run_process(
         [
             "ffmpeg", "-hide_banner", "-loglevel", "error",
             *input_args, "-i", str(source), *output_args,
@@ -121,7 +123,7 @@ def run_yt_dlp(
 
     def run(force_ipv4: bool, command_timeout: float) -> subprocess.CompletedProcess[str]:
         network_args = ["--force-ipv4"] if force_ipv4 else []
-        return subprocess.run(
+        return run_process(
             yt_dlp_command(*network_args, *args),
             timeout=command_timeout,
             **run_kwargs,

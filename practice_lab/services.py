@@ -24,6 +24,7 @@ from .cloud_sync import sync_cloud_incremental
 from .device_sync import record_session_deletions
 from .source_media import download_video, download_wav, get_title, normalize_analysis_range, source_media_cache_paths, trim_audio_range, trim_video_range
 from .optional_features import windows_cpu_runtime_executable
+from .process_manager import job_process_context, run_process, running_process, start_process, terminate_process, unregister_process
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
 from .timing import normalize_section_bar_ranges, normalize_tempo_grid
 
@@ -35,7 +36,6 @@ JOB_LOCK = threading.Lock()
 JOBS: dict[str, dict] = {}
 JOB_QUEUE: queue.Queue["QueuedJob"] = queue.Queue()
 JOB_WORKER_STARTED = False
-RUNNING_PROCESSES: dict[str, subprocess.Popen] = {}
 JOB_STORE_FILE = DATA_DIR / "jobs.json"
 JOB_STORE_LOADED = False
 class JobCanceledError(RuntimeError):
@@ -314,27 +314,6 @@ def mark_job_canceled(job_id: str) -> None:
     cli_log(job_id, "Canceled")
 
 
-def register_job_process(job_id: str, process: subprocess.Popen) -> None:
-    with JOB_LOCK:
-        RUNNING_PROCESSES[job_id] = process
-
-
-def unregister_job_process(job_id: str, process: subprocess.Popen) -> None:
-    with JOB_LOCK:
-        if RUNNING_PROCESSES.get(job_id) is process:
-            RUNNING_PROCESSES.pop(job_id, None)
-
-
-def terminate_process(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-
-
 def cancel_job(job_id: str) -> dict:
     process = None
     with JOB_LOCK:
@@ -347,7 +326,7 @@ def cancel_job(job_id: str) -> dict:
         current["cancel_requested"] = True
         current["message"] = "Cancel requested"
         current["updated_at"] = time.time()
-        process = RUNNING_PROCESSES.get(job_id)
+        process = running_process(job_id)
         queued = current.get("stage") == "queued"
         persist_jobs_locked()
     if process is not None:
@@ -366,7 +345,8 @@ def queued_job_worker() -> None:
                 continue
             set_job_status(job.id, "running", job.description)
             raise_if_job_canceled(job.id)
-            result = job.func()
+            with job_process_context(job.id):
+                result = job.func()
             raise_if_job_canceled(job.id)
             complete_job_status(job.id, "Complete", result)
         except JobCanceledError:
@@ -492,7 +472,7 @@ def publish_video(source: Path, destination: Path) -> None:
 def convert_wav_to_mp3(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     analysis_filter = "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json"
-    analysis = subprocess.run(
+    analysis = run_process(
         [
             "ffmpeg",
             "-i",
@@ -524,7 +504,7 @@ def convert_wav_to_mp3(source: Path, destination: Path) -> None:
         f"offset={measured['target_offset']}:"
         "linear=true:print_format=summary"
     )
-    subprocess.run(
+    run_process(
         [
             "ffmpeg",
             "-i",
@@ -545,7 +525,7 @@ def convert_wav_to_mp3(source: Path, destination: Path) -> None:
 
 def convert_audio_to_wav(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
+    run_process(
         [
             "ffmpeg",
             "-hide_banner",
@@ -569,7 +549,7 @@ def convert_audio_to_wav(source: Path, destination: Path) -> None:
 
 def convert_stem_wav_to_mp3(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
+    run_process(
         [
             "ffmpeg",
             "-i",
@@ -662,7 +642,7 @@ def export_stem_mix(
         "-y", str(output_path),
     ])
     try:
-        subprocess.run(command, capture_output=True, check=True)
+        run_process(command, capture_output=True, check=True)
     except Exception:
         output_path.unlink(missing_ok=True)
         raise
@@ -846,8 +826,9 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
         wsl_python=WSL_PYTHON,
         native_executable=native_executable,
     )
-    process = subprocess.Popen(
+    process = start_process(
         command,
+        job_id=job_id,
         cwd=process_cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -857,7 +838,6 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
         errors="replace",
         bufsize=1,
     )
-    register_job_process(job_id, process)
     json_line = ""
     output_lines: list[str] = []
     output_queue: queue.Queue[str] = queue.Queue()
@@ -932,12 +912,12 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
                 stage, message = progress
                 set_job_status(job_id, stage, message)
     except subprocess.TimeoutExpired as exc:
-        process.kill()
+        terminate_process(process)
         reader.join(timeout=2)
         set_job_status(job_id, "error", "Analysis timed out", done=True, error="Analysis timed out")
         raise RuntimeError("解析タイムアウト") from exc
     finally:
-        unregister_job_process(job_id, process)
+        unregister_process(job_id, process)
         if process.stdout is not None:
             process.stdout.close()
     if process.returncode != 0:
@@ -978,8 +958,9 @@ def run_stem_splitter(audio_path: Path, video_id: str, job_id: str | None = None
         native_executable=native_executable,
     )
     set_job_status(job_id, "stems", f"Separating stems on {backend.label}")
-    process = subprocess.Popen(
+    process = start_process(
         command,
+        job_id=job_id,
         cwd=process_cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -989,14 +970,34 @@ def run_stem_splitter(audio_path: Path, video_id: str, job_id: str | None = None
         errors="replace",
         bufsize=1,
     )
-    register_job_process(job_id, process)
     output_lines: list[str] = []
-    try:
+    output_queue: queue.Queue[str] = queue.Queue()
+
+    def read_output() -> None:
         assert process.stdout is not None
         for raw_line in process.stdout:
+            output_queue.put(raw_line)
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    try:
+        started_at = time.monotonic()
+        deadline = started_at + float(os.environ.get("STEM_TIMEOUT_SECONDS", "3600"))
+        silence_limit = float(os.environ.get("STEM_NO_OUTPUT_TIMEOUT_SECONDS", "600"))
+        last_output_at = started_at
+        while process.poll() is None:
             if is_job_cancel_requested(job_id):
                 terminate_process(process)
                 raise JobCanceledError("Canceled")
+            now = time.monotonic()
+            if now >= deadline or silence_limit > 0 and now - last_output_at >= silence_limit:
+                terminate_process(process)
+                raise RuntimeError("ステム分離がタイムアウトしました")
+            try:
+                raw_line = output_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            last_output_at = time.monotonic()
             line = raw_line.strip()
             if not line:
                 continue
@@ -1005,9 +1006,18 @@ def run_stem_splitter(audio_path: Path, video_id: str, job_id: str | None = None
             if progress:
                 stage, message = progress
                 set_job_status(job_id, stage, message)
-        process.wait()
+        reader.join(timeout=2)
+        while True:
+            try:
+                raw_line = output_queue.get_nowait()
+            except queue.Empty:
+                break
+            line = raw_line.strip()
+            if line:
+                output_lines.append(line)
     finally:
-        unregister_job_process(job_id, process)
+        unregister_process(job_id, process)
+        reader.join(timeout=2)
         if process.stdout is not None:
             process.stdout.close()
     if process.returncode != 0:

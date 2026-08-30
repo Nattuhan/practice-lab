@@ -36,7 +36,7 @@ class YtDlpDownloadTests(unittest.TestCase):
                 raise subprocess.TimeoutExpired(command, 10)
             return subprocess.CompletedProcess(command, 0, "Demo title\n", "")
 
-        with patch.object(source_media.subprocess, "run", side_effect=fake_run):
+        with patch.object(source_media, "run_process", side_effect=fake_run):
             title = source_media.get_title("https://youtu.be/example", "example")
             source_media.get_title("https://youtu.be/second", "second")
 
@@ -46,7 +46,7 @@ class YtDlpDownloadTests(unittest.TestCase):
         self.assertIn("--force-ipv4", commands[2])
 
     def test_title_failure_uses_video_id_fallback(self):
-        with patch.object(source_media.subprocess, "run", side_effect=subprocess.TimeoutExpired(["yt-dlp"], 10)):
+        with patch.object(source_media, "run_process", side_effect=subprocess.TimeoutExpired(["yt-dlp"], 10)):
             title = source_media.get_title("https://youtu.be/example", "example")
 
         self.assertEqual(title, "example")
@@ -65,7 +65,7 @@ class YtDlpDownloadTests(unittest.TestCase):
                 output.write_bytes(b"video")
                 return subprocess.CompletedProcess(command, 0, "", "")
 
-            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media.subprocess, "run", side_effect=fake_run), patch.object(source_media.time, "sleep"):
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media.time, "sleep"):
                 source_media.download_video("https://youtu.be/example", destination)
 
             self.assertEqual(calls, 2)
@@ -87,7 +87,7 @@ class YtDlpDownloadTests(unittest.TestCase):
             def fake_trim(source, target, *_range):
                 target.write_bytes(source.read_bytes())
 
-            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media.subprocess, "run", side_effect=fake_run), patch.object(source_media, "trim_audio_range", side_effect=fake_trim) as trim:
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media, "trim_audio_range", side_effect=fake_trim) as trim:
                 source_media.download_wav("https://youtu.be/example", destination, 3, None)
 
             self.assertIn("--cookies-from-browser", commands[1])
@@ -109,7 +109,7 @@ class YtDlpDownloadTests(unittest.TestCase):
             def fake_trim(source, target, *_range):
                 target.write_bytes(source.read_bytes())
 
-            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=[]), patch.object(source_media.subprocess, "run", side_effect=fake_run), patch.object(source_media, "trim_video_range", side_effect=fake_trim) as trim:
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=[]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media, "trim_video_range", side_effect=fake_trim) as trim:
                 source_media.download_video("https://youtu.be/example", destination, 30.5, 95)
 
             self.assertEqual(commands[0][commands[0].index("-f") + 1], source_media.FULL_VIDEO_FORMAT)
@@ -130,7 +130,7 @@ class YtDlpDownloadTests(unittest.TestCase):
                 output.write_bytes(b"fallback")
                 return subprocess.CompletedProcess(command, 0, "", "")
 
-            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media.subprocess, "run", side_effect=fake_run), patch.object(source_media.time, "sleep"):
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media.time, "sleep"):
                 source_media.download_video("https://youtu.be/example", destination)
 
             self.assertEqual(commands[2][commands[2].index("-f") + 1], source_media.FULL_VIDEO_FALLBACK_FORMAT)
