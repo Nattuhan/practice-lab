@@ -147,6 +147,70 @@ test("可視操作を小さく潰さず文字を切らない", async ({ page }) 
   expect(issues).toEqual([]);
 });
 
+test("スマホ縦横で主要画面と設定全項目が画面内に収まる", async ({ page }) => {
+  await installDesktopSettingsMock(page);
+  const assertFitsViewport = async locator => {
+    const fit = await locator.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        viewportWidth: innerWidth,
+        viewportHeight: innerHeight,
+      };
+    });
+    expect(fit.left).toBeGreaterThanOrEqual(-1);
+    expect(fit.top).toBeGreaterThanOrEqual(-1);
+    expect(fit.right).toBeLessThanOrEqual(fit.viewportWidth + 1);
+    expect(fit.bottom).toBeLessThanOrEqual(fit.viewportHeight + 1);
+  };
+
+  for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+
+    await page.getByRole("button", { name: "新しい解析", exact: true }).click();
+    await assertFitsViewport(page.locator("#analysis-dialog"));
+    expect(await page.locator("#analysis-dialog").evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await page.getByRole("button", { name: "解析画面を閉じる" }).click();
+
+    await page.locator("#btn-top-settings").click();
+    const settings = page.locator("#settings-dialog");
+    await assertFitsViewport(settings);
+    await expect(settings.locator("#settings-save")).toBeVisible();
+    for (const section of ["general", "analysis", "features", "cloud", "storage", "history", "updates", "about"]) {
+      await settings.locator(`[data-settings-section="${section}"]`).click();
+      const panel = settings.locator(`[data-settings-panel="${section}"]`);
+      await expect(panel).toBeVisible();
+      expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    }
+    await settings.locator("#settings-close").click();
+
+    await page.getByRole("button", { name: "楽譜抽出", exact: true }).click();
+    await expect(page.locator("#score-panel")).toBeVisible();
+    const scoreOverflow = await page.locator("#score-panel").evaluate(panel => {
+      const panelRect = panel.getBoundingClientRect();
+      return [...panel.querySelectorAll("*")]
+        .filter(element => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return style.display !== "none" && rect.width > 0 && (rect.left < panelRect.left - 1 || rect.right > panelRect.right + 1);
+        })
+        .map(element => ({ tag: element.tagName, id: element.id, className: String(element.className), text: element.textContent?.trim().slice(0, 40) }));
+    });
+    expect(scoreOverflow).toEqual([]);
+    await page.getByRole("button", { name: "曲構成", exact: true }).click();
+
+    await page.locator("#btn-edit-sections").click();
+    await assertFitsViewport(page.locator("#section-editor"));
+    await expect(page.locator("#btn-save-sections")).toBeVisible();
+    await page.locator("#section-editor").getByRole("button", { name: "閉じる" }).click();
+  }
+});
+
 test("端末間同期ラベルをボタン中央に配置する", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#btn-cloud-sync")).toBeVisible();

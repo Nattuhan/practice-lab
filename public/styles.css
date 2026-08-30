@@ -2007,6 +2007,12 @@ body.video-fullscreen-mode .video-fs-hud {
   min-width: 0;
 }
 
+.score-field > select,
+.score-field > input {
+  width: 100%;
+  min-width: 0;
+}
+
 .score-field span {
   color: var(--gray-5);
   font-size: 10px;
@@ -2178,6 +2184,19 @@ body.video-fullscreen-mode .video-fs-hud {
   min-height: 36px;
   padding: 0 18px;
   text-decoration: none;
+}
+
+@media (max-width: 1120px) and (min-width: 681px) {
+  .score-grid,
+  .score-primary-options,
+  .score-advanced-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .score-url,
+  .score-mode-field,
+  .score-content-field,
+  .score-source-fields,
+  .score-info-field,
+  .score-preview-btn,
+  .score-run { grid-column: 1 / -1; }
 }
 
 .score-next-btn {
