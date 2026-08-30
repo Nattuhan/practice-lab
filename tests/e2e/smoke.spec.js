@@ -622,8 +622,9 @@ test("曲名とタグでライブラリを検索できる", async ({ page }) => 
   await expect(page.getByText("条件に一致する曲がありません", { exact: true })).toBeVisible();
 });
 
-test("セクションを分割して保存できる", async ({ page }) => {
-  const session = { id: "section-test", title: "Section Test", bpm: 120, date: "2026-08-10" };
+test("セクション編集のスクラブ中は音声を止めて動画だけ追従する", async ({ page }) => {
+  const assets = { video: "/video/section-test.mp4" };
+  const session = { id: "section-test", title: "Section Test", bpm: 120, date: "2026-08-10", assets };
   const result = {
     ...session,
     total_bars: 4,
@@ -631,11 +632,13 @@ test("セクションを分割して保存できる", async ({ page }) => {
     sections: [{ label: "verse", start_bar: 1, end_bar: 4, bar_count: 4, start_time: 0, end_time: 4, start_time_str: "00:00" }],
     beats: [],
     downbeats: [0, 1, 2, 3],
+    assets,
   };
   let saved = null;
   await page.route("**/results/manifest.json", route => route.fulfill({ contentType: "application/json", body: JSON.stringify([session]) }));
   await page.route("**/results/section-test.json", route => route.fulfill({ contentType: "application/json", body: JSON.stringify(result) }));
-  await page.route("**/audio/section-test.mp3", route => route.fulfill({ contentType: "audio/wav", body: silentWav() }));
+  await page.route("**/audio/section-test.mp3", route => route.fulfill({ contentType: "audio/wav", body: silentWav(4) }));
+  await page.route("**/video/section-test.mp4*", route => route.fulfill({ contentType: "audio/wav", body: silentWav(4) }));
   await page.route("**/results/section-test/sections", async route => {
     if (route.request().method() !== "PUT") return route.continue();
     saved = route.request().postDataJSON();
@@ -652,6 +655,15 @@ test("セクションを分割して保存できる", async ({ page }) => {
   });
 
   await page.goto("/");
+  await page.locator("#video-player").evaluate(video => {
+    let currentTime = 0;
+    Object.defineProperty(video, "readyState", { configurable: true, get: () => 4 });
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => currentTime,
+      set: value => { currentTime = Number(value) || 0; },
+    });
+  });
   await page.locator("#btn-edit-sections").click();
   await expect(page.getByText("区間を選択", { exact: true })).toBeVisible();
   await expect(page.getByLabel("曲をプレビュー")).toBeVisible();
@@ -668,10 +680,17 @@ test("セクションを分割して保存できる", async ({ page }) => {
   const scrubBox = await page.getByRole("slider", { name: "曲の再生位置" }).boundingBox();
   expect(playheadBox).not.toBeNull();
   expect(scrubBox).not.toBeNull();
-  const pointerId = 7;
-  await playhead.dispatchEvent("pointerdown", { button: 0, pointerId, clientX: playheadBox.x + playheadBox.width / 2 });
-  await playhead.dispatchEvent("pointermove", { button: 0, pointerId, clientX: scrubBox.x + scrubBox.width * .7 });
-  await playhead.dispatchEvent("pointerup", { button: 0, pointerId, clientX: scrubBox.x + scrubBox.width * .7 });
+  const playerToggle = page.locator("#section-editor-player-toggle");
+  await playerToggle.click();
+  await expect(playerToggle).toHaveAttribute("data-playing", "true");
+  await page.mouse.move(playheadBox.x + playheadBox.width / 2, playheadBox.y + playheadBox.height / 2);
+  await page.mouse.down();
+  await expect(playerToggle).toHaveAttribute("data-playing", "false");
+  await page.mouse.move(scrubBox.x + scrubBox.width * .7, scrubBox.y + scrubBox.height / 2);
+  await expect.poll(() => page.locator("#video-player").evaluate(video => video.currentTime)).toBeGreaterThan(2.5);
+  await expect(playerToggle).toHaveAttribute("data-playing", "false");
+  await page.mouse.up();
+  await expect(playerToggle).toHaveAttribute("data-playing", "true");
   await expect.poll(async () => Number(await playhead.getAttribute("aria-valuenow"))).toBeGreaterThan(.5);
   await expect(page.getByLabel("選択中のセクション名")).toHaveValue("Aメロ");
   await page.getByRole("button", { name: "中央で分割", exact: true }).click();

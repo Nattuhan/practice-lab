@@ -3817,6 +3817,7 @@ let sectionEditorPreviewTimer = null;
 let sectionEditorPreviewEndTime = null;
 let sectionEditorScrubPointerId = null;
 let sectionEditorPlayheadPointerId = null;
+let sectionEditorScrubState = null;
 
 const updateSectionEditorPlayer = (time = ws?.getCurrentTime?.() || 0) => {
   if (!SELECTORS.sectionEditorPlayerToggle) return;
@@ -3879,14 +3880,48 @@ const updateSectionEditorSelectedRange = () => {
   SELECTORS.sectionEditorSelectedRange.style.width = `${Math.max(0, Math.min(1, (end - start) / duration)) * 100}%`;
 };
 
-const seekSectionEditorFromClientX = clientX => {
+const sectionEditorTimeFromClientX = clientX => {
   if (!canPlayAudio()) return;
   const rect = SELECTORS.sectionEditorScrub.getBoundingClientRect();
   if (rect.width <= 0) return;
   const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  return (ws?.getDuration?.() || currentData?.duration || 0) * ratio;
+};
+
+const beginSectionEditorScrub = clientX => {
+  if (!canPlayAudio()) return false;
   stopSectionEditorPreview({ pause: false });
-  seekAudio((ws?.getDuration?.() || currentData?.duration || 0) * ratio, { respectLoopRange: false });
-  updateSectionEditorPlayer();
+  const wasPlaying = ws.isPlaying();
+  if (wasPlaying) ws.pause();
+  else {
+    pauseVideo();
+    pauseStems();
+    stopMetro();
+  }
+  sectionEditorScrubState = {
+    wasPlaying,
+    time: ws.getCurrentTime(),
+  };
+  previewSectionEditorScrub(clientX);
+  return true;
+};
+
+const previewSectionEditorScrub = clientX => {
+  if (!sectionEditorScrubState) return;
+  const time = sectionEditorTimeFromClientX(clientX);
+  if (!Number.isFinite(time)) return;
+  sectionEditorScrubState.time = time;
+  updateSectionEditorPlayer(time);
+  syncVideoToAudio(time, { force: true });
+};
+
+const finishSectionEditorSilentScrub = () => {
+  if (!sectionEditorScrubState) return;
+  const { time, wasPlaying } = sectionEditorScrubState;
+  sectionEditorScrubState = null;
+  seekAudio(time, { respectLoopRange: false });
+  updateSectionEditorPlayer(time);
+  if (wasPlaying) ws.play();
 };
 
 const toggleSectionEditorPlayback = () => {
@@ -5044,18 +5079,20 @@ SELECTORS.sectionEditorPlayerToggle?.addEventListener("click", toggleSectionEdit
 SELECTORS.sectionEditorScrub?.addEventListener("pointerdown", event => {
   if (event.button !== 0) return;
   event.preventDefault();
+  if (!beginSectionEditorScrub(event.clientX)) return;
   sectionEditorScrubPointerId = event.pointerId;
   SELECTORS.sectionEditorScrub.setPointerCapture?.(event.pointerId);
-  seekSectionEditorFromClientX(event.clientX);
 });
 SELECTORS.sectionEditorScrub?.addEventListener("pointermove", event => {
   if (sectionEditorScrubPointerId !== event.pointerId) return;
-  seekSectionEditorFromClientX(event.clientX);
+  previewSectionEditorScrub(event.clientX);
 });
 const finishSectionEditorScrub = event => {
   if (sectionEditorScrubPointerId !== event.pointerId) return;
   sectionEditorScrubPointerId = null;
   SELECTORS.sectionEditorScrub.releasePointerCapture?.(event.pointerId);
+  previewSectionEditorScrub(event.clientX);
+  finishSectionEditorSilentScrub();
 };
 SELECTORS.sectionEditorScrub?.addEventListener("pointerup", finishSectionEditorScrub);
 SELECTORS.sectionEditorScrub?.addEventListener("pointercancel", finishSectionEditorScrub);
@@ -5075,26 +5112,29 @@ SELECTORS.sectionEditorPlayhead?.addEventListener("pointerdown", event => {
   if (event.button !== 0) return;
   event.preventDefault();
   event.stopPropagation();
+  if (!beginSectionEditorScrub(event.clientX)) return;
   sectionEditorPlayheadPointerId = event.pointerId;
   SELECTORS.sectionEditorPlayhead.classList.add("dragging");
   SELECTORS.sectionEditorPlayhead.setPointerCapture?.(event.pointerId);
-  seekSectionEditorFromClientX(event.clientX);
 });
 SELECTORS.sectionEditorPlayhead?.addEventListener("pointermove", event => {
   if (sectionEditorPlayheadPointerId !== event.pointerId) return;
-  seekSectionEditorFromClientX(event.clientX);
+  previewSectionEditorScrub(event.clientX);
 });
 const finishSectionEditorPlayheadDrag = event => {
   if (sectionEditorPlayheadPointerId !== event.pointerId) return;
   sectionEditorPlayheadPointerId = null;
   SELECTORS.sectionEditorPlayhead.classList.remove("dragging");
   SELECTORS.sectionEditorPlayhead.releasePointerCapture?.(event.pointerId);
+  previewSectionEditorScrub(event.clientX);
+  finishSectionEditorSilentScrub();
 };
 SELECTORS.sectionEditorPlayhead?.addEventListener("pointerup", finishSectionEditorPlayheadDrag);
 SELECTORS.sectionEditorPlayhead?.addEventListener("pointercancel", finishSectionEditorPlayheadDrag);
 SELECTORS.sectionEditor?.addEventListener("close", () => {
   sectionEditorScrubPointerId = null;
   sectionEditorPlayheadPointerId = null;
+  sectionEditorScrubState = null;
   SELECTORS.sectionEditorPlayhead?.classList.remove("dragging");
   stopSectionEditorPreview();
 });
