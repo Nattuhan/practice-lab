@@ -24,13 +24,14 @@ class SystemStatusTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"ok": True, "instanceId": "desktop-instance"})
 
-    def test_non_windows_is_ready_without_nvidia_setup(self):
+    def test_linux_is_ready_without_nvidia_setup(self):
         with (
-            patch("practice_lab.system_status.platform.system", return_value="Darwin"),
+            patch("practice_lab.system_status.platform.system", return_value="Linux"),
             patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1"}, clear=True),
         ):
             status = system_status.get_system_status()
         self.assertTrue(status["ready"])
+        self.assertTrue(status["runtime"]["available"])
         self.assertFalse(status["setupSupported"])
 
     def test_packaged_mac_reports_missing_optional_analysis_runtime(self):
