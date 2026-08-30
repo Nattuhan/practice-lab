@@ -1,3 +1,4 @@
+from math import floor
 from statistics import median
 
 
@@ -80,6 +81,41 @@ def _find_stable_leading_transition(beats: list[float], expected: float) -> tupl
     return None
 
 
+def _fit_stable_grid(
+    beats: list[float], transition_index: int, stable_interval: float
+) -> tuple[float, float] | None:
+    stable_start = min(transition_index + 1, len(beats) - 1)
+    stable_beats = [beats[stable_start]]
+    for beat in beats[stable_start + 1 :]:
+        interval = beat - stable_beats[-1]
+        if not stable_interval * 0.75 <= interval <= stable_interval * 1.25:
+            break
+        stable_beats.append(beat)
+    if len(stable_beats) < 12:
+        return None
+
+    count = len(stable_beats)
+    mean_index = (count - 1) / 2
+    mean_time = sum(stable_beats) / count
+    denominator = sum((index - mean_index) ** 2 for index in range(count))
+    period = sum(
+        (index - mean_index) * (beat - mean_time)
+        for index, beat in enumerate(stable_beats)
+    ) / denominator
+    intercept = mean_time - period * mean_index
+    if period <= 0:
+        return None
+    return intercept, period
+
+
+def _constant_grid(intercept: float, period: float, end_time: float) -> list[float]:
+    phase = intercept - floor(intercept / period) * period
+    if phase >= period - 0.0005:
+        phase = 0.0
+    count = floor((end_time - phase) / period) + 1
+    return [round(phase + period * index, 3) for index in range(max(0, count))]
+
+
 def _repair_sparse_leading_grid(data: dict) -> dict:
     bpm = float(data.get("bpm") or 0.0)
     beats = [float(beat) for beat in data.get("beats") or []]
@@ -90,23 +126,18 @@ def _repair_sparse_leading_grid(data: dict) -> dict:
     if transition is None:
         return data
     transition_index, stable_interval = transition
-    repaired_beats = [round(beats[0], 3)]
-    for index, beat in enumerate(beats[1:], start=1):
-        previous = beats[index - 1]
-        interval = beat - previous
-        steps = 1
-        if index <= transition_index and interval >= stable_interval * 1.65:
-            steps = max(2, round(interval / stable_interval))
-        for step in range(1, steps + 1):
-            repaired_beats.append(round(previous + interval * step / steps, 3))
-    if len(repaired_beats) == len(beats):
+    fitted = _fit_stable_grid(beats, transition_index, stable_interval)
+    if fitted is None:
         return data
+    intercept, fitted_period = fitted
+    repaired_beats = _constant_grid(intercept, fitted_period, beats[-1])
     repaired_downbeats = _downbeats_from_grid(
         repaired_beats,
         [float(downbeat) for downbeat in data.get("downbeats") or []],
     )
 
     adjusted = dict(data)
+    adjusted["bpm"] = round(60.0 / fitted_period, 1)
     adjusted["beats"] = repaired_beats
     adjusted["downbeats"] = repaired_downbeats
     adjusted["total_bars"] = len(repaired_downbeats)
