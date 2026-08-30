@@ -16,10 +16,17 @@ class DesktopBackendEntryTests(unittest.TestCase):
         self.assertEqual(
             imported,
             [
-                *backend_entry.COMMON_FROZEN_RUNTIME_MODULES,
+                *backend_entry.MEDIA_FROZEN_RUNTIME_MODULES,
                 *backend_entry.MACOS_ANALYSIS_RUNTIME_MODULES,
             ],
         )
+
+    def test_base_runtime_check_does_not_require_analysis_modules(self):
+        with patch("desktop.backend_entry.importlib.import_module") as import_module:
+            backend_entry.check_frozen_runtime("base")
+
+        imported = [call.args[0] for call in import_module.call_args_list]
+        self.assertEqual(imported, list(backend_entry.BASE_FROZEN_RUNTIME_MODULES))
 
     def test_frozen_runtime_check_is_dispatched(self):
         with (
