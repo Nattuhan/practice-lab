@@ -83,6 +83,15 @@ def _content_type(path: Path) -> str:
     return mimetypes.guess_type(path.name)[0] or "application/octet-stream"
 
 
+def _cache_control(key: str) -> str:
+    suffix = Path(key).suffix.lower()
+    if suffix in {".html", ".json", ".js", ".css"}:
+        return "no-cache, max-age=0, must-revalidate"
+    if suffix in {".mp3", ".mp4", ".png", ".jpg", ".jpeg", ".webp"}:
+        return "public, max-age=3600, must-revalidate"
+    return "public, max-age=3600"
+
+
 def _client(config: R2Config):
     import boto3
 
@@ -112,7 +121,10 @@ def upload_file(config: R2Config, source: Path, key: str) -> None:
         str(source),
         config.bucket,
         key,
-        ExtraArgs={"ContentType": _content_type(source)},
+        ExtraArgs={
+            "ContentType": _content_type(source),
+            "CacheControl": _cache_control(key),
+        },
     )
 
 
