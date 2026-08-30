@@ -20,3 +20,6 @@ export const sortLibraryItems = (items, mode = "manual") => {
   }
   return sorted;
 };
+
+export const shouldUseStaticLibrary = ({ mode = "", hostname = "" } = {}) =>
+  mode === "static" || String(hostname).toLowerCase().endsWith(".r2.dev");

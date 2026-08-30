@@ -4119,6 +4119,7 @@ select:focus,
 .library-empty span { color: var(--gray-6); font-size: 11px; }
 .library-empty .mini-btn { width: fit-content; margin-top: 4px; }
 .library-empty-error strong { color: var(--red); }
+.library-loading { padding: 18px 12px; color: var(--gray-6); font-size: 11px; }
 
 @media (max-width: 680px) {
   body { padding-bottom: env(safe-area-inset-bottom); }

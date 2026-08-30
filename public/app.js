@@ -2274,6 +2274,7 @@ var sortLibraryItems = (items, mode = "manual") => {
   }
   return sorted;
 };
+var shouldUseStaticLibrary = ({ mode = "", hostname = "" } = {}) => mode === "static" || String(hostname).toLowerCase().endsWith(".r2.dev");
 
 // frontend/src/loop-playback.js
 var LOOP_START_TOLERANCE_SECONDS = 0.1;
@@ -2711,7 +2712,11 @@ var setScoreFeatureVisible = (visible) => {
 };
 var ws = null;
 var hasServer = false;
-var staticLibraryMode = APP_CONFIG.mode === "static";
+var isPublishedR2Viewer = shouldUseStaticLibrary({
+  mode: APP_CONFIG.mode,
+  hostname: window.location.hostname
+});
+var staticLibraryMode = isPublishedR2Viewer;
 var cloudStatus = { configured: false, bucket: null, viewerUrl: null };
 var desktopSettings = null;
 var currentData = null;
@@ -6696,7 +6701,7 @@ var doAnalyzeFile = async (file) => {
   }
 };
 var detectServer = async () => {
-  if (APP_CONFIG.mode === "static") {
+  if (isPublishedR2Viewer) {
     hasServer = false;
     staticLibraryMode = true;
   } else {

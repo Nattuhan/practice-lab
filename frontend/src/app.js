@@ -1,6 +1,6 @@
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
-import { filterLibraryItems, sortLibraryItems } from "./library.js";
+import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "./library.js";
 import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "./loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
@@ -302,7 +302,11 @@ const setScoreFeatureVisible = visible => {
 
 let ws = null;
 let hasServer = false;
-let staticLibraryMode = APP_CONFIG.mode === "static";
+const isPublishedR2Viewer = shouldUseStaticLibrary({
+  mode: APP_CONFIG.mode,
+  hostname: window.location.hostname,
+});
+let staticLibraryMode = isPublishedR2Viewer;
 let cloudStatus = { configured: false, bucket: null, viewerUrl: null };
 let desktopSettings = null;
 let currentData = null;
@@ -4651,7 +4655,7 @@ const doAnalyzeFile = async file => {
 };
 
 const detectServer = async () => {
-  if (APP_CONFIG.mode === "static") {
+  if (isPublishedR2Viewer) {
     hasServer = false;
     staticLibraryMode = true;
   } else {

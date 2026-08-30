@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { filterLibraryItems, sortLibraryItems } from "../src/library.js";
+import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "../src/library.js";
 import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "../src/loop-playback.js";
 import { mutateSectionDraft, normalizeSectionDraft } from "../src/section-editor.js";
 import { mediaSyncAction, planStemPlayback } from "../src/playback-sync.js";
@@ -39,6 +39,12 @@ test("ライブラリを曲名・タグ・未練習で絞り込める", () => {
 test("ライブラリを最近練習した順と曲名順に並べられる", () => {
   assert.deepEqual(sortLibraryItems(sessions, "recent").map(item => item.id), ["b", "a"]);
   assert.deepEqual(sortLibraryItems(sessions, "title").map(item => item.id), ["b", "a"]);
+});
+
+test("R2公開ホストはバックエンド待機なしで静的ライブラリとして開く", () => {
+  assert.equal(shouldUseStaticLibrary({ hostname: "pub-example.r2.dev" }), true);
+  assert.equal(shouldUseStaticLibrary({ hostname: "127.0.0.1" }), false);
+  assert.equal(shouldUseStaticLibrary({ mode: "static", hostname: "library.example.com" }), true);
 });
 
 test("セクションを連続した小節範囲のまま分割・結合できる", () => {
