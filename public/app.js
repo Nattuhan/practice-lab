@@ -2747,11 +2747,14 @@ var metroGeneration = 0;
 var nextBeatIndex = 0;
 var metroResumeAtMs = 0;
 var lastMetroTime = 0;
+var scheduledClickVoices = /* @__PURE__ */ new Set();
 var customLoopRange = null;
 var waveformSelectionEl = null;
 var waveformSectionSelectionEls = [];
 var waveformBarGridEls = [];
 var waveformDrag = null;
+var waveformSeekRafId = 0;
+var pendingWaveformSeekTime = null;
 var currentFeature = "structure";
 var sidebarItemsCount = 0;
 var sharedFolders = null;
@@ -4218,11 +4221,26 @@ var clickTone = (time) => {
   gain.gain.exponentialRampToValueAtTime(1e-4, startTime + 0.045);
   osc.start(startTime);
   osc.stop(startTime + 0.055);
+  const voice = { osc, gain, filter };
+  scheduledClickVoices.add(voice);
   osc.onended = () => {
+    scheduledClickVoices.delete(voice);
     gain.disconnect();
     filter.disconnect();
     osc.disconnect();
   };
+};
+var clearScheduledClicks = () => {
+  const ctx = audioCtx;
+  const now = ctx?.currentTime ?? 0;
+  for (const voice of scheduledClickVoices) {
+    try {
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setTargetAtTime(1e-4, now, 3e-3);
+      voice.osc.stop(now + 0.012);
+    } catch {
+    }
+  }
 };
 var alignMetronomeToTime = (time) => {
   const beats = getAdjustedBeats();
@@ -4241,6 +4259,7 @@ var seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
     const loopRange = getLoopRange();
     if (loopRange && clampedTime < loopRange.start) clampedTime = loopRange.start;
   }
+  clearScheduledClicks();
   metroResumeAtMs = performance.now() + 120;
   alignMetronomeToTime(clampedTime);
   lastMetroTime = clampedTime;
@@ -4269,6 +4288,7 @@ var tickMetronome = (generation) => {
 };
 var startMetro = () => {
   if (metroRafId) cancelAnimationFrame(metroRafId);
+  clearScheduledClicks();
   metroGeneration += 1;
   syncMetronome();
   lastMetroTime = ws?.getCurrentTime() ?? 0;
@@ -4279,6 +4299,22 @@ var stopMetro = () => {
   metroRafId = 0;
   metroGeneration += 1;
   metroResumeAtMs = 0;
+  clearScheduledClicks();
+};
+var cancelWaveformPreviewSeek = () => {
+  if (waveformSeekRafId) cancelAnimationFrame(waveformSeekRafId);
+  waveformSeekRafId = 0;
+  pendingWaveformSeekTime = null;
+};
+var scheduleWaveformPreviewSeek = (time) => {
+  pendingWaveformSeekTime = time;
+  if (waveformSeekRafId) return;
+  waveformSeekRafId = requestAnimationFrame(() => {
+    waveformSeekRafId = 0;
+    const target = pendingWaveformSeekTime;
+    pendingWaveformSeekTime = null;
+    if (Number.isFinite(target)) seekAudio(target, { respectLoopRange: false });
+  });
 };
 var medianNumber = (values) => {
   const sorted = values.filter((value) => Number.isFinite(value) && value > 0).sort((left, right) => left - right);
@@ -4386,14 +4422,12 @@ var togglePlayback = () => {
     ws.pause();
     return;
   }
-  playStems();
   ws.play();
 };
 var playFromTime = (time) => {
   if (!canPlayAudio()) return;
   getCtx();
   seekAudio(time);
-  playStems();
   ws.play();
 };
 var playFromBeginning = () => playFromTime(0);
@@ -5331,6 +5365,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   mobileStemMixActivated = false;
   initVideoPlayer(videoUrl);
   waveformDrag = null;
+  cancelWaveformPreviewSeek();
   SELECTORS.timeCur.textContent = "00:00";
   playingIdx = -1;
   document.querySelectorAll(".sec-row").forEach((row) => row.classList.remove("playing"));
@@ -5450,7 +5485,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
         end: end2,
         kind: "custom"
       });
-      if (waveformDrag.mode === "resize-start") seekAudio(start2, { respectLoopRange: false });
+      if (waveformDrag.mode === "resize-start") scheduleWaveformPreviewSeek(start2);
       return;
     }
     if (waveformDrag.mode === "move") {
@@ -5471,6 +5506,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
     const endX = waveformDrag.currentX;
     const moved = waveformDrag.moved;
     waveformDrag = null;
+    cancelWaveformPreviewSeek();
     SELECTORS.waveformWrap.releasePointerCapture?.(event.pointerId);
     SELECTORS.waveformWrap.classList.remove("resizing-loop");
     SELECTORS.waveformWrap.classList.remove("moving-loop");
@@ -5505,6 +5541,7 @@ var initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   SELECTORS.waveformWrap.onpointercancel = (event) => {
     if (!waveformDrag || waveformDrag.pointerId !== event.pointerId) return;
     waveformDrag = null;
+    cancelWaveformPreviewSeek();
     SELECTORS.waveformWrap.releasePointerCapture?.(event.pointerId);
     SELECTORS.waveformWrap.classList.remove("resizing-loop");
     SELECTORS.waveformWrap.classList.remove("moving-loop");
@@ -5848,7 +5885,6 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   if (autoplay) {
     const startWhenReady = () => {
       if (!canPlayAudio()) return;
-      playStems();
       ws.play();
     };
     if (audioReady) startWhenReady();

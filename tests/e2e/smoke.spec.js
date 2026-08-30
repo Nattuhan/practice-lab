@@ -283,6 +283,94 @@ test("スマホのR2閲覧版は初回に曲一覧を開き、パート音源を
   expect(stemRequests).toEqual([]);
 });
 
+test("再生中にループ端を連続ドラッグしても音源とクリック予約を多重化しない", async ({ page }) => {
+  const result = {
+    ...baselineResult,
+    duration: 8,
+    total_bars: 4,
+    beats: Array.from({ length: 32 }, (_, index) => index * .25),
+    downbeats: [0, 2, 4, 6],
+    sections: [{ label: "verse", start_bar: 1, end_bar: 4, bar_count: 4, start_time: 0, end_time: 8, start_time_str: "00:00" }],
+  };
+  await page.route("**/results/e2e-baseline.json", route => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify(result),
+  }));
+  await page.route("**/audio/e2e-baseline.mp3", route => route.fulfill({
+    contentType: "audio/wav",
+    body: silentWav(8),
+  }));
+  await page.route("**/stems/e2e-baseline/*.wav", route => route.fulfill({
+    contentType: "audio/wav",
+    body: silentWav(8),
+  }));
+  await page.addInitScript(() => {
+    const NativeAudio = window.Audio;
+    const audit = window.__playbackAudit = {
+      audioInstances: 0,
+      mediaPlayCalls: 0,
+      oscillatorStopCalls: 0,
+      repeatedOscillatorStops: 0,
+    };
+    window.Audio = function Audio(...args) {
+      audit.audioInstances += 1;
+      return new NativeAudio(...args);
+    };
+    window.Audio.prototype = NativeAudio.prototype;
+    const nativePlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function (...args) {
+      audit.mediaPlayCalls += 1;
+      return nativePlay.apply(this, args);
+    };
+    const NativeContext = window.AudioContext || window.webkitAudioContext;
+    if (NativeContext) {
+      const nativeCreateOscillator = NativeContext.prototype.createOscillator;
+      NativeContext.prototype.createOscillator = function (...args) {
+        const oscillator = nativeCreateOscillator.apply(this, args);
+        const nativeStop = oscillator.stop.bind(oscillator);
+        let stops = 0;
+        oscillator.stop = (...stopArgs) => {
+          stops += 1;
+          audit.oscillatorStopCalls += 1;
+          if (stops > 1) audit.repeatedOscillatorStops += 1;
+          return nativeStop(...stopArgs);
+        };
+        return oscillator;
+      };
+    }
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#btn-play")).toBeEnabled();
+  await page.locator("#btn-metro").click();
+  await page.locator("#btn-play").click();
+  const waveform = page.locator(".waveform-wrap");
+  const box = await waveform.boundingBox();
+  expect(box).not.toBeNull();
+  await page.waitForTimeout(170);
+  await page.mouse.click(box.x + box.width * .1, box.y + box.height / 2);
+  await page.mouse.move(box.x + box.width * .2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * .65, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator('.loop-selection-handle[data-loop-handle="start"]')).toBeVisible();
+
+  const beforeResize = await page.evaluate(() => ({ ...window.__playbackAudit }));
+  const startHandle = page.locator('.loop-selection-handle[data-loop-handle="start"]');
+  const handleBox = await startHandle.boundingBox();
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * .45, box.y + box.height / 2, { steps: 60 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+
+  const audit = await page.evaluate(() => window.__playbackAudit);
+  expect(audit.audioInstances).toBe(beforeResize.audioInstances);
+  expect(audit.audioInstances).toBe(4);
+  expect(audit.repeatedOscillatorStops).toBeGreaterThan(0);
+  expect(audit.mediaPlayCalls - beforeResize.mediaPlayCalls).toBeLessThan(16);
+});
+
 test("パート書き出し操作を右パネル内に収める", async ({ page }) => {
   await page.goto("/");
   const panel = page.locator("#stem-panel");
