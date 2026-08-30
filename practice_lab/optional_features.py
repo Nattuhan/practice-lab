@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import sys
 import importlib
 import importlib.util
@@ -367,6 +368,12 @@ def install_mac_analysis_runtime(progress: Callable[[str], None] | None = None) 
         expected_executable = staged / "practice-lab-analysis-runtime" / "practice-lab-analysis-runtime"
         if not expected_executable.is_file():
             raise RuntimeError("Mac解析パックの実行ファイルが見つかりません")
+        expected_executable.chmod(
+            expected_executable.stat().st_mode
+            | stat.S_IXUSR
+            | stat.S_IXGRP
+            | stat.S_IXOTH
+        )
         if destination.exists():
             shutil.rmtree(destination)
         staged.replace(destination)

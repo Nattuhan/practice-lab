@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import io
+import hashlib
 import json
 import os
 import urllib.error
@@ -59,6 +60,33 @@ class OptionalFeatureTests(unittest.TestCase):
 
         self.assertIn(optional_features.MAC_ANALYSIS_RUNTIME_ABI, executable.parts)
         self.assertEqual(executable.name, "practice-lab-analysis-runtime")
+
+    def test_mac_analysis_installer_restores_executable_permission(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            archive = root / "PracticeLab-Analysis-macOS-arm64-1.1.6.zip"
+            with zipfile.ZipFile(archive, "w") as bundle:
+                bundle.writestr(
+                    "practice-lab-analysis-runtime/practice-lab-analysis-runtime",
+                    b"runtime",
+                )
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            asset = {
+                "name": archive.name,
+                "browser_download_url": archive.as_uri(),
+                "digest": f"sha256:{digest}",
+            }
+            with (
+                patch.object(optional_features, "ROOT_DIR", root),
+                patch.object(optional_features, "_release_asset", return_value=asset),
+                patch.object(optional_features.platform, "system", return_value="Darwin"),
+                patch.object(optional_features.platform, "machine", return_value="arm64"),
+                patch.object(optional_features, "app_version", return_value="1.1.6"),
+                patch.dict(os.environ, {"PRACTICE_LAB_DESKTOP": "1"}, clear=False),
+            ):
+                optional_features.install_mac_analysis_runtime()
+                executable = optional_features.mac_analysis_runtime_executable()
+                self.assertTrue(os.access(executable, os.X_OK))
 
     def test_windows_cpu_status_detects_the_compatible_runtime(self):
         with tempfile.TemporaryDirectory() as temp_dir:
