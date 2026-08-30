@@ -10,6 +10,7 @@ import importlib
 import importlib.util
 import tempfile
 import urllib.request
+import urllib.error
 import zipfile
 from pathlib import Path
 from typing import Callable
@@ -18,6 +19,7 @@ from .config import ROOT_DIR
 
 
 RELEASE_API = "https://api.github.com/repos/Nattuhan/practice-lab/releases/tags/v{version}"
+LATEST_RELEASE_API = "https://api.github.com/repos/Nattuhan/practice-lab/releases/latest"
 CPU_FEATURE_KEY = "windows-cpu"
 SCORE_FEATURE_KEY = "score"
 CPU_RUNTIME_ABI = "abi-1"
@@ -172,16 +174,68 @@ def feature_status() -> dict:
     }
 
 
-def _release_asset(version: str, expected_name: str, label: str) -> dict:
+def _local_feature_asset(expected_name: str, compatible_prefix: str) -> dict | None:
+    configured = os.environ.get("PRACTICE_LAB_FEATURE_PACK_DIR", "").strip()
+    candidates = [Path(configured)] if configured else []
+    if not getattr(sys, "frozen", False):
+        candidates.append(ROOT_DIR / "desktop" / "dist" / "installer")
+    for directory in candidates:
+        if not directory.is_dir():
+            continue
+        exact = directory / expected_name
+        matches = [exact] if exact.is_file() else sorted(
+            directory.glob(f"{compatible_prefix}*.zip"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        if not matches:
+            continue
+        source = matches[0].resolve()
+        checksum = hashlib.sha256()
+        with source.open("rb") as input_file:
+            for chunk in iter(lambda: input_file.read(4 * 1024 * 1024), b""):
+                checksum.update(chunk)
+        digest = checksum.hexdigest()
+        return {
+            "name": source.name,
+            "browser_download_url": source.as_uri(),
+            "digest": f"sha256:{digest}",
+            "compatible": source.name != expected_name,
+        }
+    return None
+
+
+def _load_release(url: str) -> dict:
     request = urllib.request.Request(
-        RELEASE_API.format(version=version),
+        url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "PracticeLab"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        release = json.load(response)
+        return json.load(response)
+
+
+def _release_asset(version: str, expected_name: str, compatible_prefix: str, label: str) -> dict:
+    local_asset = _local_feature_asset(expected_name, compatible_prefix)
+    if local_asset:
+        return local_asset
+    try:
+        release = _load_release(RELEASE_API.format(version=version))
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+        release = _load_release(LATEST_RELEASE_API)
     asset = next((item for item in release.get("assets", []) if item.get("name") == expected_name), None)
     if not asset:
-        raise RuntimeError(f"{label}がReleaseにありません: {expected_name}")
+        asset = next(
+            (
+                item for item in release.get("assets", [])
+                if str(item.get("name") or "").startswith(compatible_prefix)
+                and str(item.get("name") or "").endswith(".zip")
+            ),
+            None,
+        )
+    if not asset:
+        raise RuntimeError(f"{label}の互換パックがReleaseにありません: {expected_name}")
     digest = str(asset.get("digest") or "")
     if not digest.startswith("sha256:"):
         raise RuntimeError(f"{label}のSHA-256を確認できません")
@@ -218,12 +272,12 @@ def install_windows_cpu_runtime(progress: Callable[[str], None] | None = None) -
         raise RuntimeError("CPU解析パックはWindowsデスクトップ版でのみ追加できます")
     version = app_version()
     asset_name = windows_cpu_asset_name(version)
-    asset = _release_asset(version, asset_name, "CPU解析パック")
+    asset = _release_asset(version, asset_name, "PracticeLab-Windows-CPU-", "CPU解析パック")
     destination = _stable_runtime_dir(CPU_FEATURE_KEY, CPU_RUNTIME_ABI)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".install-", dir=destination.parent) as temp_dir:
         temp_root = Path(temp_dir)
-        archive = temp_root / asset_name
+        archive = temp_root / str(asset.get("name") or asset_name)
         if progress:
             progress("CPU解析パックを確認しています")
         actual_digest = _download(str(asset["browser_download_url"]), archive, "CPU解析パック", progress)
@@ -257,12 +311,13 @@ def install_score_runtime(progress: Callable[[str], None] | None = None) -> dict
         raise RuntimeError("楽譜抽出パックは対応するデスクトップ版でのみ追加できます")
     version = app_version()
     asset_name = score_asset_name(version)
-    asset = _release_asset(version, asset_name, "楽譜抽出パック")
+    compatible_prefix = f"PracticeLab-Score-{score_platform_name()}-"
+    asset = _release_asset(version, asset_name, compatible_prefix, "楽譜抽出パック")
     destination = _stable_runtime_dir(SCORE_FEATURE_KEY, SCORE_RUNTIME_ABI)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".install-", dir=destination.parent) as temp_dir:
         temp_root = Path(temp_dir)
-        archive = temp_root / asset_name
+        archive = temp_root / str(asset.get("name") or asset_name)
         if progress:
             progress("楽譜抽出パックを確認しています")
         actual_digest = _download(str(asset["browser_download_url"]), archive, "楽譜抽出パック", progress)

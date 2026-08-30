@@ -1,5 +1,9 @@
 import tempfile
 import unittest
+import io
+import json
+import os
+import urllib.error
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +12,40 @@ from practice_lab import optional_features
 
 
 class OptionalFeatureTests(unittest.TestCase):
+    def test_unpublished_version_uses_latest_abi_compatible_pack(self):
+        compatible = {
+            "name": "PracticeLab-Windows-CPU-1.1.5.zip",
+            "browser_download_url": "https://example.test/cpu.zip",
+            "digest": "sha256:" + "a" * 64,
+        }
+        latest = io.BytesIO(json.dumps({"assets": [compatible]}).encode("utf-8"))
+        missing = urllib.error.HTTPError("https://example.test/v1.1.6", 404, "missing", {}, None)
+        with (
+            patch.object(optional_features, "_local_feature_asset", return_value=None),
+            patch.object(optional_features.urllib.request, "urlopen", side_effect=[missing, latest]),
+        ):
+            asset = optional_features._release_asset(
+                "1.1.6",
+                "PracticeLab-Windows-CPU-1.1.6.zip",
+                "PracticeLab-Windows-CPU-",
+                "CPU解析パック",
+            )
+
+        self.assertEqual(asset["name"], "PracticeLab-Windows-CPU-1.1.5.zip")
+
+    def test_local_compatible_pack_is_preferred_for_release_testing(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            archive = Path(temp_dir) / "PracticeLab-Score-macOS-arm64-1.1.5.zip"
+            archive.write_bytes(b"local-pack")
+            with patch.dict(os.environ, {"PRACTICE_LAB_FEATURE_PACK_DIR": temp_dir}, clear=False):
+                asset = optional_features._local_feature_asset(
+                    "PracticeLab-Score-macOS-arm64-1.1.6.zip",
+                    "PracticeLab-Score-macOS-arm64-",
+                )
+
+        self.assertEqual(asset["name"], archive.name)
+        self.assertTrue(asset["compatible"])
+
     def test_windows_cpu_asset_name_uses_the_app_version(self):
         self.assertEqual(
             optional_features.windows_cpu_asset_name("1.2.3"),
