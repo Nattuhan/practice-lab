@@ -53,15 +53,15 @@ class TempoGridNormalizationTests(unittest.TestCase):
 
         self.assertIs(normalize_tempo_grid(data), data)
 
-    def test_backfills_sparse_syncopated_intro_from_stable_later_grid(self):
-        sparse_intro = [3.54, 4.44, 5.34, 6.24, 7.12, 7.94, 8.84, 9.71, 10.62, 11.53]
-        stable = [round(11.53 + 0.61 * index, 2) for index in range(1, 25)]
+    def test_inserts_missing_intro_beats_without_moving_detected_anchors(self):
+        sparse_intro = [3.54, 4.76, 5.98, 7.20, 8.42, 9.64, 10.86, 12.08]
+        stable = [round(12.08 + 0.61 * index, 2) for index in range(1, 25)]
         beats = sparse_intro + stable
         data = {
             "bpm": 98.0,
             "total_bars": 8,
             "beats": beats,
-            "downbeats": [6.24, 9.71, 12.75, 15.19, 17.63, 20.07, 22.51, 24.95],
+            "downbeats": [3.54, 8.42, 12.69, 15.13, 17.57, 20.01, 22.45, 24.89],
             "sections": [
                 {"label": "start", "start_time": 0.0, "end_time": 3.04},
                 {"label": "intro", "start_time": 3.04, "end_time": 20.0},
@@ -70,9 +70,9 @@ class TempoGridNormalizationTests(unittest.TestCase):
 
         adjusted = normalize_tempo_grid(data)
 
-        self.assertEqual(adjusted["beats"][:5], [2.99, 3.6, 4.21, 4.82, 5.43])
-        self.assertEqual(adjusted["downbeats"][:4], [2.99, 5.43, 7.87, 10.31])
-        self.assertEqual(adjusted["beats"][14:17], [11.53, 12.14, 12.75])
+        self.assertEqual(adjusted["beats"][:5], [3.54, 4.15, 4.76, 5.37, 5.98])
+        self.assertTrue(all(anchor in adjusted["beats"] for anchor in sparse_intro))
+        self.assertEqual(adjusted["downbeats"][:4], [3.54, 5.98, 8.42, 10.86])
         self.assertEqual(adjusted["sections"][0]["start_bar"], 1)
         self.assertEqual(adjusted["sections"][1]["start_bar"], adjusted["sections"][0]["end_bar"] + 1)
 
@@ -96,10 +96,8 @@ class TempoGridNormalizationTests(unittest.TestCase):
         adjusted = normalize_tempo_grid(data)
 
         self.assertIsNot(adjusted, data)
-        self.assertTrue(all(
-            round(right - left, 2) == 0.4
-            for left, right in zip(adjusted["beats"][:50], adjusted["beats"][1:51])
-        ))
+        self.assertEqual(adjusted["beats"][:6], [1.1, 1.51, 1.92, 2.325, 2.73, 3.125])
+        self.assertTrue(all(anchor in adjusted["beats"] for anchor in sparse_intro))
         self.assertGreater(len(adjusted["beats"]), len(beats))
 
     def test_does_not_flatten_a_short_tempo_change_later_in_song(self):

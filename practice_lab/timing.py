@@ -90,36 +90,21 @@ def _repair_sparse_leading_grid(data: dict) -> dict:
     if transition is None:
         return data
     transition_index, stable_interval = transition
-    anchor = beats[transition_index]
-    stable_downbeats = [
-        float(downbeat)
-        for downbeat in data.get("downbeats") or []
-        if float(downbeat) >= anchor - stable_interval * 0.25
-    ]
-    if not stable_downbeats:
+    repaired_beats = [round(beats[0], 3)]
+    for index, beat in enumerate(beats[1:], start=1):
+        previous = beats[index - 1]
+        interval = beat - previous
+        steps = 1
+        if index <= transition_index and interval >= stable_interval * 1.65:
+            steps = max(2, round(interval / stable_interval))
+        for step in range(1, steps + 1):
+            repaired_beats.append(round(previous + interval * step / steps, 3))
+    if len(repaired_beats) == len(beats):
         return data
-    reference = stable_downbeats[0]
-    source_reference_index = min(
-        range(transition_index, len(beats)),
-        key=lambda index: abs(beats[index] - reference),
+    repaired_downbeats = _downbeats_from_grid(
+        repaired_beats,
+        [float(downbeat) for downbeat in data.get("downbeats") or []],
     )
-    earliest = max(0.0, beats[0] - stable_interval * 1.05)
-    leading = [round(reference, 3)]
-    value = reference - stable_interval
-    while value >= earliest:
-        leading.append(round(value, 3))
-        value -= stable_interval
-    repaired_beats = list(reversed(leading)) + [
-        round(beat, 3) for beat in beats[source_reference_index + 1:]
-    ]
-    reference_index = min(
-        range(len(repaired_beats)),
-        key=lambda index: abs(repaired_beats[index] - reference),
-    )
-    phase = reference_index % 4
-    repaired_downbeats = [
-        beat for index, beat in enumerate(repaired_beats) if index % 4 == phase
-    ]
 
     adjusted = dict(data)
     adjusted["beats"] = repaired_beats
