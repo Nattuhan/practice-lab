@@ -108,6 +108,15 @@ test("ステムは個別に速度を変えず全パートを同時刻へ一括�
   });
   assert.equal(drifted.seekTo, 10);
   assert.equal(drifted.playbackRate, 1);
+
+  const continuousPlayback = stemGroupSyncAction({
+    masterTime: 10,
+    mediaTimes: [10.31, 9.98, 10.01, 10.02],
+    playbackRate: 1,
+    allowResync: false,
+  });
+  assert.equal(continuousPlayback.seekTo, null);
+  assert.equal(continuousPlayback.playbackRate, 1);
 });
 
 test("実音源のサンプルから表示用波形を生成する", () => {

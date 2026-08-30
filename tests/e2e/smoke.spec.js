@@ -469,6 +469,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
   expect(audit.stemNonBaseRateWrites).toBe(0);
   expect(audit.mediaPlayCalls - beforeResize.mediaPlayCalls).toBeLessThan(16);
   expect(audit.diagnostics.some(event => event.type === "audio-play" && event.sessionId === "e2e-baseline")).toBe(true);
+  expect(audit.diagnostics.some(event => event.type === "stem-resync" && event.forced === 0)).toBe(false);
 });
 
 test("パート書き出し操作を右パネル内に収める", async ({ page }) => {

@@ -360,7 +360,6 @@ let stemGainNodes = {};
 let stemSourceNodes = {};
 let stemReady = false;
 let stemsAudible = false;
-let lastStemHardSyncAt = 0;
 let currentStemAssets = null;
 let mobileStemMixActivated = false;
 let stemExportInProgress = false;
@@ -1072,9 +1071,6 @@ const setStemMixMode = (stem, type) => {
 };
 const hasStemAssets = assets =>
   !!assets?.stems && STEM_NAMES.every(stem => typeof assets.stems[stem] === "string" && assets.stems[stem]);
-const STEM_SYNC_DRIFT_SECONDS = 0.075;
-const STEM_SYNC_COOLDOWN_MS = 1200;
-
 const destroyStemPlayers = () => {
   for (const player of Object.values(stemPlayers)) {
     player.pause();
@@ -1253,27 +1249,24 @@ const exportStemMix = async () => {
 
 const syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } = {}) => {
   if (!stemReady) return;
-  const now = performance.now();
   const playbackPlan = currentStemPlaybackPlan();
   const activeStems = new Set(playbackPlan.activeStems);
   const players = Object.entries(stemPlayers)
     .filter(([stem, player]) => activeStems.has(stem) && player.readyState >= 1)
     .map(([, player]) => player);
   if (!players.length) return;
-  const hardSyncAllowed = force || now - lastStemHardSyncAt > (isMobileViewport() ? 650 : STEM_SYNC_COOLDOWN_MS);
   const action = stemGroupSyncAction({
     masterTime: time,
     mediaTimes: players.map(player => player.currentTime),
     playbackRate,
     force,
-    hardDriftSeconds: hardSyncAllowed
-      ? (isMobileViewport() ? 0.06 : STEM_SYNC_DRIFT_SECONDS)
-      : Number.POSITIVE_INFINITY,
+    allowResync: force,
   });
-  if (action.seekTo !== null && !force) {
+  if (action.seekTo !== null) {
     logPlaybackDiagnostic("stem-resync", {
       audioTime: time,
       drift: action.maximumDrift,
+      forced: force ? 1 : 0,
       playbackRate,
       stemCount: players.length,
     });
@@ -1286,7 +1279,6 @@ const syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } =
     }
     if (Math.abs(player.playbackRate - action.playbackRate) > 0.001) player.playbackRate = action.playbackRate;
   }
-  if (action.seekTo !== null) lastStemHardSyncAt = now;
 };
 
 const playStems = () => {
@@ -1294,7 +1286,6 @@ const playStems = () => {
   const playbackPlan = currentStemPlaybackPlan();
   const activeStems = new Set(playbackPlan.activeStems);
   if (playbackPlan.useOriginalMix || activeStems.size === 0) return Promise.resolve(false);
-  lastStemHardSyncAt = 0;
   syncStemPlayers(ws?.getCurrentTime?.() ?? 0, { force: true });
   const players = Object.entries(stemPlayers)
     .filter(([stem]) => activeStems.has(stem))

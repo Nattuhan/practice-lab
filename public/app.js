@@ -2425,6 +2425,7 @@ var stemGroupSyncAction = ({
   mediaTimes,
   playbackRate: playbackRate2 = 1,
   force = false,
+  allowResync = true,
   hardDriftSeconds = 0.075
 }) => {
   const baseRate = Math.max(0.01, Number(playbackRate2) || 1);
@@ -2436,7 +2437,7 @@ var stemGroupSyncAction = ({
   );
   return {
     playbackRate: baseRate,
-    seekTo: force || maximumDrift >= hardDriftSeconds ? target : null,
+    seekTo: force || allowResync && maximumDrift >= hardDriftSeconds ? target : null,
     maximumDrift
   };
 };
@@ -2790,7 +2791,6 @@ var stemGainNodes = {};
 var stemSourceNodes = {};
 var stemReady = false;
 var stemsAudible = false;
-var lastStemHardSyncAt = 0;
 var currentStemAssets = null;
 var mobileStemMixActivated = false;
 var stemExportInProgress = false;
@@ -3424,8 +3424,6 @@ var setStemMixMode = (stem, type) => {
   applyStemMix();
 };
 var hasStemAssets = (assets) => !!assets?.stems && STEM_NAMES.every((stem) => typeof assets.stems[stem] === "string" && assets.stems[stem]);
-var STEM_SYNC_DRIFT_SECONDS = 0.075;
-var STEM_SYNC_COOLDOWN_MS = 1200;
 var destroyStemPlayers = () => {
   for (const player of Object.values(stemPlayers)) {
     player.pause();
@@ -3588,23 +3586,22 @@ var exportStemMix = async () => {
 };
 var syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } = {}) => {
   if (!stemReady) return;
-  const now = performance.now();
   const playbackPlan = currentStemPlaybackPlan();
   const activeStems = new Set(playbackPlan.activeStems);
   const players = Object.entries(stemPlayers).filter(([stem, player]) => activeStems.has(stem) && player.readyState >= 1).map(([, player]) => player);
   if (!players.length) return;
-  const hardSyncAllowed = force || now - lastStemHardSyncAt > (isMobileViewport() ? 650 : STEM_SYNC_COOLDOWN_MS);
   const action = stemGroupSyncAction({
     masterTime: time,
     mediaTimes: players.map((player) => player.currentTime),
     playbackRate,
     force,
-    hardDriftSeconds: hardSyncAllowed ? isMobileViewport() ? 0.06 : STEM_SYNC_DRIFT_SECONDS : Number.POSITIVE_INFINITY
+    allowResync: force
   });
-  if (action.seekTo !== null && !force) {
+  if (action.seekTo !== null) {
     logPlaybackDiagnostic("stem-resync", {
       audioTime: time,
       drift: action.maximumDrift,
+      forced: force ? 1 : 0,
       playbackRate,
       stemCount: players.length
     });
@@ -3618,14 +3615,12 @@ var syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } = {
     }
     if (Math.abs(player.playbackRate - action.playbackRate) > 1e-3) player.playbackRate = action.playbackRate;
   }
-  if (action.seekTo !== null) lastStemHardSyncAt = now;
 };
 var playStems = () => {
   if (!stemReady) return Promise.resolve(false);
   const playbackPlan = currentStemPlaybackPlan();
   const activeStems = new Set(playbackPlan.activeStems);
   if (playbackPlan.useOriginalMix || activeStems.size === 0) return Promise.resolve(false);
-  lastStemHardSyncAt = 0;
   syncStemPlayers(ws?.getCurrentTime?.() ?? 0, { force: true });
   const players = Object.entries(stemPlayers).filter(([stem]) => activeStems.has(stem)).map(([, player]) => player);
   for (const [stem, player] of Object.entries(stemPlayers)) {

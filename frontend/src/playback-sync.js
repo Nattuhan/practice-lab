@@ -42,6 +42,7 @@ export const stemGroupSyncAction = ({
   mediaTimes,
   playbackRate = 1,
   force = false,
+  allowResync = true,
   hardDriftSeconds = 0.075,
 }) => {
   const baseRate = Math.max(0.01, Number(playbackRate) || 1);
@@ -55,7 +56,7 @@ export const stemGroupSyncAction = ({
   );
   return {
     playbackRate: baseRate,
-    seekTo: force || maximumDrift >= hardDriftSeconds ? target : null,
+    seekTo: force || (allowResync && maximumDrift >= hardDriftSeconds) ? target : null,
     maximumDrift,
   };
 };

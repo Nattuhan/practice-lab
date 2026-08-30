@@ -18,6 +18,7 @@ const NUMBER_FIELDS = [
   "bufferedAhead",
   "duration",
   "drift",
+  "forced",
   "playbackRate",
   "readyState",
   "networkState",
