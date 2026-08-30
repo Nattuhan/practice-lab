@@ -1197,7 +1197,7 @@ def analyze_url(
             path.unlink(missing_ok=True)
 
     set_job_status(job_id, "downloading", "Fetching title")
-    title = get_title(url)
+    title = get_title(url, source_video_id)
     set_job_display_title(job_id, title)
 
     if not source_audio_file.exists():

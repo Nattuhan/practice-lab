@@ -9,6 +9,9 @@ from practice_lab import source_media
 
 
 class YtDlpDownloadTests(unittest.TestCase):
+    def setUp(self):
+        source_media._prefer_ipv4 = False
+
     def test_packaged_app_uses_electron_as_the_node_runtime(self):
         with patch.dict(os.environ, {"PRACTICE_LAB_NODE_PATH": "/Applications/PracticeLab.app/Contents/MacOS/PracticeLab"}, clear=False):
             runtime = source_media.yt_dlp_js_runtime()
@@ -23,6 +26,30 @@ class YtDlpDownloadTests(unittest.TestCase):
 
         self.assertNotIn("Deprecated Feature", message)
         self.assertIn("HTTP Error 403", message)
+
+    def test_title_timeout_retries_over_ipv4_and_remembers_the_route(self):
+        commands = []
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            if len(commands) == 1:
+                raise subprocess.TimeoutExpired(command, 10)
+            return subprocess.CompletedProcess(command, 0, "Demo title\n", "")
+
+        with patch.object(source_media.subprocess, "run", side_effect=fake_run):
+            title = source_media.get_title("https://youtu.be/example", "example")
+            source_media.get_title("https://youtu.be/second", "second")
+
+        self.assertEqual(title, "Demo title")
+        self.assertNotIn("--force-ipv4", commands[0])
+        self.assertIn("--force-ipv4", commands[1])
+        self.assertIn("--force-ipv4", commands[2])
+
+    def test_title_failure_uses_video_id_fallback(self):
+        with patch.object(source_media.subprocess, "run", side_effect=subprocess.TimeoutExpired(["yt-dlp"], 10)):
+            title = source_media.get_title("https://youtu.be/example", "example")
+
+        self.assertEqual(title, "example")
 
     def test_retries_403_with_a_fresh_url(self):
         with tempfile.TemporaryDirectory() as temp_dir:

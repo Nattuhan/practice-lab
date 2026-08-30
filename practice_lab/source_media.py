@@ -13,6 +13,7 @@ FULL_VIDEO_FORMAT = (
     "bv*[vcodec^=avc1][height<=1080][ext=mp4]+ba[ext=m4a]/"
     "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"
 )
+_prefer_ipv4 = False
 
 
 def normalize_analysis_range(
@@ -109,6 +110,33 @@ def yt_dlp_js_runtime() -> str:
     return f"node:{electron_path}" if electron_path else "node"
 
 
+def run_yt_dlp(
+    *args: str,
+    timeout: float,
+    ipv4_retry_timeout: float | None = None,
+    **run_kwargs,
+) -> subprocess.CompletedProcess[str]:
+    """Run yt-dlp and fall back to IPv4 when the default route times out."""
+    global _prefer_ipv4
+
+    def run(force_ipv4: bool, command_timeout: float) -> subprocess.CompletedProcess[str]:
+        network_args = ["--force-ipv4"] if force_ipv4 else []
+        return subprocess.run(
+            yt_dlp_command(*network_args, *args),
+            timeout=command_timeout,
+            **run_kwargs,
+        )
+
+    if _prefer_ipv4:
+        return run(True, ipv4_retry_timeout or timeout)
+    try:
+        return run(False, timeout)
+    except subprocess.TimeoutExpired:
+        result = run(True, ipv4_retry_timeout or timeout)
+        _prefer_ipv4 = True
+        return result
+
+
 def yt_dlp_browser_session_args() -> list[str]:
     """Return a local browser session fallback for YouTube's signed streams.
 
@@ -155,14 +183,18 @@ def yt_dlp_error(stderr: str, fallback: str) -> str:
     return message
 
 
-def get_title(url: str) -> str:
-    result = subprocess.run(
-        yt_dlp_command("--print", "title", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url),
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    return result.stdout.strip() or "Unknown"
+def get_title(url: str, fallback: str = "Unknown") -> str:
+    try:
+        result = run_yt_dlp(
+            "--print", "title", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            ipv4_retry_timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return fallback
+    return result.stdout.strip() or fallback
 
 
 def download_wav(
@@ -178,19 +210,17 @@ def download_wav(
     last_error = "yt-dlp failed"
     with tempfile.TemporaryDirectory() as temp_dir:
         for index, extra_args in enumerate(attempt_args):
-            result = subprocess.run(
-                yt_dlp_command(
-                    *extra_args,
-                    "-x",
-                    "--audio-format",
-                    "wav",
-                    "-o",
-                    os.path.join(temp_dir, f"audio-{index}.%(ext)s"),
-                    "--no-playlist",
-                    "--js-runtimes",
-                    yt_dlp_js_runtime(),
-                    url,
-                ),
+            result = run_yt_dlp(
+                *extra_args,
+                "-x",
+                "--audio-format",
+                "wav",
+                "-o",
+                os.path.join(temp_dir, f"audio-{index}.%(ext)s"),
+                "--no-playlist",
+                "--js-runtimes",
+                yt_dlp_js_runtime(),
+                url,
                 capture_output=True,
                 text=True,
                 timeout=120,
@@ -232,26 +262,24 @@ def download_video(
             attempt_args = [[], session_args] if session_args and format_index == 0 else [[]]
             for attempt, extra_args in enumerate(attempt_args):
                 output_base = f"video-{format_index}-{attempt}"
-                result = subprocess.run(
-                    yt_dlp_command(
-                        *extra_args,
-                        "-f",
-                        candidate,
-                        "--merge-output-format",
-                        "mp4",
-                        "--retries",
-                        "3",
-                        "--fragment-retries",
-                        "3",
-                        "--retry-sleep",
-                        "1",
-                        "-o",
-                        os.path.join(temp_dir, f"{output_base}.%(ext)s"),
-                        "--no-playlist",
-                        "--js-runtimes",
-                        yt_dlp_js_runtime(),
-                        url,
-                    ),
+                result = run_yt_dlp(
+                    *extra_args,
+                    "-f",
+                    candidate,
+                    "--merge-output-format",
+                    "mp4",
+                    "--retries",
+                    "3",
+                    "--fragment-retries",
+                    "3",
+                    "--retry-sleep",
+                    "1",
+                    "-o",
+                    os.path.join(temp_dir, f"{output_base}.%(ext)s"),
+                    "--no-playlist",
+                    "--js-runtimes",
+                    yt_dlp_js_runtime(),
+                    url,
                     capture_output=True,
                     text=True,
                     timeout=240,

@@ -18,7 +18,7 @@ import cv2
 from PIL import Image, ImageChops, ImageOps, ImageStat
 
 from .config import DATA_AUDIO_DIR, DATA_RESULTS_DIR, DATA_SCORE_DIR, PUBLIC_SCORE_DIR
-from .source_media import yt_dlp_js_runtime
+from .source_media import run_yt_dlp, yt_dlp_js_runtime
 
 MAX_OUTPUT_HEIGHT = 30000
 A4_RATIO = 297 / 210
@@ -68,10 +68,6 @@ def make_score_id(url: str) -> str:
     return extract_video_id(url) or f"score-{int(time.time())}"
 
 
-def yt_dlp_command(*args: str) -> list[str]:
-    return [sys.executable, "-m", "yt_dlp", *args]
-
-
 def yt_dlp_error(stderr: str, fallback: str) -> str:
     message = (stderr or fallback).strip()
     if "HTTP Error 403" in message or "Forbidden" in message:
@@ -82,19 +78,17 @@ def yt_dlp_error(stderr: str, fallback: str) -> str:
 def download_source_video(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temp_dir:
-        result = subprocess.run(
-            yt_dlp_command(
-                "-f",
-                "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
-                "--merge-output-format",
-                "mp4",
-                "-o",
-                os.path.join(temp_dir, "source.%(ext)s"),
-                "--no-playlist",
-                "--js-runtimes",
-                yt_dlp_js_runtime(),
-                url,
-            ),
+        result = run_yt_dlp(
+            "-f",
+            "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            os.path.join(temp_dir, "source.%(ext)s"),
+            "--no-playlist",
+            "--js-runtimes",
+            yt_dlp_js_runtime(),
+            url,
             capture_output=True,
             text=True,
             timeout=240,
@@ -108,16 +102,18 @@ def download_source_video(url: str, destination: Path) -> None:
 
 
 def get_video_title(url: str, fallback: str) -> str:
-    result = subprocess.run(
-        yt_dlp_command(
-            "--encoding", "utf-8", "--print", "title", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url
-        ),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=30,
-    )
+    try:
+        result = run_yt_dlp(
+            "--encoding", "utf-8", "--print", "title", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            ipv4_retry_timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return fallback
     return unicodedata.normalize("NFC", result.stdout.strip()) or fallback
 
 
