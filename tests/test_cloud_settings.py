@@ -9,6 +9,33 @@ from practice_lab.cloud_storage import R2Config
 
 
 class CloudSettingsApiTests(unittest.TestCase):
+    def test_desktop_can_enable_cloud_after_local_backend_startup(self):
+        with patch.dict(os.environ, {
+            "PRACTICE_LAB_DESKTOP_TOKEN": "secret-token",
+            "R2_ENABLED": "0",
+        }, clear=False):
+            client = TestClient(app_module.create_app())
+            response = client.post(
+                "/desktop/cloud-config",
+                headers={"X-Practice-Lab-Desktop-Token": "secret-token"},
+                json={
+                    "enabled": True,
+                    "bucket": "user-bucket",
+                    "accountId": "account-id",
+                    "accessKeyId": "access",
+                    "secretAccessKey": "secret",
+                    "publicBaseUrl": "https://assets.example.com/",
+                    "prefix": "/sessions/",
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), {"configured": True, "bucket": "user-bucket"})
+            self.assertEqual(os.environ["R2_ENABLED"], "1")
+            self.assertEqual(os.environ["R2_ENDPOINT_URL"], "https://account-id.r2.cloudflarestorage.com")
+            self.assertEqual(os.environ["R2_PUBLIC_BASE_URL"], "https://assets.example.com")
+            self.assertEqual(os.environ["R2_PREFIX"], "sessions")
+
     def test_cloud_status_reports_unconfigured(self):
         with patch("practice_lab.app.get_r2_config", return_value=None):
             client = TestClient(app_module.create_app())

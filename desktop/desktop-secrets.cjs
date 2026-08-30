@@ -1,6 +1,11 @@
 function createDesktopSecretsStore({ safeStorage, fs, filePath }) {
   let cachedSecrets = null;
 
+  const hasStored = () => {
+    if (cachedSecrets !== null) return !!cachedSecrets.r2SecretAccessKey;
+    return fs.existsSync(filePath());
+  };
+
   const read = () => {
     if (cachedSecrets !== null) return cachedSecrets;
     try {
@@ -32,7 +37,7 @@ function createDesktopSecretsStore({ safeStorage, fs, filePath }) {
     cachedSecrets = {};
   };
 
-  return { read, write, clear };
+  return { read, write, clear, hasStored };
 }
 
 module.exports = { createDesktopSecretsStore };

@@ -15,6 +15,7 @@ from .models import (
     AnalyzeResponse,
     ApplyBpmCorrectionRequest,
     DeleteSessionsRequest,
+    DesktopCloudConfigRequest,
     JobStatusResponse,
     JobSubmissionResponse,
     LibraryMetadataRequest,
@@ -208,6 +209,35 @@ def create_app() -> FastAPI:
     async def healthz():
         instance_id = os.environ.get("PRACTICE_LAB_INSTANCE_ID")
         return {"ok": True, **({"instanceId": instance_id} if instance_id else {})}
+
+    @app.post("/desktop/cloud-config")
+    async def configure_desktop_cloud(request: DesktopCloudConfigRequest):
+        if not os.environ.get("PRACTICE_LAB_DESKTOP_TOKEN"):
+            raise HTTPException(status_code=403, detail="デスクトップアプリでのみ設定できます")
+        values = request.model_dump()
+        endpoint_url = str(values["endpointUrl"] or "").strip()
+        account_id = str(values["accountId"] or "").strip()
+        if not endpoint_url and account_id:
+            endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
+        required = (
+            str(values["bucket"] or "").strip(),
+            endpoint_url,
+            str(values["accessKeyId"] or "").strip(),
+            str(values["secretAccessKey"] or "").strip(),
+        )
+        if values["enabled"] and not all(required):
+            raise HTTPException(status_code=400, detail="クラウド接続設定が不足しています")
+        os.environ.update({
+            "R2_ENABLED": "1" if values["enabled"] else "0",
+            "R2_BUCKET": required[0],
+            "R2_ENDPOINT_URL": endpoint_url,
+            "CLOUDFLARE_ACCOUNT_ID": account_id,
+            "R2_PUBLIC_BASE_URL": str(values["publicBaseUrl"] or "").strip().rstrip("/"),
+            "R2_PREFIX": str(values["prefix"] or "sessions").strip().strip("/") or "sessions",
+            "R2_ACCESS_KEY_ID": required[2],
+            "R2_SECRET_ACCESS_KEY": required[3],
+        })
+        return {"configured": bool(values["enabled"]), "bucket": required[0] or None}
 
     @app.get("/system/status")
     async def system_status():

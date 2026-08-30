@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("practiceLabDesktop", {
   savePlayerSettings: settings => ipcRenderer.sendSync("desktop:save-player-settings", settings),
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),
   saveSettings: settings => ipcRenderer.invoke("desktop:save-settings", settings),
+  prepareCloud: () => ipcRenderer.invoke("desktop:prepare-cloud"),
   exportCloudConnection: () => ipcRenderer.invoke("desktop:export-cloud-connection"),
   chooseCloudConnection: () => ipcRenderer.invoke("desktop:choose-cloud-connection"),
   importCloudConnection: payload => ipcRenderer.invoke("desktop:import-cloud-connection", payload),

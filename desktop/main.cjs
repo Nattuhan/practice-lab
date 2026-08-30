@@ -87,10 +87,9 @@ const readDesktopSecrets = () => desktopSecretsStore.read();
 
 function settingsForRenderer() {
   const settings = readDesktopSettings();
-  const secrets = readDesktopSecrets();
   return {
     ...settings,
-    cloud: { ...settings.cloud, hasSecret: !!secrets.r2SecretAccessKey },
+    cloud: { ...settings.cloud, hasSecret: desktopSecretsStore.hasStored() },
     dataPath: app.getPath("userData"),
     version: app.getVersion(),
     packaged: app.isPackaged,
@@ -101,7 +100,6 @@ function settingsForRenderer() {
 
 function writeDesktopSettings(input = {}) {
   const current = readDesktopSettings();
-  const currentSecrets = readDesktopSecrets();
   const cloudInput = input.cloud || {};
   const cloud = {
     ...current.cloud,
@@ -116,7 +114,7 @@ function writeDesktopSettings(input = {}) {
   if (cloud.enabled && (!cloud.bucket || (!cloud.accountId && !cloud.endpointUrl) || !cloud.accessKeyId)) {
     throw new Error("R2のバケット、アカウントIDまたはエンドポイント、アクセスキーIDを入力してください");
   }
-  if (cloud.enabled && !String(cloudInput.secretAccessKey || "") && !currentSecrets.r2SecretAccessKey) {
+  if (cloud.enabled && !String(cloudInput.secretAccessKey || "") && !desktopSecretsStore.hasStored()) {
     throw new Error("R2のシークレットアクセスキーを入力してください");
   }
   const settings = {
@@ -256,13 +254,13 @@ async function waitForBackend(url, child, instanceId) {
   throw lastError || new Error("PracticeLabの起動がタイムアウトしました");
 }
 
-async function startBackend() {
+async function startBackend({ cloudSecret = "" } = {}) {
   const runtime = pathsForRuntime();
   const appHome = app.getPath("userData");
   const runtimeBin = runtime.binDir ? `${runtime.binDir}${path.delimiter}` : "";
   const desktopSettings = readDesktopSettings();
-  const desktopSecrets = readDesktopSecrets();
   const cloud = desktopSettings.cloud;
+  const cloudEnabled = cloud.enabled && !!cloudSecret;
   const analysis = analysisEnvironment(desktopSettings.analysisMode, process.platform);
   let lastError = null;
   for (let startAttempt = 1; startAttempt <= 4; startAttempt += 1) {
@@ -291,14 +289,14 @@ async function startBackend() {
       ANALYZER_NO_OUTPUT_TIMEOUT_SECONDS: "0",
       STEM_DEVICE: analysis.stemDevice,
       PRACTICE_LAB_SKIP_ENV_FILE: "1",
-      R2_ENABLED: cloud.enabled ? "1" : "0",
+      R2_ENABLED: cloudEnabled ? "1" : "0",
       R2_BUCKET: cloud.bucket,
       CLOUDFLARE_ACCOUNT_ID: cloud.accountId,
       R2_ENDPOINT_URL: cloud.endpointUrl,
       R2_PUBLIC_BASE_URL: cloud.publicBaseUrl,
       R2_PREFIX: cloud.prefix,
       R2_ACCESS_KEY_ID: cloud.accessKeyId,
-      R2_SECRET_ACCESS_KEY: desktopSecrets.r2SecretAccessKey || "",
+      R2_SECRET_ACCESS_KEY: cloudSecret,
     };
     const child = spawn(runtime.executable, runtime.args, {
       cwd: runtime.resourceDir,
@@ -335,7 +333,7 @@ async function startBackend() {
   throw lastError || new Error("PracticeLabのバックエンドを起動できませんでした");
 }
 
-async function restartBackend() {
+async function restartBackend(options = {}) {
   const previous = backend;
   backend = null;
   if (previous && previous.exitCode === null) {
@@ -345,7 +343,7 @@ async function restartBackend() {
       setTimeout(resolve, 2000);
     });
   }
-  const url = await startBackend();
+  const url = await startBackend(options);
   await mainWindow?.loadURL(url);
 }
 
@@ -473,11 +471,6 @@ function configureApplicationMenu() {
 }
 
 async function createWindow() {
-  try {
-    migrateLegacyCloudSettings();
-  } catch (error) {
-    writeBackendLog(`Legacy R2 settings migration failed: ${error.message}\n`);
-  }
   const workArea = screen.getPrimaryDisplay().workArea;
   const width = Math.min(1280, Math.max(1024, workArea.width - 96));
   const height = Math.min(820, Math.max(700, workArea.height - 96));
@@ -557,6 +550,11 @@ ipcMain.on("desktop:save-player-settings", (event, payload) => {
 });
 ipcMain.handle("desktop:get-settings", event => {
   requireTrustedIpc(event);
+  try {
+    migrateLegacyCloudSettings();
+  } catch (error) {
+    writeBackendLog(`Legacy R2 settings migration failed: ${error.message}\n`);
+  }
   return settingsForRenderer();
 });
 ipcMain.handle("desktop:clear-cache", async event => {
@@ -570,7 +568,10 @@ ipcMain.handle("desktop:clear-cache", async event => {
 ipcMain.handle("desktop:save-settings", (event, payload) => {
   requireTrustedIpc(event);
   const saved = writeDesktopSettings(payload);
-  setTimeout(() => restartBackend().catch(error => {
+  const cloudSecret = payload?.activateCloud && saved.cloud.enabled
+    ? readDesktopSecrets().r2SecretAccessKey || ""
+    : "";
+  setTimeout(() => restartBackend({ cloudSecret }).catch(error => {
     dialog.showErrorBox("設定を反映できませんでした", error.stack || error.message);
   }), 350);
   return saved;
@@ -644,10 +645,30 @@ ipcMain.handle("desktop:import-cloud-connection", (event, payload = {}) => {
     autoUpdate: readDesktopSettings().autoUpdate,
     cloud,
   });
-  setTimeout(() => restartBackend().catch(error => {
+  const cloudSecret = readDesktopSecrets().r2SecretAccessKey || "";
+  setTimeout(() => restartBackend({ cloudSecret }).catch(error => {
     dialog.showErrorBox("設定を反映できませんでした", error.stack || error.message);
   }), 350);
   return saved;
+});
+ipcMain.handle("desktop:prepare-cloud", async event => {
+  requireTrustedIpc(event);
+  const settings = readDesktopSettings();
+  if (!settings.cloud.enabled) return { configured: false };
+  const cloudSecret = readDesktopSecrets().r2SecretAccessKey || "";
+  if (!cloudSecret) throw new Error("クラウド連携の秘密鍵を確認できません。設定を保存し直してください");
+  const response = await fetch(`${backendUrl}/desktop/cloud-config`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Practice-Lab-Desktop-Token": desktopToken,
+    },
+    body: JSON.stringify({ ...settings.cloud, secretAccessKey: cloudSecret }),
+    signal: AbortSignal.timeout(5000),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.detail || "クラウド設定を反映できませんでした");
+  return result;
 });
 ipcMain.handle("desktop:open-data-folder", event => {
   requireTrustedIpc(event);

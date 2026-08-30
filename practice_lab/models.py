@@ -10,6 +10,17 @@ class AnalyzeRequest(BaseModel):
     endSec: float | None = Field(default=None, ge=0)
 
 
+class DesktopCloudConfigRequest(BaseModel):
+    enabled: bool = False
+    bucket: str = ""
+    accountId: str = ""
+    endpointUrl: str = ""
+    publicBaseUrl: str = ""
+    prefix: str = "sessions"
+    accessKeyId: str = ""
+    secretAccessKey: str = ""
+
+
 class ApplyBpmCorrectionRequest(BaseModel):
     factor: float
 

@@ -2857,6 +2857,7 @@ const saveSettings = async () => {
   try {
     localStorage.setItem("practice_lab_settings_saved", enabled ? "test-cloud" : "saved");
     await desktop.saveSettings({
+      activateCloud: document.querySelector("[data-settings-section].active")?.dataset.settingsSection === "cloud",
       autoUpdate: SELECTORS.settingsAutoUpdate.checked,
       analysisMode: SELECTORS.settingsAnalysisNvidia?.checked ? "nvidia" : "cpu",
       cloud: {
@@ -2949,6 +2950,15 @@ const verifySavedCloudSettings = async () => {
 
 const syncCloudLibrary = async () => {
   if (!hasServer || staticLibraryMode) return;
+  if (window.practiceLabDesktop?.prepareCloud) {
+    try {
+      await window.practiceLabDesktop.prepareCloud();
+      await refreshCloudStatus();
+    } catch (error) {
+      await showAlert(error.message, { title: "クラウド連携を有効にできませんでした" });
+      return;
+    }
+  }
   if (!cloudStatus.configured) {
     await openSettings("cloud");
     return;

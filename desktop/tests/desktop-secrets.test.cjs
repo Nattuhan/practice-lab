@@ -40,3 +40,21 @@ test("R2秘密鍵を更新すると復号せず新しい値を再利用する", 
   assert.equal(JSON.parse(written.toString()).r2SecretAccessKey, "next");
   assert.equal(store.read().r2SecretAccessKey, "next");
 });
+
+test("保存済み判定ではR2秘密鍵を復号しない", () => {
+  let decryptCalls = 0;
+  const fs = {
+    existsSync: () => true,
+  };
+  const safeStorage = {
+    isEncryptionAvailable: () => true,
+    decryptString: () => {
+      decryptCalls += 1;
+      return JSON.stringify({ r2SecretAccessKey: "secret" });
+    },
+  };
+  const store = createDesktopSecretsStore({ safeStorage, fs, filePath: () => "secrets.bin" });
+
+  assert.equal(store.hasStored(), true);
+  assert.equal(decryptCalls, 0);
+});
