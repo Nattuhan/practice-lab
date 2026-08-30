@@ -1,15 +1,15 @@
-# PracticeLab v1.2.1
+# PracticeLab v1.2.0
 
 基本インストールを軽量化し、CPUだけで始められる解析環境、スマホ閲覧、クリックとステムの再生安定性を改善したリリースです。
 
 ## ダウンロード
 
-- **Windows 10/11**: `PracticeLab-Setup-1.2.1.exe`
-- **macOS（Apple Silicon）**: `PracticeLab-1.2.1-arm64.dmg`
+- **Windows 10/11**: `PracticeLab-Setup-1.2.0.exe`
+- **macOS（Apple Silicon）**: `PracticeLab-1.2.0-arm64.dmg`
 
 Windows CPU解析、Mac解析、楽譜抽出は、アプリの「設定 → 追加機能」から必要な場合だけ追加できます。追加パックをReleaseページから手動で展開する必要はありません。
 
-## v1.2.1の変更
+## v1.2.0の変更
 
 ### インストールと設定
 
@@ -41,10 +41,10 @@ Windows CPU解析、Mac解析、楽譜抽出は、アプリの「設定 → 追�
 
 ## 配布される追加パック
 
-- `PracticeLab-Windows-CPU-1.2.1.zip`
-- `PracticeLab-Analysis-macOS-arm64-1.2.1.zip`
-- `PracticeLab-Score-Windows-1.2.1.zip`
-- `PracticeLab-Score-macOS-arm64-1.2.1.zip`
+- `PracticeLab-Windows-CPU-1.2.0.zip`
+- `PracticeLab-Analysis-macOS-arm64-1.2.0.zip`
+- `PracticeLab-Score-Windows-1.2.0.zip`
+- `PracticeLab-Score-macOS-arm64-1.2.0.zip`
 - `PracticeLab-SHA256SUMS.txt`
 
 追加パックはアプリがSHA-256を検証してから展開します。
