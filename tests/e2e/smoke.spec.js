@@ -378,6 +378,11 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
       oscillatorStopCalls: 0,
       repeatedOscillatorStops: 0,
       stemNonBaseRateWrites: 0,
+      diagnostics: [],
+    };
+    window.practiceLabDesktop = {
+      logPlaybackEvent: event => audit.diagnostics.push(event),
+      onUpdateStatus: () => () => {},
     };
     window.Audio = function Audio(...args) {
       audit.audioInstances += 1;
@@ -463,6 +468,7 @@ test("再生中にループ端を連続ドラッグしても音源とクリッ�
   expect(audit.repeatedOscillatorStops).toBeGreaterThan(0);
   expect(audit.stemNonBaseRateWrites).toBe(0);
   expect(audit.mediaPlayCalls - beforeResize.mediaPlayCalls).toBeLessThan(16);
+  expect(audit.diagnostics.some(event => event.type === "audio-play" && event.sessionId === "e2e-baseline")).toBe(true);
 });
 
 test("パート書き出し操作を右パネル内に収める", async ({ page }) => {

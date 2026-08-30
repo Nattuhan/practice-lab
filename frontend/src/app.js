@@ -369,6 +369,35 @@ let lastSelectedSessionId = null;
 let sidebarSessionDrag = null;
 let suppressSidebarClickUntil = 0;
 
+const logPlaybackDiagnostic = (type, details = {}) => {
+  window.practiceLabDesktop?.logPlaybackEvent?.({
+    type,
+    sessionId: currentId,
+    ...details,
+  });
+};
+
+const mediaDiagnosticDetails = media => {
+  const time = Number(media?.currentTime) || 0;
+  let bufferedAhead = 0;
+  try {
+    for (let index = 0; index < media.buffered.length; index += 1) {
+      if (media.buffered.start(index) <= time && media.buffered.end(index) >= time) {
+        bufferedAhead = media.buffered.end(index) - time;
+        break;
+      }
+    }
+  } catch {}
+  return {
+    audioTime: time,
+    duration: Number(media?.duration) || 0,
+    playbackRate: Number(media?.playbackRate) || playbackRate,
+    readyState: Number(media?.readyState) || 0,
+    networkState: Number(media?.networkState) || 0,
+    bufferedAhead,
+  };
+};
+
 const isMobileViewport = () => window.matchMedia("(max-width: 680px), (pointer: coarse)").matches;
 const currentStemPlaybackPlan = () => planStemPlayback({
   stemNames: STEM_NAMES,
@@ -1241,6 +1270,14 @@ const syncStemPlayers = (time = ws?.getCurrentTime?.() ?? 0, { force = false } =
       ? (isMobileViewport() ? 0.06 : STEM_SYNC_DRIFT_SECONDS)
       : Number.POSITIVE_INFINITY,
   });
+  if (action.seekTo !== null && !force) {
+    logPlaybackDiagnostic("stem-resync", {
+      audioTime: time,
+      drift: action.maximumDrift,
+      playbackRate,
+      stemCount: players.length,
+    });
+  }
   for (const player of players) {
     if (action.seekTo !== null) {
       try {
@@ -1343,6 +1380,13 @@ const syncVideoToAudio = (time, { force = false } = {}) => {
     softDriftSeconds: isMobileViewport() ? 0.04 : 0.06,
     maxRateCorrection: isMobileViewport() ? 0.04 : 0.025,
   });
+  if (action.seekTo !== null && !force) {
+    logPlaybackDiagnostic("video-resync", {
+      audioTime: time,
+      drift: action.drift,
+      playbackRate,
+    });
+  }
   if (action.seekTo !== null) {
     try { video.currentTime = action.seekTo; } catch {}
   }
@@ -3310,7 +3354,13 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
       handlingFinish = false;
     }
   };
-  ws.getMediaElement?.()?.addEventListener("ended", handlePlaybackFinished);
+  const audioMedia = ws.getMediaElement?.();
+  audioMedia?.addEventListener("ended", handlePlaybackFinished);
+  for (const type of ["waiting", "stalled", "playing", "seeking", "abort", "error"]) {
+    audioMedia?.addEventListener(type, () => {
+      logPlaybackDiagnostic(`audio-${type}`, mediaDiagnosticDetails(audioMedia));
+    });
+  }
   const getRegions = () => ws.getActivePlugins()[0];
   const disableTransport = disabled => {
     for (const button of [SELECTORS.btnPlay, SELECTORS.btnRestart, SELECTORS.btnLoop, SELECTORS.btnAutoNext, SELECTORS.btnMetro, SELECTORS.btnFsPlay, SELECTORS.btnFsRestart, SELECTORS.btnFsLoop, SELECTORS.btnFsAutoNext, SELECTORS.btnFsMetro]) {
@@ -3489,6 +3539,7 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   ws.on("play", () => {
+    logPlaybackDiagnostic("audio-play", mediaDiagnosticDetails(audioMedia));
     if (!SELECTORS.sectionEditor?.open) markCurrentSessionPracticed();
     applyCurrentPlaybackRate();
     syncVideoToAudio(ws.getCurrentTime(), { force: true });
@@ -3500,6 +3551,7 @@ const initWaveSurfer = (audioUrl, videoUrl, stemAssets = null) => {
   });
 
   ws.on("pause", () => {
+    logPlaybackDiagnostic("audio-pause", mediaDiagnosticDetails(audioMedia));
     pauseVideo();
     pauseStems();
     stopMetro();

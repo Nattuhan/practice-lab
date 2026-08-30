@@ -48,6 +48,7 @@
       "desktop/desktop-secrets.cjs",
       "desktop/legacy-cloud-settings.cjs",
       "desktop/player-settings.cjs",
+      "desktop/playback-diagnostics.cjs",
       "desktop/analysis-settings.cjs",
       "desktop/update-policy.cjs",
       "package.json"

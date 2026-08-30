@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("practiceLabDesktop", {
   getVersion: () => ipcRenderer.invoke("desktop:get-version"),
   getPlayerSettings: () => ipcRenderer.sendSync("desktop:get-player-settings"),
   savePlayerSettings: settings => ipcRenderer.sendSync("desktop:save-player-settings", settings),
+  logPlaybackEvent: event => ipcRenderer.send("desktop:log-playback-event", event),
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),
   saveSettings: settings => ipcRenderer.invoke("desktop:save-settings", settings),
   prepareCloud: () => ipcRenderer.invoke("desktop:prepare-cloud"),

@@ -16,6 +16,7 @@ const { sanitizePlayerSettings } = require("./player-settings.cjs");
 const { RELEASES_LATEST_URL, getUpdateMode } = require("./update-policy.cjs");
 const { analysisEnvironment, sanitizeAnalysisMode } = require("./analysis-settings.cjs");
 const { createDesktopSecretsStore } = require("./desktop-secrets.cjs");
+const { appendPlaybackEvent } = require("./playback-diagnostics.cjs");
 
 let mainWindow = null;
 let backend = null;
@@ -236,6 +237,14 @@ function writeBackendLog(chunk) {
   const logDir = path.join(app.getPath("userData"), "logs");
   fs.mkdirSync(logDir, { recursive: true });
   fs.appendFileSync(path.join(logDir, "backend.log"), chunk);
+}
+
+function writePlaybackLog(input) {
+  appendPlaybackEvent({
+    fs,
+    logDir: path.join(app.getPath("userData"), "logs"),
+    input,
+  });
 }
 
 async function waitForBackend(url, child, instanceId) {
@@ -549,6 +558,12 @@ ipcMain.on("desktop:save-player-settings", (event, payload) => {
   } catch (error) {
     event.returnValue = { ok: false, message: error.message };
   }
+});
+ipcMain.on("desktop:log-playback-event", (event, payload) => {
+  try {
+    requireTrustedIpc(event);
+    writePlaybackLog(payload);
+  } catch {}
 });
 ipcMain.handle("desktop:get-settings", event => {
   requireTrustedIpc(event);
