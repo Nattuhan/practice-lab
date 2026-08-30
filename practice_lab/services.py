@@ -35,7 +35,8 @@ WSL_PYTHON = default_wsl_python()
 JOB_LOCK = threading.Lock()
 JOBS: dict[str, dict] = {}
 JOB_QUEUE: queue.Queue["QueuedJob"] = queue.Queue()
-JOB_WORKER_STARTED = False
+CLOUD_JOB_QUEUE: queue.Queue["QueuedJob"] = queue.Queue()
+JOB_WORKERS_STARTED: set[str] = set()
 JOB_STORE_FILE = DATA_DIR / "jobs.json"
 JOB_STORE_LOADED = False
 class JobCanceledError(RuntimeError):
@@ -336,9 +337,9 @@ def cancel_job(job_id: str) -> dict:
     return get_job_status(job_id) or {"id": job_id, "stage": "canceled", "done": True, "canceled": True}
 
 
-def queued_job_worker() -> None:
+def queued_job_worker(job_queue: queue.Queue["QueuedJob"]) -> None:
     while True:
-        job = JOB_QUEUE.get()
+        job = job_queue.get()
         try:
             if is_job_cancel_requested(job.id):
                 mark_job_canceled(job.id)
@@ -361,21 +362,28 @@ def queued_job_worker() -> None:
             else:
                 set_job_status(job.id, "error", str(exc), done=True, error=str(exc))
         finally:
-            JOB_QUEUE.task_done()
+            job_queue.task_done()
 
 
-def ensure_job_worker() -> None:
-    global JOB_WORKER_STARTED
+def ensure_job_worker(lane: str = "compute") -> None:
+    job_queue = CLOUD_JOB_QUEUE if lane == "cloud" else JOB_QUEUE
     with JOB_LOCK:
-        if JOB_WORKER_STARTED:
+        if lane in JOB_WORKERS_STARTED:
             return
-        JOB_WORKER_STARTED = True
-    thread = threading.Thread(target=queued_job_worker, name="practice-lab-job-worker", daemon=True)
+        JOB_WORKERS_STARTED.add(lane)
+    thread = threading.Thread(
+        target=queued_job_worker,
+        args=(job_queue,),
+        name=f"practice-lab-{lane}-job-worker",
+        daemon=True,
+    )
     thread.start()
 
 
 def submit_queued_job(job_id: str, description: str, func, cleanup=None, *, spec: dict | None = None, kind: str | None = None) -> dict:
-    ensure_job_worker()
+    lane = "cloud" if kind == "cloud-sync" else "compute"
+    ensure_job_worker(lane)
+    job_queue = CLOUD_JOB_QUEUE if lane == "cloud" else JOB_QUEUE
     now = time.time()
     with JOB_LOCK:
         existing = JOBS.get(job_id)
@@ -414,7 +422,7 @@ def submit_queued_job(job_id: str, description: str, func, cleanup=None, *, spec
         }
         persist_jobs_locked()
     cli_log(job_id, description)
-    JOB_QUEUE.put(QueuedJob(job_id, description, func, cleanup))
+    job_queue.put(QueuedJob(job_id, description, func, cleanup))
     return {"jobId": job_id, "stage": "queued", "message": description}
 
 
@@ -1330,24 +1338,30 @@ def publish_session_to_cloud(video_id: str, data: dict, result_file: Path, audio
 
     include_video = video_file is not None and video_file.exists()
     cloud_assets = build_r2_session_assets(video_id, config, include_video=include_video)
-    if cloud_assets:
-        set_job_status(video_id, "uploading", "Preparing cloud asset URLs")
-        data["assets"] = {**data.get("assets", {}), **cloud_assets}
-        save_json(result_file, data)
-        update_manifest(build_manifest_entry(data, entry_date=date.today().isoformat()))
-        export_static_assets()
-
     set_job_status(video_id, "uploading", "Uploading session assets to R2")
     try:
-        upload_session_assets(
-            video_id,
-            result_file=result_file,
-            audio_file=audio_file,
-            video_file=video_file if include_video else None,
-            config=config,
-        )
-        upload_manifest(config, MANIFEST_FILE)
-        upload_folders(config, FOLDERS_FILE)
+        with tempfile.TemporaryDirectory(prefix="practice-lab-r2-metadata-") as temp_dir:
+            remote_result = Path(temp_dir) / "session.json"
+            remote_manifest = Path(temp_dir) / "manifest.json"
+            remote_data = {**data, "assets": {**data.get("assets", {}), **cloud_assets}}
+            save_json(remote_result, remote_data)
+            manifest = []
+            for item in load_manifest():
+                manifest.append(
+                    build_manifest_entry(remote_data, entry_date=item.get("date") or date.today().isoformat())
+                    if item.get("id") == video_id
+                    else item
+                )
+            save_json(remote_manifest, manifest)
+            upload_session_assets(
+                video_id,
+                result_file=remote_result,
+                audio_file=audio_file,
+                video_file=video_file if include_video else None,
+                config=config,
+            )
+            upload_manifest(config, remote_manifest)
+            upload_folders(config, FOLDERS_FILE)
     except Exception as exc:
         if config.required:
             raise

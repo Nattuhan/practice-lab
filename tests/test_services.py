@@ -42,6 +42,36 @@ class CloudPublicationSafetyTests(unittest.TestCase):
             )
         get_config.assert_not_called()
 
+    def test_failed_cloud_upload_does_not_replace_local_asset_urls(self):
+        config = R2Config(
+            bucket="bucket",
+            endpoint_url="https://example.invalid",
+            access_key_id="access",
+            secret_access_key="secret",
+            public_base_url="https://cdn.example",
+        )
+        data = attach_session_assets({"id": "session-id", "title": "Song", "bpm": 120})
+        original_assets = dict(data["assets"])
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.dict(os.environ, {"R2_AUTO_PUBLISH": "1"}, clear=False),
+            patch.object(services, "get_r2_config", return_value=config),
+            patch.object(services, "load_manifest", return_value=[{
+                "id": "session-id", "title": "Song", "bpm": 120, "date": "2026-08-30",
+            }]),
+            patch.object(services, "upload_session_assets", side_effect=OSError("offline")),
+            patch.object(services, "cli_log"),
+        ):
+            root = Path(temp_dir)
+            result_file = root / "session.json"
+            audio_file = root / "audio.mp3"
+            result_file.write_text("{}", encoding="utf-8")
+            audio_file.write_bytes(b"audio")
+
+            services.publish_session_to_cloud("session-id", data, result_file, audio_file, None)
+
+        self.assertEqual(data["assets"], original_assets)
+
 
 class AudioConversionTests(unittest.TestCase):
     def test_loudnorm_output_is_decoded_as_utf8(self):
@@ -78,6 +108,32 @@ class PublishedVideoStorageTests(unittest.TestCase):
 
 
 class JobQueueTests(unittest.TestCase):
+    def test_cloud_sync_uses_a_separate_network_queue(self):
+        job_id = "cloud:queue-test"
+        cloud_queue = MagicMock()
+        compute_queue = MagicMock()
+        try:
+            with (
+                patch.object(services, "ensure_job_worker") as ensure,
+                patch.object(services, "CLOUD_JOB_QUEUE", cloud_queue),
+                patch.object(services, "JOB_QUEUE", compute_queue),
+                patch.object(services, "cli_log"),
+                patch.object(services, "persist_jobs_locked"),
+            ):
+                services.submit_queued_job(
+                    job_id,
+                    "Queued cloud sync",
+                    lambda: {},
+                    kind="cloud-sync",
+                )
+
+            ensure.assert_called_once_with("cloud")
+            cloud_queue.put.assert_called_once()
+            compute_queue.put.assert_not_called()
+        finally:
+            with services.JOB_LOCK:
+                services.JOBS.pop(job_id, None)
+
     def test_job_display_title_replaces_internal_id_for_clients(self):
         job_id = "opaque-video-id"
         with services.JOB_LOCK:

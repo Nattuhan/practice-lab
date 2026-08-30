@@ -1,6 +1,7 @@
 import mimetypes
 import os
 import json
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -92,8 +93,10 @@ def _cache_control(key: str) -> str:
     return "public, max-age=3600"
 
 
+@lru_cache(maxsize=8)
 def _client(config: R2Config):
     import boto3
+    from botocore.config import Config
 
     return boto3.client(
         service_name="s3",
@@ -101,6 +104,12 @@ def _client(config: R2Config):
         aws_access_key_id=config.access_key_id,
         aws_secret_access_key=config.secret_access_key,
         region_name="auto",
+        config=Config(
+            connect_timeout=10,
+            read_timeout=60,
+            retries={"mode": "adaptive", "max_attempts": 4},
+            tcp_keepalive=True,
+        ),
     )
 
 

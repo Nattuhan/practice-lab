@@ -7,6 +7,21 @@ from practice_lab import cloud_storage
 
 
 class CloudStorageUploadTests(unittest.TestCase):
+    def test_r2_client_has_bounded_connection_and_read_timeouts(self):
+        config = cloud_storage.R2Config(
+            bucket="bucket",
+            endpoint_url="https://example.invalid",
+            access_key_id="access",
+            secret_access_key="secret",
+        )
+        cloud_storage._client.cache_clear()
+        with patch("boto3.client", return_value=MagicMock()) as client:
+            cloud_storage._client(config)
+
+        client_config = client.call_args.kwargs["config"]
+        self.assertEqual(client_config.connect_timeout, 10)
+        self.assertEqual(client_config.read_timeout, 60)
+
     def test_json_and_static_app_are_revalidated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "manifest.json"
