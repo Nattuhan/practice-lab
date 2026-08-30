@@ -82,7 +82,7 @@ test("スマホはパート操作まで元音源1本で軽量再生する", () =
   });
 });
 
-test("小さな音ズレは速度で滑らかに補正し、大きなズレは再シークする", () => {
+test("動画の小さなズレは速度で滑らかに補正し、大きなズレは再シークする", () => {
   const soft = mediaSyncAction({ masterTime: 10, mediaTime: 10.08, playbackRate: 1 });
   assert.equal(soft.seekTo, null);
   assert.ok(soft.playbackRate < 1);
