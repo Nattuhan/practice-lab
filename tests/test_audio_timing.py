@@ -119,3 +119,106 @@ def test_accent_pattern_is_inferred_instead_of_matching_a_specific_riff(tmp_path
     result = refine_timing_from_audio(data, audio)
     assert len([b for b in result['beats'] if start <= b <= end]) == 33
     assert [span['intervals'] for span in result['audioTimingRepair']['spans']] == [4, 4, 8, 8, 4, 4]
+
+
+def irregular_detection(period, offset):
+    actual = offset + np.arange(320) * period
+    detected = actual.copy()
+    # A syncopated passage causes phase drift, followed by missing detections.
+    detected[160:184] += np.sin(np.linspace(0, np.pi, 24)) * period * .45
+    detected = np.delete(detected, [190, 194, 198, 202])
+    beats = np.round(detected, 3).tolist()
+    return dict(bpm=round(60 / period), beats=beats, downbeats=beats[::4],
+                duration=float(actual[-1] + period),
+                sections=[dict(start_time=0, end_time=float(actual[-1]))]), actual
+
+
+@pytest.mark.parametrize('period,offset', [(.317, .19), (.493, 1.13), (.683, .07)])
+def test_repairs_phase_drift_and_missing_beats_from_audio(tmp_path, period, offset):
+    data, actual = irregular_detection(period, offset)
+    audio = tmp_path / 'recording.wav'
+    write_attacks(audio, actual, data['duration'], inverted_stereo=True)
+    result = refine_timing_from_audio(data, audio)
+    assert len(result['beats']) == len(actual)
+    assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+    assert np.max(abs(np.asarray(result['downbeats']) - actual[::4])) < .002
+    assert refine_timing_from_audio(result, audio) == result
+
+
+@pytest.mark.parametrize('case', ['tempo_change', 'silence', 'different_phase', 'accelerando'])
+def test_dominant_tempo_does_not_override_conflicting_local_audio(tmp_path, case):
+    period = .493
+    data, actual = irregular_detection(period, .17)
+    if case == 'tempo_change':
+        # The recording itself follows the varying detections.
+        attacks = data['beats']
+    elif case == 'silence':
+        attacks = [b for b in actual if b < actual[156] or b > actual[204]]
+    elif case == 'different_phase':
+        attacks = [b + (.25 * period if actual[156] <= b <= actual[204] else 0) for b in actual]
+    else:
+        attacks = list(actual[:156])
+        attacks += (actual[156] + np.cumsum(np.linspace(.8, 1.2, 48)) * period).tolist()
+        attacks += list(actual[205:])
+    audio = tmp_path / 'variable.wav'
+    write_attacks(audio, attacks, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    # No smoothing of a passage whose sound does not support the proposed clock.
+    assert result['beats'] == data['beats']
+
+
+def test_local_tempo_change_is_not_hidden_by_long_constant_surroundings(tmp_path):
+    period = .5
+    actual = np.r_[.17 + np.arange(160) * period,
+                   80.17 + np.arange(24) * .6,
+                   94.57 + np.arange(160) * period]
+    beats = np.round(actual, 3).tolist()
+    data = dict(bpm=120, beats=beats, downbeats=beats[::4], duration=beats[-1] + period)
+    audio = tmp_path / 'tempo-change.wav'
+    write_attacks(audio, actual, data['duration'])
+    assert refine_timing_from_audio(data, audio) is data
+
+
+@pytest.mark.parametrize('missing', [1, 2, 3])
+@pytest.mark.parametrize('period', [.32, .64])
+def test_missing_beats_restore_subsequent_bar_count(tmp_path, missing, period):
+    actual = .17 + np.arange(320) * period
+    detected = np.delete(actual, np.arange(160, 160 + missing))
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4], duration=actual[-1] + period)
+    audio = tmp_path / 'missed-beats.wav'
+    write_attacks(audio, actual, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert len(result['beats']) == len(actual)
+    assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+    assert np.max(abs(np.asarray(result['downbeats']) - actual[::4])) < .002
+    assert refine_timing_from_audio(result, audio) == result
+
+
+def test_keeps_three_beat_meter(tmp_path):
+    data, actual = irregular_detection(.493, .17)
+    data['downbeats'] = data['beats'][::3]
+    audio = tmp_path / 'waltz.wav'
+    write_attacks(audio, actual, data['duration'])
+    assert refine_timing_from_audio(data, audio) is data
+
+
+@pytest.mark.parametrize('period,offset', [(.4, .23), (.64, 1.17), (.8, 2.31)])
+def test_dense_subdivisions_support_half_time_detections(tmp_path, period, offset):
+    data, actual = irregular_detection(period, offset)
+    audio = tmp_path / 'half-time.wav'
+    attacks = offset + np.arange(1277) * period / 4
+    write_attacks(audio, attacks, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert len(result['beats']) == len(actual)
+    assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+    assert result['bpm'] == data['bpm']
+
+
+def test_keeps_mixed_meter_when_recounting_would_erase_short_bars(tmp_path):
+    data, actual = irregular_detection(.493, .17)
+    positions = list(range(0, 80, 4)) + list(range(80, 92, 3)) + list(range(92, len(data['beats']), 4))
+    data['downbeats'] = [data['beats'][i] for i in positions]
+    audio = tmp_path / 'mixed-meter.wav'
+    write_attacks(audio, actual, data['duration'])
+    assert refine_timing_from_audio(data, audio) is data

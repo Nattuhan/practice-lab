@@ -13,12 +13,17 @@ from scipy.signal import find_peaks
 from .timing import bars_from_sections
 
 
-def _attacks(audio: sf.SoundFile, start: float, end: float, relative_threshold: float) -> list[tuple[float, float]]:
+def _attacks(audio: sf.SoundFile, start: float, end: float, relative_threshold: float,
+             beat_period: float | None = None) -> list[tuple[float, float]]:
     rate = audio.samplerate
     first = max(0, int(start * rate))
     audio.seek(first)
     samples = audio.read(max(0, int(end * rate) - first), always_2d=True, dtype="float32")
-    hop = max(1, round(rate * 0.005))
+    # Scale onset resolution and peak separation with the musical pulse so
+    # the same rhythm is evaluated consistently at different playback tempos.
+    hop_seconds = beat_period / 64 if beat_period else .005
+    separation = beat_period / 3 if beat_period else .1
+    hop = max(1, round(rate * hop_seconds))
     count = len(samples) // hop
     if count < 4:
         return []
@@ -29,7 +34,7 @@ def _attacks(audio: sf.SoundFile, start: float, end: float, relative_threshold: 
     maximum = float(onset.max())
     if maximum <= 1e-7:
         return []
-    indexes, properties = find_peaks(onset, distance=max(1, round(0.1 * rate / hop)),
+    indexes, properties = find_peaks(onset, distance=max(1, round(separation * rate / hop)),
                                     prominence=maximum * relative_threshold)
     return [(round((first + int(index) * hop) / rate, 3), float(strength))
             for index, strength in zip(indexes, properties["prominences"])]
@@ -131,6 +136,11 @@ def _apply_verified_grid(data: dict, correction: dict) -> dict:
         grid = [round(start + (end - start) * i / count, 3) for i in range(count + 1)]
         beats = sorted([b for b in beats if b < start or b > end] + grid)
         downbeats = sorted([b for b in downbeats if b < start or b > end] + grid[::4])
+    if any(span.get("rebuild_downbeats") for span in correction["spans"]):
+        # A missed beat changes subsequent bar numbering too. Keep the first
+        # measured bar head and count the repaired beats, not the old detections.
+        first = min(range(len(beats)), key=lambda i: abs(beats[i] - data["downbeats"][0]))
+        downbeats = beats[first::4]
     if correction.get("intro"):
         anchor = correction["intro"]["downbeat"]
         period = correction["intro"]["period"]
@@ -146,11 +156,125 @@ def _apply_verified_grid(data: dict, correction: dict) -> dict:
     return adjusted
 
 
+def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
+    """Bridge detector failures only when the recording supports a stable grid.
+
+    A rounded BPM is not a clock: fit the period from a long uninterrupted run,
+    then refine it with phase-consistent detections. Never derive the clock from
+    the number of detections inside a failed span (beats may be missing there).
+    """
+    beats = np.asarray(data.get("beats") or [], dtype=float)
+    downbeats = np.asarray(data.get("downbeats") or [], dtype=float)
+    if len(beats) < 64 or len(downbeats) < 16:
+        return []
+    # Recounting bars is only safe for a consistently detected four-beat meter.
+    # Preserve mixed meters rather than extending a majority meter over them.
+    detected_bar_positions = np.argmin(abs(downbeats[:, None] - beats[None, :]), axis=1)
+    if np.any(np.diff(detected_bar_positions) != 4):
+        return []
+    gaps = np.diff(beats)
+    typical = float(np.median(gaps))
+    if typical <= 0 or np.any(gaps <= 0):
+        return []
+    cuts = np.r_[0, np.flatnonzero(abs(gaps / typical - 1) > .1) + 1, len(beats)]
+    left, right = max(zip(cuts[:-1], cuts[1:]), key=lambda pair: pair[1] - pair[0])
+    if right - left < 32:
+        return []
+    period, phase = np.polyfit(np.arange(right - left), beats[left:right], 1)
+    for _ in range(4):
+        indexes = np.rint((beats - phase) / period)
+        consistent = abs(beats - (phase + indexes * period)) < .12 * period
+        if np.count_nonzero(consistent) < 32:
+            return []
+        period, phase = np.polyfit(indexes[consistent], beats[consistent], 1)
+    if np.mean(consistent) < .8:
+        return []
+    # Verify the meter from adjacent measured bar heads. An absolute phase
+    # vote would reject a missing-beat failure halfway through a track because
+    # all subsequent detected bar numbers can be shifted by that failure.
+    bar_indexes = np.rint((downbeats - phase) / period).astype(int)
+    on_grid = abs(downbeats - (phase + bar_indexes * period)) < .08 * period
+    bar_steps = np.diff(bar_indexes)
+    if np.mean((bar_steps > 0) & (bar_steps % 4 == 0)) < .8:
+        return []
+    anchors = downbeats[on_grid]
+    candidates = []
+    for start, end in zip(anchors[:-1], anchors[1:]):
+        count = int(round((end - start) / period))
+        inner = beats[(beats >= start - .001) & (beats <= end + .001)]
+        expected = np.linspace(start, end, count + 1)
+        if (len(inner) == len(expected)
+                and np.max(abs(inner - expected)) < .12 * period
+                and np.max(abs(np.diff(inner) / period - 1)) < .1):
+            continue
+        if candidates and abs(candidates[-1][1] - start) < .001:
+            candidates[-1] = (candidates[-1][0], end)
+        else:
+            candidates.append((start, end))
+    verified = []
+    for start, end in candidates:
+        count = int(round((end - start) / period))
+        fitted = (end - start) / count
+        if abs(fitted / period - 1) > .015:
+            continue
+        # Half-time beat tracking can place audible attacks on sixteenths.
+        # Keep the same fractional tolerance at either rhythmic resolution.
+        for subdivisions in (2, 4):
+            # Test every four-bar window, including the final window. Strong audio
+            # support elsewhere must not conceal an actual local tempo change.
+            supported = True
+            evidence_gain = []
+            window_starts = np.arange(start, max(start, end - 16 * fitted), 16 * fitted).tolist()
+            window_starts.append(max(start, end - 16 * fitted))
+            for window_start in window_starts:
+                window_end = min(end, window_start + 16 * fitted)
+                attacks = _attacks(audio, window_start, window_end, .1, fitted * 2 / subdivisions)
+                if len(attacks) < min(6, max(3, count - 1)):
+                    supported = False
+                    break
+                times, strengths = np.asarray(attacks).T
+                positions = (times - start) / fitted
+                original = beats[(beats >= start - period) & (beats <= end + period)]
+                old_distance = np.min(abs(times[:, None] - original[None, :]), axis=1) / fitted
+                new_distance = abs(positions - np.rint(positions))
+                original_subdivisions = np.sort(np.r_[original, *[
+                    original[:-1] + np.diff(original) * i / subdivisions for i in range(1, subdivisions)]])
+                old_subdivision_distance = np.min(
+                    abs(times[:, None] - original_subdivisions[None, :]), axis=1) / fitted
+                new_subdivision_distance = abs(positions * subdivisions - np.rint(positions * subdivisions)) / subdivisions
+                # Require improved audio alignment, not just a plausible constant
+                # clock. Quarter-note evidence detects missed attacks; subdivision
+                # evidence distinguishes syncopation from a genuinely changing pulse.
+                evidence_gain.append([
+                    float(np.average(np.minimum(old_distance, .25) - np.minimum(new_distance, .25),
+                                     weights=strengths)),
+                    float(np.average((old_subdivision_distance - new_subdivision_distance) * subdivisions / 2, weights=strengths)),
+                ])
+                aligned = abs(positions * subdivisions - np.rint(positions * subdivisions)) < .24
+                quarter_support = np.average(new_distance < .12, weights=strengths)
+                if (np.mean(aligned) < .6 or np.average(aligned, weights=strengths) < .7
+                        or quarter_support < .2):
+                    supported = False
+                    break
+            # Unaffected bars can dilute the gain. Require a measurable local
+            # improvement without worsening the average alignment of the span.
+            gains = np.asarray(evidence_gain)
+            if (supported and np.any((np.mean(gains, axis=0) > 0)
+                                     & (np.max(gains, axis=0) > .02))):
+                verified.append({"start": float(start), "end": float(end), "intervals": count,
+                                 "rebuild_downbeats": bool(count % 4)})
+                break
+    return verified
+
+
 def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
     """Return unchanged data unless independent audio evidence supports repair."""
     with sf.SoundFile(audio_path) as audio:
+        dominant_spans = _dominant_grid_spans(audio, data)
+        if dominant_spans:
+            data = _apply_verified_grid(data, {"spans": dominant_spans})
         intro = _missing_intro(audio, data)
-        spans = []
+        spans = list(dominant_spans)
         for start, end, period in _candidate_spans(data):
             spans.extend(_audio_supported_spans(audio, start, end, period))
     if not intro and not spans:
@@ -159,5 +283,5 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
     if intro:
         correction["intro"] = intro
     adjusted = _apply_verified_grid(data, correction)
-    adjusted["audioTimingRepair"] = {"version": 1, **correction}
+    adjusted["audioTimingRepair"] = {"version": 2, **correction}
     return adjusted
