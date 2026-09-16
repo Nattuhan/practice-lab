@@ -29,6 +29,7 @@ MACOS_ANALYSIS_RUNTIME_MODULES = (
     "practice_lab.compute_device",
     "practice_lab.jpop_sections",
     "practice_lab.audio_timing",
+    "practice_lab.metrical_tempo",
 )
 
 

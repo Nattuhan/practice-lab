@@ -30,6 +30,7 @@ from practice_lab.compute_device import is_acceleration_compatibility_error, sel
 from practice_lab.jpop_sections import refine_jpop_section_labels
 from practice_lab.timing import normalize_tempo_grid
 from practice_lab.audio_timing import refine_timing_from_audio
+from practice_lab.metrical_tempo import resolve_tempo_octave
 
 
 def fmt(seconds: float) -> str:
@@ -114,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         data["jpopLabeling"] = {"version": 1, "changes": jpop_changes}
     data = normalize_tempo_grid(data)
     data = refine_timing_from_audio(data, mp3_path)
+    data = resolve_tempo_octave(data, mp3_path)
     print(json.dumps(data, ensure_ascii=False))
     return 0
 
