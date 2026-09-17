@@ -1,3 +1,4 @@
+import { countVoiceSamples } from './count-voice.js';
 import { clickRendererWorkletSource, normalizeClickPitch, normalizeClickSound } from './click-renderer-worklet-source.js';
 
 // Carry every part and the click as channels of ONE media file. Chromium's pitch
@@ -20,11 +21,11 @@ export const clickWave = sampleRate => {
   return wave;
 };
 
-export const alignedWav = async (buffer, beats, { tracks = [], signal, yieldTask = () => new Promise(resolve => setTimeout(resolve, 0)) } = {}) => {
+export const alignedWav = async (buffer, beats, { tracks = [], counts = [], signal, yieldTask = () => new Promise(resolve => setTimeout(resolve, 0)) } = {}) => {
   const { sampleRate, length } = buffer;
   const buffers = [buffer, ...tracks];
   if (buffers.some(track => track && track.sampleRate !== sampleRate)) throw new Error('サンプルレートが一致しません');
-  const channels = buffers.length * 2 + 1, bytesPerFrame = channels * 4;
+  const channels = buffers.length * 2 + 2, bytesPerFrame = channels * 4;
   const planes = buffers.flatMap(track => track ? [track.getChannelData(0), track.getChannelData(Math.min(1, track.numberOfChannels - 1))] : [null, null]);
   const header = new Uint8Array(44);
   const view = new DataView(header.buffer);
@@ -37,7 +38,14 @@ export const alignedWav = async (buffer, beats, { tracks = [], signal, yieldTask
   text(36, 'data'); view.setUint32(40, length * bytesPerFrame, true);
   const click = clickWave(sampleRate);
   const positions = [...new Set(beats.filter(Number.isFinite).filter(t => t >= 0).map(t => Math.round(t * sampleRate)))].sort((a, b) => a - b);
+  const voices = countVoiceSamples(sampleRate);
+  const numbers = new Map(beats.map((time, index) => [Math.round(time * sampleRate), counts[index]]));
+  const events = positions.map((position, index) => {
+    const wave = voices[numbers.get(position)];
+    return { position, wave, length: Math.min(wave?.length || 0, (positions[index + 1] ?? length) - position) };
+  });
   const chunks = [header];
+  let voiceIndex = 0;
   let beatIndex = 0;
   // Small chunks yield to controls while preparing a long track. Blob copies
   // these chunks; do not retain full decoded tracks after preparation.
@@ -53,7 +61,15 @@ export const alignedWav = async (buffer, beats, { tracks = [], signal, yieldTask
     while (beatIndex < positions.length && positions[beatIndex] + click.length <= start) beatIndex++;
     for (let j = beatIndex; j < positions.length && positions[j] < start + count; j++) {
       const offset = positions[j] - start;
-      for (let k = Math.max(0, -offset); k < click.length && offset + k < count; k++) samples[(offset + k) * channels + channels - 1] += click[k];
+      for (let k = Math.max(0, -offset); k < click.length && offset + k < count; k++) samples[(offset + k) * channels + channels - 2] += click[k];
+    }
+    while (voiceIndex < events.length && events[voiceIndex].position + events[voiceIndex].length <= start) voiceIndex++;
+    for (let j = voiceIndex; j < events.length && events[j].position < start + count; j++) {
+      const event = events[j], offset = event.position - start;
+      for (let k = Math.max(0, -offset); k < event.length && offset + k < count; k++) {
+        const fade = Math.min(1, (event.length - k) / (sampleRate * .005));
+        samples[(offset + k) * channels + channels - 1] = event.wave[k] * fade;
+      }
     }
     chunks.push(samples);
     if (start % (sampleRate * 8) === 0) await yieldTask();
@@ -74,10 +90,12 @@ export const loadClickRenderer = ctx => {
 // The stem "players" below are gain controls over the same media, not separate
 // decoders. Their time/seek/rate always comes from that one transport.
 export const connectAlignedOutput = (ctx, source, media, stems = []) => {
-  const splitter = ctx.createChannelSplitter(3 + stems.length * 2);
+  const splitter = ctx.createChannelSplitter(4 + stems.length * 2);
   const clickRenderer = new AudioWorkletNode(ctx, 'click-renderer', { outputChannelCount: [1] });
   const click = ctx.createGain(); click.gain.value = 0;
-  const nodes = [splitter, clickRenderer, click], removals = [], players = {};
+  const tickGain = ctx.createGain(), voiceGain = ctx.createGain();
+  voiceGain.gain.value = 0;
+  const nodes = [splitter, clickRenderer, tickGain, voiceGain, click], removals = [], players = {};
   source.connect(splitter);
   const musicGain = track => {
     const stereo = ctx.createChannelMerger(2), gain = ctx.createGain();
@@ -118,9 +136,16 @@ export const connectAlignedOutput = (ctx, source, media, stems = []) => {
     }
     apply(); players[name] = player;
   });
-  splitter.connect(clickRenderer, 2 + stems.length * 2); clickRenderer.connect(click); click.connect(ctx.destination);
+  splitter.connect(clickRenderer, 2 + stems.length * 2); clickRenderer.connect(tickGain); tickGain.connect(click);
+  splitter.connect(voiceGain, 3 + stems.length * 2); voiceGain.connect(click);
+  click.connect(ctx.destination);
   const setPlaybackRate = playbackRate => clickRenderer.port.postMessage({ playbackRate });
-  const setClickSound = clickSound => clickRenderer.port.postMessage({ clickSound: normalizeClickSound(clickSound) });
+  const setClickSound = clickSound => {
+    const sound = normalizeClickSound(clickSound);
+    tickGain.gain.value = sound === 'voice' ? 0 : 1;
+    voiceGain.gain.value = sound === 'voice' ? 1 : 0;
+    clickRenderer.port.postMessage({ clickSound: sound });
+  };
   const setClickPitch = clickPitch => clickRenderer.port.postMessage({ clickPitch: normalizeClickPitch(clickPitch) });
   setPlaybackRate(media.playbackRate || 1);
   return { click, players, setPlaybackRate, setClickSound, setClickPitch, destroy() {

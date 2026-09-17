@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { alignedWav, clickWave } from '../src/aligned-click.js';
 import { CLICK_PITCH_IDS, CLICK_SOUND_IDS, CLICK_SOURCE_GAIN, normalizeClickPitch, normalizeClickSound } from '../src/click-renderer-worklet-source.js';
 
-test('クリック音は共通の3種類だけを受け付け、不正値は標準へ戻す', () => {
-  assert.deepEqual(CLICK_SOUND_IDS, ['classic', 'wood', 'hihat']);
+test('クリック音は共通の4種類だけを受け付け、不正値は標準へ戻す', () => {
+  assert.deepEqual(CLICK_SOUND_IDS, ['classic', 'wood', 'hihat', 'voice']);
   assert.equal(normalizeClickSound('wood'), 'wood');
   assert.equal(normalizeClickSound('unknown'), 'classic');
   assert.equal(normalizeClickSound(undefined), 'classic');
@@ -32,14 +32,14 @@ for (const sampleRate of [8000, 44100, 48000]) {
     const blob = await alignedWav(buffer, beats, { yieldTask: async () => {} });
     const bytes = await blob.arrayBuffer(), header = new DataView(bytes);
     assert.equal(header.getUint16(20, true), 3);
-    assert.equal(header.getUint16(22, true), 3);
+    assert.equal(header.getUint16(22, true), 4);
     assert.equal(header.getUint32(24, true), sampleRate);
     const samples = new Float32Array(bytes, 44), click = clickWave(sampleRate);
     for (let i = 0; i < buffer.length; i++) {
-      assert.equal(samples[i * 3], buffer.getChannelData(0)[i]);
-      assert.equal(samples[i * 3 + 1], buffer.getChannelData(1)[i]);
+      assert.equal(samples[i * 4], buffer.getChannelData(0)[i]);
+      assert.equal(samples[i * 4 + 1], buffer.getChannelData(1)[i]);
       const beat = beats.find(t => i >= Math.round(t * sampleRate) && i < Math.round(t * sampleRate) + click.length);
-      assert.equal(samples[i * 3 + 2], beat === undefined ? 0 : click[i - Math.round(beat * sampleRate)]);
+      assert.equal(samples[i * 4 + 2], beat === undefined ? 0 : click[i - Math.round(beat * sampleRate)]);
     }
   });
 }
@@ -53,24 +53,24 @@ test('モノラル、重複拍、不正な拍、末尾、キャンセルを扱�
   await assert.rejects(alignedWav(buffer, [1], { signal: controller.signal, yieldTask: async () => controller.abort() }), { name: 'AbortError' });
 });
 
-test('4パートと元音源を11チャンネルへ束ね、欠けたパートだけ無音にする', async () => {
+test('4パートと元音源を12チャンネルへ束ね、欠けたパートだけ無音にする', async () => {
   const original = source(2400, 8000);
   const vocal = source(2400, 8000, false), bass = source(1200, 8000);
   const tracks = [vocal, null, bass, original];
   const blob = await alignedWav(original, [0.1], { tracks });
   const bytes = await blob.arrayBuffer(), header = new DataView(bytes);
-  assert.equal(header.getUint16(22, true), 11);
+  assert.equal(header.getUint16(22, true), 12);
   const samples = new Float32Array(bytes, 44);
   for (let i = 0; i < original.length; i++) {
-    assert.equal(samples[i * 11], original.getChannelData(0)[i]);
-    assert.equal(samples[i * 11 + 1], original.getChannelData(1)[i]);
-    assert.equal(samples[i * 11 + 2], vocal.getChannelData(0)[i]);
-    assert.equal(samples[i * 11 + 3], vocal.getChannelData(0)[i]);
-    assert.equal(samples[i * 11 + 4], 0);
-    assert.equal(samples[i * 11 + 5], 0);
-    assert.equal(samples[i * 11 + 6], bass.getChannelData(0)[i] ?? 0);
-    assert.equal(samples[i * 11 + 7], bass.getChannelData(1)[i] ?? 0);
-    assert.equal(samples[i * 11 + 8], original.getChannelData(0)[i]);
-    assert.equal(samples[i * 11 + 9], original.getChannelData(1)[i]);
+    assert.equal(samples[i * 12], original.getChannelData(0)[i]);
+    assert.equal(samples[i * 12 + 1], original.getChannelData(1)[i]);
+    assert.equal(samples[i * 12 + 2], vocal.getChannelData(0)[i]);
+    assert.equal(samples[i * 12 + 3], vocal.getChannelData(0)[i]);
+    assert.equal(samples[i * 12 + 4], 0);
+    assert.equal(samples[i * 12 + 5], 0);
+    assert.equal(samples[i * 12 + 6], bass.getChannelData(0)[i] ?? 0);
+    assert.equal(samples[i * 12 + 7], bass.getChannelData(1)[i] ?? 0);
+    assert.equal(samples[i * 12 + 8], original.getChannelData(0)[i]);
+    assert.equal(samples[i * 12 + 9], original.getChannelData(1)[i]);
   }
 });

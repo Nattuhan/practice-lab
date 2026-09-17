@@ -1,3 +1,4 @@
+import { beatCounts } from './count-voice.js';
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "./library.js";
@@ -1232,6 +1233,8 @@ const exportStemMix = async () => {
   const includeClick = SELECTORS.stemExportClick.checked;
   const rangeStart = range?.start ?? 0;
   const rangeEnd = range?.end ?? Infinity;
+  const allCounts = beatCounts(getAdjustedBeats(false), currentData?.downbeats);
+  const clickCounts = includeClick ? getAdjustedBeats().flatMap((time, index) => time >= rangeStart && time <= rangeEnd ? [allCounts[index]] : []) : [];
   const clickTimes = includeClick
     ? getAdjustedBeats()
       .filter(time => time >= rangeStart && time <= rangeEnd)
@@ -1255,6 +1258,7 @@ const exportStemMix = async () => {
         startSec: range?.start ?? null,
         endSec: range?.end ?? null,
         clickTimes,
+        clickCounts,
         clickVolume: includeClick ? Number(SELECTORS.volMetro.value) : 0,
         clickSound,
         clickPitch,
@@ -2036,10 +2040,10 @@ const applyClickOffset = beats => {
   return beats.map(beat => Math.max(0, beat + offset));
 };
 
-const getAdjustedBeats = () => {
+const getAdjustedBeats = (withOffset = true) => {
   const beats = currentData?.beats ?? [];
   if (!beats.length) return [];
-  if (bpmFactor === 1) return applyClickOffset(beats);
+  if (bpmFactor === 1) return withOffset ? applyClickOffset(beats) : beats;
 
   let adjusted = [...beats];
   let factor = bpmFactor;
@@ -2061,7 +2065,7 @@ const getAdjustedBeats = () => {
     factor *= 2;
   }
 
-  return applyClickOffset(adjusted);
+  return withOffset ? applyClickOffset(adjusted) : adjusted;
 };
 
 const getLoopRange = () => {
@@ -3275,7 +3279,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     }
     await loadClickRenderer(getCtx());
     preparation.signal.throwIfAborted();
-    const blob = await alignedWav(original, beats, { tracks, signal: preparation.signal });
+    const blob = await alignedWav(original, beats, { tracks, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
   } catch (error) {

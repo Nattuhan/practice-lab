@@ -584,6 +584,7 @@ def export_stem_mix(
     start_sec: float | None = None,
     end_sec: float | None = None,
     click_times: list[float] | None = None,
+    click_counts: list[int] | None = None,
     click_volume: float = 0,
     click_sound: str = "classic",
     click_pitch: str = "standard",
@@ -602,12 +603,17 @@ def export_stem_mix(
         raise ValueError("Both start and end are required for a range export")
     if start_sec is not None and end_sec is not None and end_sec <= start_sec:
         raise ValueError("Export range must have a positive duration")
-    click_times = sorted(float(value) for value in (click_times or []))
+    original_times = [float(value) for value in (click_times or [])]
+    click_times = sorted(original_times)
+    if click_sound == "voice":
+        if len(click_counts or []) != len(original_times) or any(not isinstance(n, int) or not 0 <= n <= 12 for n in click_counts):
+            raise ValueError("読み上げの拍番号が不正です")
+        click_counts = [n for _, n in sorted(zip(original_times, click_counts), key=lambda pair: pair[0])]
     if len(click_times) > 10000 or any(not math.isfinite(value) or value < 0 for value in click_times):
         raise ValueError("Invalid click times")
     if not 0 <= click_volume <= 100:
         raise ValueError("Invalid click volume")
-    if click_sound not in {"classic", "wood", "hihat"}:
+    if click_sound not in {"classic", "wood", "hihat", "voice"}:
         raise ValueError("Invalid click sound")
     if click_pitch not in {"low", "standard", "high"}:
         raise ValueError("Invalid click pitch")
@@ -634,7 +640,7 @@ def export_stem_mix(
 
     click_path = None
     if click_times and click_volume > 0:
-        click_path = create_export_click_track(click_times, click_volume, click_sound, click_pitch)
+        click_path = create_export_click_track(click_times, click_volume, click_sound, click_pitch, click_counts=click_counts)
         command.extend(["-i", str(click_path)])
 
     filters = []
@@ -674,17 +680,37 @@ def create_export_click_track(
     volume: float,
     click_sound: str = "classic",
     click_pitch: str = "standard",
+    *, click_counts: list[int] | None = None,
 ) -> Path:
     sample_rate = 44100
-    click_duration = 0.055
+    voices = {}
+    voice_rate = sample_rate
+    if click_sound == "voice":
+        from .count_voice import voice_samples
+        voice_rate, voices = voice_samples()
+    click_duration = max(len(v) for v in voices.values()) / voice_rate if voices else 0.055
     total_frames = max(1, math.ceil((click_times[-1] + click_duration) * sample_rate))
     samples = array("h", [0]) * total_frames
     click_frames = math.ceil(click_duration * sample_rate)
     # Keep the visible volume scale unchanged while raising the click source by 1.2x.
     peak = 32767 * (volume / 100) * 0.72 * 1.2
     classic_frequency = {"low": 1200, "standard": 1800, "high": 2400}[click_pitch]
-    for click_time in click_times:
+    for index, click_time in enumerate(click_times):
         start_frame = round(click_time * sample_rate)
+        if click_sound == "voice":
+            word = voices.get((click_counts or [])[index])
+            if word is None:
+                continue
+            next_frame = round(click_times[index + 1] * sample_rate) if index + 1 < len(click_times) else total_frames
+            frames = min(math.ceil(len(word) * sample_rate / voice_rate), next_frame - start_frame)
+            for offset in range(frames):
+                position = offset * voice_rate / sample_rate
+                left = min(int(position), len(word) - 1)
+                right = min(left + 1, len(word) - 1)
+                value = word[left] + (word[right] - word[left]) * (position - left)
+                value *= volume / 100 * min(1, (frames - offset) / (sample_rate * .005))
+                samples[start_frame + offset] = max(-32768, min(32767, round(value)))
+            continue
         for offset in range(click_frames):
             frame = start_frame + offset
             if frame >= total_frames:
@@ -725,6 +751,7 @@ def create_stem_mix_export(
     start_sec: float | None = None,
     end_sec: float | None = None,
     click_times: list[float] | None = None,
+    click_counts: list[int] | None = None,
     click_volume: float = 0,
     click_sound: str = "classic",
     click_pitch: str = "standard",

@@ -117,6 +117,7 @@ def submit_job_spec(spec: dict) -> dict:
                 start_sec=request.get("startSec"),
                 end_sec=request.get("endSec"),
                 click_times=request.get("clickTimes", []),
+                click_counts=request.get("clickCounts", []),
                 click_volume=request.get("clickVolume", 0),
                 click_sound=request.get("clickSound", "classic"),
                 click_pitch=request.get("clickPitch", "standard"),

@@ -33,10 +33,12 @@ test.beforeEach(async ({ page }) => {
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function (target, ...args) {
       const result = connect.call(this, target, ...args);
-      if (this instanceof ChannelSplitterNode && args[0] === this.numberOfOutputs - 1) {
+      // Observe the final audible gain buses, not a fixed channel index:
+      // speech adds a channel and sound selection happens after splitting.
+      if (this instanceof GainNode && target === this.context.destination) {
         const analyser = this.context.createAnalyser(); analyser.fftSize = 1024;
         const zero = this.context.createGain(); zero.gain.value = 0;
-        connect.call(target, analyser); connect.call(analyser, zero); connect.call(zero, this.context.destination);
+        connect.call(this, analyser); connect.call(analyser, zero); connect.call(zero, this.context.destination);
         clickAnalysers.push(analyser);
       }
       return result;
@@ -219,3 +221,25 @@ test('モバイルではパート操作まで追加音源を読み込まず、�
   expect(await page.evaluate(() => Object.values(window.__media.stems).every(media => media.paused))).toBe(true);
   await expect.poll(() => originalVolume(page)).toBeGreaterThan(0);
 });
+
+for (const rate of [0.75, 1.25]) {
+  test(`読み上げクリックを${rate}倍速で再生し停止できる`, async ({ page }) => {
+    const beats = Array.from({ length: 14 }, (_, i) => .1 + i * .36);
+    await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
+      ...baselineResult, duration: 5.2, beats, downbeats: [beats[0], beats[4], beats[6], beats[10]], assets: {},
+    } }));
+    await page.route('**/audio/e2e-baseline.mp3', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(5.2) }));
+    await page.addInitScript(() => localStorage.setItem('practice_lab_v1', JSON.stringify({ clickSound: 'voice', volMetro: 100, volMusic: 0 })));
+    await page.goto('/');
+    await expect(page.locator('#btn-play')).toBeEnabled();
+    await page.locator('#playback-rate').fill(String(rate));
+    await page.locator('#btn-metro').click();
+    await page.locator('#btn-play').click();
+    await expect.poll(() => page.evaluate(() => window.__clickPeaks.length)).toBeGreaterThanOrEqual(4);
+    await page.locator('#btn-play').click();
+    await page.waitForTimeout(150);
+    const count = await page.evaluate(() => window.__clickPeaks.length);
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => window.__clickPeaks.length)).toBe(count);
+  });
+}
