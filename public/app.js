@@ -2345,6 +2345,27 @@ var normalizeSectionDraft = (draft, totalBars) => {
     return normalized;
   });
 };
+var sectionBoundaryTimes = (data) => {
+  const total = Math.max(0, Math.round(Number(data.total_bars) || 0));
+  if (data.sectionBoundaryTimes?.length === total + 1) return data.sectionBoundaryTimes;
+  const source = data.sections || [];
+  const normalized = normalizeSectionDraft(source.map((section) => ({
+    startBar: section.start_bar,
+    endBar: section.end_bar
+  })), total);
+  const times = Array.from({ length: total + 1 }, (_, i3) => (data.duration || 0) * i3 / Math.max(1, total));
+  normalized.forEach((section, index) => {
+    const start = Number(source[index].start_time);
+    const end = Number(source[index].end_time);
+    const count = section.endBar - section.startBar + 1;
+    for (let i3 = 0; i3 <= count; i3++) times[section.startBar - 1 + i3] = start + (end - start) * i3 / count;
+  });
+  return times;
+};
+var nearestSectionBoundary = (times, time) => times.reduce(
+  (best, value, index) => Math.abs(value - time) < Math.abs(times[best] - time) ? index : best,
+  0
+);
 
 // frontend/src/storage.js
 var formatBytes = (bytes) => {
@@ -6622,16 +6643,7 @@ var stopSectionEditorPreview = ({ pause = true } = {}) => {
   if (pause && ws?.isPlaying()) ws.pause();
   setSectionEditorPreviewState(false);
 };
-var sectionEditorTimeAtBoundary = (boundaryBar) => {
-  const sourceSections = currentData?.sections || [];
-  const source = sourceSections.find((section) => boundaryBar >= section.start_bar - 1 && boundaryBar <= section.end_bar);
-  if (source) {
-    const count = Math.max(1, source.end_bar - source.start_bar + 1);
-    const progress = Math.max(0, Math.min(1, (boundaryBar - (source.start_bar - 1)) / count));
-    return source.start_time + (source.end_time - source.start_time) * progress;
-  }
-  return (currentData?.duration || 0) * boundaryBar / sectionEditorTotalBars();
-};
+var sectionEditorTimeAtBoundary = (boundaryBar) => sectionBoundaryTimes(currentData)[boundaryBar] ?? 0;
 var previewSelectedSection = () => {
   if (!canPlayAudio()) return;
   if (sectionEditorPreviewTimer && ws.isPlaying()) {
@@ -6683,8 +6695,10 @@ var renderSectionEditorInspector = () => {
 var renderSectionEditor = () => {
   const totalBars = sectionEditorTotalBars();
   const segments = sectionEditorDraft.map((section, index) => {
-    const startPercent = (section.startBar - 1) / totalBars * 100;
-    const widthPercent = (section.endBar - section.startBar + 1) / totalBars * 100;
+    const startTime = sectionEditorTimeAtBoundary(section.startBar - 1);
+    const endTime = sectionEditorTimeAtBoundary(section.endBar);
+    const startPercent = startTime / currentData.duration * 100;
+    const widthPercent = (endTime - startTime) / currentData.duration * 100;
     const color = secColor(section.label);
     return `
       <button class="section-editor-segment${index === sectionEditorSelectedIndex ? " selected" : ""}"
@@ -6698,19 +6712,19 @@ var renderSectionEditor = () => {
   }).join("");
   const boundaries = sectionEditorDraft.slice(0, -1).map((section, index) => `
     <button class="section-editor-boundary" type="button" data-boundary-index="${index}"
-      style="--boundary-left:${section.endBar / totalBars * 100}%"
+      style="--boundary-left:${sectionEditorTimeAtBoundary(section.endBar) / currentData.duration * 100}%"
       aria-label="${section.endBar}\u5C0F\u7BC0\u3068${section.endBar + 1}\u5C0F\u7BC0\u306E\u5883\u754C">
       <span></span>
     </button>
   `).join("");
   const ruler = Array.from({ length: Math.ceil(totalBars / 4) + 1 }, (_, index) => {
     const bar = Math.min(index * 4 + 1, totalBars);
-    const left = (bar - 1) / totalBars * 100;
+    const left = sectionEditorTimeAtBoundary(bar - 1) / currentData.duration * 100;
     return `<span style="left:${left}%">${bar}</span>`;
   }).join("");
   SELECTORS.sectionEditorRows.innerHTML = `
-    <div class="section-editor-grid section-editor-grid-minor" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
-    <div class="section-editor-grid section-editor-grid-major" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
+    <div class="section-editor-grid section-editor-grid-minor" aria-hidden="true">${sectionBoundaryTimes(currentData).slice(1, -1).map((time, index) => `<i class="${(index + 1) % 4 === 0 ? "major" : ""}" style="left:${time / currentData.duration * 100}%"></i>`).join("")}</div>
+    <div class="section-editor-grid section-editor-grid-major" aria-hidden="true"></div>
     ${segments}${boundaries}
     <div class="section-editor-ruler" aria-hidden="true">${ruler}</div>
   `;
@@ -7779,7 +7793,7 @@ SELECTORS.sectionEditorRows?.addEventListener("pointermove", (event) => {
   if (!sectionEditorBoundaryDrag || sectionEditorBoundaryDrag.pointerId !== event.pointerId) return;
   const rect = SELECTORS.sectionEditorRows.getBoundingClientRect();
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-  updateSectionEditorBoundary(sectionEditorBoundaryDrag.boundaryIndex, ratio * sectionEditorTotalBars());
+  updateSectionEditorBoundary(sectionEditorBoundaryDrag.boundaryIndex, nearestSectionBoundary(sectionBoundaryTimes(currentData), ratio * currentData.duration));
   renderSectionEditor();
 });
 var finishSectionEditorBoundaryDrag = (event) => {

@@ -974,3 +974,25 @@ test("アップデート確認の結果を設定画面へ表示する", async ({
   await page.getByRole("button", { name: "アップデートを確認" }).click();
   await expect(page.locator("#settings-update-status")).toHaveText("現在のバージョンが最新です。");
 });
+
+test("小節長の異なる曲でも編集画面の境界は生成時刻と一致する", async ({ page }) => {
+  const session = { id: 'uneven-editor', title: 'Uneven boundaries', bpm: 160, date: '2026-09-18' };
+  const result = { ...session, duration: 20, total_bars: 6, beats: [], downbeats: [8, 10, 12, 14, 16, 18], sections: [
+    { label: 'start', start_bar: 1, end_bar: 1, bar_count: 1, start_time: 0, end_time: .4, start_time_str: '00:00' },
+    { label: 'intro', start_bar: 2, end_bar: 3, bar_count: 2, start_time: .4, end_time: 12, start_time_str: '00:00' },
+    { label: 'verse', start_bar: 4, end_bar: 6, bar_count: 3, start_time: 12, end_time: 20, start_time_str: '00:12' },
+  ] };
+  await page.route('**/results/manifest.json', route => route.fulfill({ json: [session] }));
+  await page.route('**/results/uneven-editor.json', route => route.fulfill({ json: result }));
+  await page.route('**/audio/uneven-editor.mp3', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(20) }));
+  await page.goto('/');
+  await page.locator('#btn-edit-sections').click();
+  const intro = page.locator('.section-editor-segment').nth(1);
+  expect(await intro.evaluate(el => parseFloat(el.style.getPropertyValue('--section-left')))).toBeCloseTo(2);
+  expect(await intro.evaluate(el => parseFloat(el.style.getPropertyValue('--section-width')))).toBeCloseTo(58);
+  const boundary = page.locator('.section-editor-boundary').nth(1);
+  expect(await boundary.evaluate(el => parseFloat(el.style.getPropertyValue('--boundary-left')))).toBeCloseTo(60);
+  await intro.click();
+  expect(await page.locator('#section-editor-selected-range').evaluate(el => parseFloat(el.style.left))).toBeCloseTo(2);
+  expect(await page.locator('#section-editor-selected-range').evaluate(el => parseFloat(el.style.width))).toBeCloseTo(58);
+});

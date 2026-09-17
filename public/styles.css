@@ -4095,14 +4095,8 @@ select:focus,
 }
 .section-editor-timeline { position: absolute; inset: 0; }
 .section-editor-grid { position: absolute; z-index: 7; inset: 0 0 34px; pointer-events: none; }
-.section-editor-grid-minor {
-  background-size: calc(100% / var(--editor-bars)) 100%;
-  background-image: linear-gradient(90deg, transparent calc(100% - 1px), rgba(255,255,255,.10) calc(100% - 1px));
-}
-.section-editor-grid-major {
-  background-size: calc(400% / var(--editor-bars)) 100%;
-  background-image: linear-gradient(90deg, transparent calc(100% - 2px), rgba(255,255,255,.34) calc(100% - 2px));
-}
+.section-editor-grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.10); }
+.section-editor-grid i.major { width: 2px; background: rgba(255,255,255,.34); }
 .section-editor-segment {
   position: absolute;
   z-index: 3;
@@ -4110,9 +4104,9 @@ select:focus,
   bottom: 35px;
   left: var(--section-left);
   width: var(--section-width);
-  min-width: 18px;
+  min-width: 0;
   overflow: hidden;
-  padding: 116px 12px 16px;
+  padding: 116px 0 16px;
   border: 0;
   border-right: 1px solid rgba(255,255,255,.28);
   border-radius: 0;
@@ -4124,7 +4118,7 @@ select:focus,
 .section-editor-segment:hover { background: color-mix(in srgb, var(--section-color) 32%, rgba(21,25,31,.54)); }
 .section-editor-segment.selected { z-index: 4; box-shadow: inset 0 0 0 2px var(--orange); background: color-mix(in srgb, var(--section-color) 38%, rgba(23,27,33,.52)); color: #fff; }
 .section-editor-segment strong,
-.section-editor-segment small { position: relative; z-index: 2; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-editor-segment small { padding-inline: 12px; position: relative; z-index: 2; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .section-editor-segment strong { font-size: 13px; }
 .section-editor-segment small { margin-top: 5px; color: rgba(255,255,255,.58); font-family: var(--mono); font-size: 9px; }
 .section-editor-boundary { position: absolute; z-index: 10; top: 0; bottom: 26px; left: var(--boundary-left); width: 22px; translate: -50% 0; padding: 0; border: 0; background: transparent; cursor: ew-resize; }

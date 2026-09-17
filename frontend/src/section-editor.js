@@ -34,3 +34,26 @@ export const normalizeSectionDraft = (draft, totalBars) => {
     return normalized;
   });
 };
+
+// A bar label is not an elapsed-time coordinate (pickups, rests and meter
+// changes have different lengths). Keep the source section times as anchors.
+export const sectionBoundaryTimes = data => {
+  const total = Math.max(0, Math.round(Number(data.total_bars) || 0));
+  if (data.sectionBoundaryTimes?.length === total + 1) return data.sectionBoundaryTimes;
+  const source = data.sections || [];
+  const normalized = normalizeSectionDraft(source.map(section => ({
+    startBar: section.start_bar, endBar: section.end_bar,
+  })), total);
+  const times = Array.from({ length: total + 1 }, (_, i) => (data.duration || 0) * i / Math.max(1, total));
+  normalized.forEach((section, index) => {
+    const start = Number(source[index].start_time);
+    const end = Number(source[index].end_time);
+    const count = section.endBar - section.startBar + 1;
+    for (let i = 0; i <= count; i++) times[section.startBar - 1 + i] = start + (end - start) * i / count;
+  });
+  return times;
+};
+
+export const nearestSectionBoundary = (times, time) => times.reduce(
+  (best, value, index) => Math.abs(value - time) < Math.abs(times[best] - time) ? index : best, 0,
+);

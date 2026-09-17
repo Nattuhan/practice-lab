@@ -2,7 +2,7 @@ import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "./library.js";
 import { clampCustomLoopRange, moveCustomLoopRange, shouldRestartLoop } from "./loop-playback.js";
-import { mutateSectionDraft, normalizeSectionDraft } from "./section-editor.js";
+import { mutateSectionDraft, normalizeSectionDraft, sectionBoundaryTimes, nearestSectionBoundary } from "./section-editor.js";
 import { formatBytes } from "./storage.js";
 import { extractWaveformPeaks } from "./waveform-peaks.js";
 import { mediaSyncAction, planStemPlayback } from "./playback-sync.js";
@@ -4025,16 +4025,7 @@ const stopSectionEditorPreview = ({ pause = true } = {}) => {
   setSectionEditorPreviewState(false);
 };
 
-const sectionEditorTimeAtBoundary = boundaryBar => {
-  const sourceSections = currentData?.sections || [];
-  const source = sourceSections.find(section => boundaryBar >= section.start_bar - 1 && boundaryBar <= section.end_bar);
-  if (source) {
-    const count = Math.max(1, source.end_bar - source.start_bar + 1);
-    const progress = Math.max(0, Math.min(1, (boundaryBar - (source.start_bar - 1)) / count));
-    return source.start_time + (source.end_time - source.start_time) * progress;
-  }
-  return (currentData?.duration || 0) * boundaryBar / sectionEditorTotalBars();
-};
+const sectionEditorTimeAtBoundary = boundaryBar => sectionBoundaryTimes(currentData)[boundaryBar] ?? 0;
 
 const previewSelectedSection = () => {
   if (!canPlayAudio()) return;
@@ -4093,8 +4084,10 @@ const renderSectionEditorInspector = () => {
 const renderSectionEditor = () => {
   const totalBars = sectionEditorTotalBars();
   const segments = sectionEditorDraft.map((section, index) => {
-    const startPercent = (section.startBar - 1) / totalBars * 100;
-    const widthPercent = (section.endBar - section.startBar + 1) / totalBars * 100;
+    const startTime = sectionEditorTimeAtBoundary(section.startBar - 1);
+    const endTime = sectionEditorTimeAtBoundary(section.endBar);
+    const startPercent = startTime / currentData.duration * 100;
+    const widthPercent = (endTime - startTime) / currentData.duration * 100;
     const color = secColor(section.label);
     return `
       <button class="section-editor-segment${index === sectionEditorSelectedIndex ? " selected" : ""}"
@@ -4108,19 +4101,19 @@ const renderSectionEditor = () => {
   }).join("");
   const boundaries = sectionEditorDraft.slice(0, -1).map((section, index) => `
     <button class="section-editor-boundary" type="button" data-boundary-index="${index}"
-      style="--boundary-left:${section.endBar / totalBars * 100}%"
+      style="--boundary-left:${sectionEditorTimeAtBoundary(section.endBar) / currentData.duration * 100}%"
       aria-label="${section.endBar}小節と${section.endBar + 1}小節の境界">
       <span></span>
     </button>
   `).join("");
   const ruler = Array.from({ length: Math.ceil(totalBars / 4) + 1 }, (_, index) => {
     const bar = Math.min(index * 4 + 1, totalBars);
-    const left = (bar - 1) / totalBars * 100;
+    const left = sectionEditorTimeAtBoundary(bar - 1) / currentData.duration * 100;
     return `<span style="left:${left}%">${bar}</span>`;
   }).join("");
   SELECTORS.sectionEditorRows.innerHTML = `
-    <div class="section-editor-grid section-editor-grid-minor" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
-    <div class="section-editor-grid section-editor-grid-major" style="--editor-bars:${totalBars}" aria-hidden="true"></div>
+    <div class="section-editor-grid section-editor-grid-minor" aria-hidden="true">${sectionBoundaryTimes(currentData).slice(1, -1).map((time, index) => `<i class="${(index + 1) % 4 === 0 ? 'major' : ''}" style="left:${time / currentData.duration * 100}%"></i>`).join("")}</div>
+    <div class="section-editor-grid section-editor-grid-major" aria-hidden="true"></div>
     ${segments}${boundaries}
     <div class="section-editor-ruler" aria-hidden="true">${ruler}</div>
   `;
@@ -5247,7 +5240,7 @@ SELECTORS.sectionEditorRows?.addEventListener("pointermove", event => {
   if (!sectionEditorBoundaryDrag || sectionEditorBoundaryDrag.pointerId !== event.pointerId) return;
   const rect = SELECTORS.sectionEditorRows.getBoundingClientRect();
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-  updateSectionEditorBoundary(sectionEditorBoundaryDrag.boundaryIndex, ratio * sectionEditorTotalBars());
+  updateSectionEditorBoundary(sectionEditorBoundaryDrag.boundaryIndex, nearestSectionBoundary(sectionBoundaryTimes(currentData), ratio * currentData.duration));
   renderSectionEditor();
 });
 const finishSectionEditorBoundaryDrag = event => {

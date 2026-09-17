@@ -137,3 +137,19 @@ test("動画のダブルクリックはPCで全画面、タッチ端末で左右
   assert.equal(videoClickAction({ pendingSingleClick: true, coarsePointer: false }), "fullscreen");
   assert.equal(videoClickAction({ pendingSingleClick: true, coarsePointer: true }), "seek");
 });
+
+test("編集の区切りは小節数の比率でなく生成結果の時刻を保つ", async () => {
+  const { sectionBoundaryTimes, nearestSectionBoundary } = await import('../src/section-editor.js');
+  const data = { total_bars: 6, duration: 20, sections: [
+    { start_bar: 1, end_bar: 1, start_time: 0, end_time: .4 },
+    { start_bar: 2, end_bar: 3, start_time: .4, end_time: 12 },
+    { start_bar: 4, end_bar: 6, start_time: 12, end_time: 20 },
+  ] };
+  const times = sectionBoundaryTimes(data);
+  assert.equal(times[0], 0);
+  assert.equal(times[1], .4);
+  assert.equal(times[3], 12);
+  assert.equal(times[6], 20);
+  assert.equal(nearestSectionBoundary(times, 11.9), 3);
+  assert.deepEqual(sectionBoundaryTimes({ ...data, sectionBoundaryTimes: times, sections: [] }), times);
+});

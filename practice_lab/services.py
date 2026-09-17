@@ -26,7 +26,7 @@ from .source_media import download_video, extract_wav_from_video, get_title, nor
 from .optional_features import mac_analysis_runtime_executable, windows_cpu_runtime_executable
 from .process_manager import job_process_context, run_process, running_process, start_process, terminate_process, unregister_process
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
-from .timing import normalize_section_bar_ranges, normalize_tempo_grid
+from .timing import normalize_section_bar_ranges, normalize_tempo_grid, section_boundary_times
 from .loudness import measure_stem_gain
 
 REPO_ROOT = SOURCE_ROOT
@@ -1657,10 +1657,12 @@ def save_sections(video_id: str, sections: list[dict], *, restore_automatic: boo
         data["sections"] = automatic
         data.pop("automaticSections", None)
         data.pop("sectionsEditedAt", None)
+        data.pop("sectionBoundaryTimes", None)
     else:
         total_bars = int(data.get("total_bars") or 0)
         if total_bars < 1:
             raise ValueError("小節情報がないため編集できません")
+        boundary_times = section_boundary_times(data)
         ordered = sorted(sections, key=lambda item: int(item["startBar"]))
         expected_start = 1
         normalized = []
@@ -1672,8 +1674,8 @@ def save_sections(video_id: str, sections: list[dict], *, restore_automatic: boo
                 raise ValueError("セクション名が空です")
             if start_bar != expected_start or end_bar < start_bar or end_bar > total_bars:
                 raise ValueError("セクションは1小節目から重複や空白なく並べてください")
-            start_time = _section_time(data, start_bar)
-            end_time = _section_time(data, end_bar, end=True)
+            start_time = boundary_times[start_bar - 1]
+            end_time = boundary_times[end_bar]
             normalized.append(
                 {
                     "label": label[:80],
@@ -1690,6 +1692,7 @@ def save_sections(video_id: str, sections: list[dict], *, restore_automatic: boo
             raise ValueError("最後のセクションを曲の最終小節まで設定してください")
         if "automaticSections" not in data:
             data["automaticSections"] = data.get("sections", [])
+        data["sectionBoundaryTimes"] = boundary_times
         data["sections"] = normalized
         data["sectionsEditedAt"] = datetime.now(timezone.utc).isoformat()
 

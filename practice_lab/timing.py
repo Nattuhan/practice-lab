@@ -208,3 +208,19 @@ def normalize_tempo_grid(data: dict) -> dict:
         adjusted["total_bars"] = len(adjusted_downbeats)
         adjusted["sections"] = bars_from_sections(list(data.get("sections") or []), adjusted_downbeats)
     return _repair_sparse_leading_grid(adjusted)
+
+
+def section_boundary_times(data: dict) -> list[float]:
+    """Use source section times for editing; bar indexes alone are not a clock."""
+    total = max(0, int(data.get("total_bars") or 0))
+    saved = data.get("sectionBoundaryTimes")
+    if isinstance(saved, list) and len(saved) == total + 1:
+        return saved
+    source = normalize_section_bar_ranges(data.get("sections") or [], total)
+    times = [float(data.get("duration") or 0) * i / max(1, total) for i in range(total + 1)]
+    for section in source:
+        first, last = section["start_bar"] - 1, section["end_bar"]
+        start, end = float(section["start_time"]), float(section["end_time"])
+        for i in range(last - first + 1):
+            times[first + i] = start + (end - start) * i / (last - first)
+    return times
