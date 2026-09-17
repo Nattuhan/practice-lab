@@ -245,8 +245,10 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
                 original = beats[(beats >= start - period) & (beats <= end + period)]
                 old_distance = np.min(abs(times[:, None] - original[None, :]), axis=1) / fitted
                 new_distance = abs(positions - np.rint(positions))
-                original_subdivisions = np.sort(np.r_[original, *[
-                    original[:-1] + np.diff(original) * i / subdivisions for i in range(1, subdivisions)]])
+                # Windows packages Python 3.10, which cannot unpack inside a
+                # subscription (np.r_[...]). Concatenation keeps the same grid.
+                original_subdivisions = np.sort(np.concatenate([original, *[
+                    original[:-1] + np.diff(original) * i / subdivisions for i in range(1, subdivisions)]]))
                 old_subdivision_distance = np.min(
                     abs(times[:, None] - original_subdivisions[None, :]), axis=1) / fitted
                 new_subdivision_distance = abs(positions * subdivisions - np.rint(positions * subdivisions)) / subdivisions
