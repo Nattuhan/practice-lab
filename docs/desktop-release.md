@@ -39,6 +39,33 @@ npm run desktop:dist -- --publish=never
 生成物は`desktop/dist/installer/`に作成されます。`desktop/bin/`、`desktop/build/`、
 `desktop/dist/`はGit管理しません。
 
+## 手元検証と自動更新の両立
+
+普段使いの`/Applications/PracticeLab.app`はDeveloper ID署名済みの公開版を維持し、更新は起動時の確認・自動ダウンロード・アプリ内の再起動適用で行います。ローカルビルドは`desktop/dist`に置いたまま、別のデータ領域で検証します。仮署名の検証版で普段使い版を上書きしません。
+
+```bash
+# 普段使い版の署名・整合性・起動時チェック設定を確認
+node scripts/macos-verification.cjs --check
+
+# ビルドした.appを専用プロファイルで起動。終了後に通常版の不変性を確認
+node scripts/macos-verification.cjs --launch desktop/dist/installer/mac-arm64/PracticeLab.app
+```
+
+`--check`の終了コード0は自動更新の前提がそろった状態、2は正式署名または設定などの復旧が必要な状態です。将来の配信やネットワーク成功まで保証する検査ではありません。実際の自動更新は公開済みの旧版から新版検出・取得・再起動による適用まで別途確認します。
+
+検証用プロファイルは一時フォルダに作り、その場所を表示します。通常版の曲・設定・秘密情報はコピーしません。検証側は自動更新とクラウド連携を無効にします。スクリプトは通常版を検証対象として指定する操作を拒否し、終了時には通常版の主要ファイル、署名の整合性、設定が変わっていないことを確認します。差分があってもユーザーの変更を勝手に巻き戻しません。
+
+Bluetoothの実機確認には次も利用できます。Bluetoothを既定出力にして実行します。
+
+```bash
+PRACTICE_LAB_AUDIT_APP="$PWD/desktop/dist/installer/mac-arm64/PracticeLab.app/Contents/MacOS/PracticeLab" \
+  node scripts/diagnose_presentation.mjs
+```
+
+この診断も通常版と検証用プロファイルを分離します。合成した無音音源と動画を使い、実機の出力遅延・映像・表示時計を測定します。
+
+既に普段使い版が仮署名の場合は、隔離検証だけでは自動更新は復旧しません。正式署名・公証済み公開版への初回移行を、通常の自動更新とは区別して行います。移行が依頼されたら、通常版を正常終了し、利用者データを保持して公式アプリへ置換し、署名・起動・起動時チェックの有効状態を確認します。以後はアプリ内更新を利用します。
+
 ## GitHub Releases
 
 `.github/workflows/release-desktop.yml`は手動実行時に未公開インストーラーをArtifactとして作成します。

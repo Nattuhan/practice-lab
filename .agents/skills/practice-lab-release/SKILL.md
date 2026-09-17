@@ -1,6 +1,6 @@
 ---
 name: practice-lab-release
-description: Prepare and publish PracticeLab desktop releases, update the local Apple Silicon Mac for testing, or verify automatic updates. Distinguish release versioning from local builds, which preserve the existing version. Use for requested version changes, desktop releases, local app updates, or automatic update verification.
+description: Prepare and publish PracticeLab desktop releases, verify local Apple Silicon builds in isolation, or verify automatic updates. Preserve the ordinary signed app and its update channel during local testing; distinguish release versioning from local builds. Use for requested version changes, desktop releases, local app updates, or automatic update verification.
 ---
 
 # PracticeLab デスクトップリリース
@@ -11,7 +11,7 @@ description: Prepare and publish PracticeLab desktop releases, update the local 
 ## 作業範囲とバージョン
 
 - リリース作成・準備の依頼では、下記の「リリース準備」を適用する。公開は依頼された場合だけ行う。
-- 「公開せずローカルで動作確認」「修正後にこのMacのアプリを更新」などの依頼では、「ローカルビルドでこのMacを更新」を適用し、既存のバージョンを維持する。ローカル更新の依頼はバージョン変更の依頼を含まない。
+- 「公開せずローカルで動作確認」では「手元のビルド検証と通常版の自動更新を両立する」を適用し、既存のバージョンを維持する。「このMacを更新」はアプリ内更新を標準とし、ローカルビルドの検証と区別する。いずれも依頼だけで未指定のバージョン変更を追加しない。
 - 「次のパッチバージョンを原則とする」は、リリースに向けてバージョンを上げる際の番号の選び方であり、修正・ビルド・ローカル更新のたびに番号を上げる指示ではない。
 - 「1.3.0としてリリース」のように番号が指定された場合は、その番号を使う。パッチ番号の原則より指定を優先し、CI失敗や再試行を理由に別の番号へ変更しない。
 - 編集前に、依頼された作業、バージョンを維持するか指定値へ変更するか、公開・インストール・検証の対象を整理する。完了前の差分確認でも、ローカル更新だけの依頼にバージョン変更や新バージョンのリリースノートが混入していないことを確認する。
@@ -46,18 +46,31 @@ UI・静的ビューア変更を含む場合は、`practice-lab-r2-sync`スキ�
 
 CI失敗時は失敗stepとログを確認する。一時的な実行環境の問題なら同じコミットの失敗jobを再実行できる。コードや配布物の修正が必要なら、再検証と再署名の必要性を確認し、既存タグの上書きや未指定のバージョン変更で解決しない。指定済みタグとの整合を保てない場合は、その事実と選択肢をユーザーへ伝える。壊れたReleaseを成功として報告しない。
 
-## ローカルビルドでこのMacを更新
+## 手元のビルド検証と通常版の自動更新を両立する
 
-動作確認用のローカル更新が依頼された場合に適用する。公開DMGを使う必要はない。
+PracticeLabでは、手元でビルドしたアプリの検証と、普段使い版の自動更新を両立させる。ローカル検証の標準は隔離起動であり、`/Applications/PracticeLab.app`を仮署名ビルドで上書きしない。アプリ本体だけでなくuser-data-dirも分ける。
+
+1. `node scripts/macos-verification.cjs --check`で通常版の署名・整合性・起動時チェック設定を確認する。終了コード2は既に自動更新条件を満たしていない状態であり、正常と報告しない。必要な初回移行は検証と別の作業として扱う。
+2. バージョンはローカル検証だけなら維持する。必要な資源を更新し、リリース準備のテストを実行してローカルアプリをビルドする。
+3. `node scripts/macos-verification.cjs --launch desktop/dist/installer/mac-arm64/PracticeLab.app`で隔離起動する。スクリプトは専用プロファイルで起動し、検証側の更新チェックとクラウド連携を無効にする。通常版の設定ファイルや秘密情報を検証プロファイルへコピーしない。
+4. 検証後にアプリを終了し、スクリプトの通常版・設定の不変確認を通す。失敗時に通常版を自動復元したり、ユーザーの設定変更を上書きしたりしない。必要な差分を確認する。
+5. 自動テストでも同じ分離を守る。Bluetooth実機検証は`PRACTICE_LAB_AUDIT_APP=/absolute/path/PracticeLab.app/Contents/MacOS/PracticeLab node scripts/diagnose_presentation.mjs`を使える。これは無音の合成メディアと実機の出力時計による確認であり、聴感やマイク測定と混同しない。
+6. 普段使い版への適用は、正式署名・公証済みReleaseからのアプリ内更新を標準とする。実際の更新を検証する場合は新版検出、ダウンロード、再起動適用、適用後の署名・版番号まで確認する。
+
+詳細は`docs/desktop-release.md`の「手元検証と自動更新の両立」を参照。通常版の置換が明示的に依頼されても、自動更新維持の要件がある場合は仮署名版への置換で済ませない。正式署名版の用意または隔離検証で目的を満たす。
+
+## 通常版の置換を明示的に依頼された場合
+
+通常のローカル検証では使わない。仮署名の検証版を通常版へ入れると自動更新経路が失われるため、ユーザーがその影響を理解して明示的に選んだ場合だけ、下記の手順を使う。自動更新を維持する要件がある場合は上記の隔離検証、または正式署名版への移行を使う。
 
 1. `package.json`と`package-lock.json`のバージョンを維持し、ローカル更新だけを理由に`RELEASE_NOTES.md`へ新しいバージョンの見出しを追加しない。ビルドの識別にはコミットIDや成果物のSHA-256を使う。
 2. フロント生成物と必要な同梱資源を更新し、リリース準備の手順3〜5のテスト・確認を実行する。
 3. `npm run desktop:dist:mac -- --publish=never`でローカルDMGを作成する。タグ作成・push・GitHub Release公開・R2同期を追加しない。
-4. 次の「ローカルビルドの置換手順」に従う。バージョンは既存値との一致を確認し、同じバージョンでも修正が入ったことを同梱ファイルやハッシュで確認する。
+4. 次の「明示的な置換の手順」に従う。バージョンは既存値との一致を確認し、同じバージョンでも修正が入ったことを同梱ファイルやハッシュで確認する。
 
-### ローカルビルドの置換手順
+### 明示的な置換の手順
 
-動作確認用のローカルDMGでこのMacを更新する場合に使う。公開版の通常更新には使わない。
+上記の例外的な置換が明示的に依頼された場合だけ使う。公開版の通常更新には使わない。
 
 1. ローカルで生成したDMGのファイルサイズとSHA-256を記録し、`hdiutil attach -readonly -nobrowse`で検証・マウントする。
 2. DMG内の`CFBundleShortVersionString`と`codesign --verify --deep --strict`を確認する。

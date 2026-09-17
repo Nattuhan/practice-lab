@@ -10,16 +10,17 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { silentWav, baselineSession, baselineResult } from '../tests/e2e/fixtures.js';
 const require = createRequire(import.meta.url);
+const { captureNormalInstall, assertNormalInstallPreserved, createVerificationProfile, validateVerificationApp } = require('./macos-verification.cjs');
+const normalBefore = captureNormalInstall();
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = fs.mkdtempSync(path.join(os.tmpdir(), 'practice-lab-presentation-'));
-const profile = path.join(output, 'profile');
-fs.mkdirSync(profile);
-fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ autoUpdate: false, cloud: { enabled: false } }));
+const profile = createVerificationProfile(output);
 const moviePath = path.join(output, 'clock.mp4');
 execFileSync(require('ffmpeg-static'), ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30',
   '-t', '12', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', moviePath]);
 const movie = fs.readFileSync(moviePath), wav = silentWav(12, 44100);
 const executablePath = process.env.PRACTICE_LAB_AUDIT_APP || require('electron');
+if (process.env.PRACTICE_LAB_AUDIT_APP) validateVerificationApp(path.resolve(executablePath, '../../..'));
 const args = process.env.PRACTICE_LAB_AUDIT_APP ? [`--user-data-dir=${profile}`] : [repository, `--user-data-dir=${profile}`];
 const app = await electron.launch({ executablePath, args, cwd: repository,
   env: { ...process.env, PYTHONPATH: repository }, timeout: 60000 });
@@ -131,4 +132,8 @@ try {
   assert.deepEqual(errors, []);
   fs.writeFileSync(path.join(output, 'summary.json'), JSON.stringify({ device, endingDevice, summary, errors }, null, 2));
   console.log(JSON.stringify({ ok: true, output, device, summary }, null, 2));
-} finally { await app.close(); }
+} finally {
+  await app.close();
+  assertNormalInstallPreserved(normalBefore, captureNormalInstall());
+  console.log("普段使い版と設定は変更されていません。");
+}
