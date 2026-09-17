@@ -7,6 +7,10 @@ on:
         description: App version already signed by MornNotary
         required: true
         type: string
+      from_staged_dmg:
+        description: Recover update ZIP from the verified DMG already on the draft release
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -23,6 +27,7 @@ jobs:
         with:
           node-version: "22"
       - name: Receive the notarized artifact
+        if: ${{ !inputs.from_staged_dmg }}
         env:
           ARTIFACT_URL: ${{ secrets.MORNNOTARY_ARTIFACT_URL }}
           VERSION: ${{ inputs.version }}
@@ -36,17 +41,42 @@ jobs:
           ditto -x -k received/artifact.zip received
           cp "received/PracticeLab-$VERSION-arm64-signed.zip" "release/PracticeLab-$VERSION-arm64.zip"
           ditto -x -k "release/PracticeLab-$VERSION-arm64.zip" source
+      - name: Recover the signed app from the staged DMG
+        if: inputs.from_staged_dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$VERSION" = "$(node -p 'require("./package.json").version')"
+          test "$(gh release view "v$VERSION" --json isDraft --jq .isDraft)" = "true"
+          mkdir -p source release
+          gh release download "v$VERSION" --dir release \
+            --pattern "PracticeLab-$VERSION-arm64.dmg" \
+            --pattern "PracticeLab-Notarized-Mac-$VERSION.sha256"
+          python scripts/verify_notarized_macos.py "release/PracticeLab-$VERSION-arm64.dmg" \
+            --version "$VERSION" --runtime \
+            --expected-sha256 "$(cat "release/PracticeLab-Notarized-Mac-$VERSION.sha256")"
+          mount_dir="$(mktemp -d)"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "release/PracticeLab-$VERSION-arm64.dmg"
+          trap 'hdiutil detach "$mount_dir"' EXIT
+          ditto "$mount_dir/PracticeLab.app" source/PracticeLab.app
+          # Repackage the already signed bundle on GitHub when large local uploads
+          # fail. No rebuild or resigning may change the approved application.
+          ditto -c -k --sequesterRsrc --keepParent source/PracticeLab.app "release/PracticeLab-$VERSION-arm64.zip"
       - name: Verify and package the signed app
         env:
           VERSION: ${{ inputs.version }}
         run: |
           python scripts/verify_notarized_macos.py source/PracticeLab.app --version "$VERSION" --runtime
-          ln -s /Applications source/Applications
-          hdiutil create -volname PracticeLab -srcfolder source -format UDZO "release/PracticeLab-$VERSION-arm64.dmg"
+          if [ ! -f "release/PracticeLab-$VERSION-arm64.dmg" ]; then
+            ln -s /Applications source/Applications
+            hdiutil create -volname PracticeLab -srcfolder source -format UDZO "release/PracticeLab-$VERSION-arm64.dmg"
+          fi
           python scripts/verify_notarized_macos.py "release/PracticeLab-$VERSION-arm64.dmg" --version "$VERSION" --runtime
           npm ci --ignore-scripts
           node scripts/macos_update_metadata.cjs write "release/PracticeLab-$VERSION-arm64.zip" "$VERSION" release/latest-mac.yml
           node scripts/macos_update_metadata.cjs verify "release/PracticeLab-$VERSION-arm64.zip" "$VERSION" release/latest-mac.yml
+          python scripts/verify_notarized_macos.py "release/PracticeLab-$VERSION-arm64.zip" --version "$VERSION" --runtime
           shasum -a 256 "release/PracticeLab-$VERSION-arm64.dmg" | awk '{print $1}' > "release/PracticeLab-Notarized-Mac-$VERSION.sha256"
       - name: Stage assets on the draft release
         env:
