@@ -1422,13 +1422,12 @@ const renderPresentation = () => {
   const now = performance.now(), media = ws.getMediaElement();
   const measurement = outputDelaySeconds(audioCtx, now);
   measuredOutputDelay = measurement;
+  const previousDelay = presentationDelay;
   presentationDelay = correctionSeconds(syncSettingsValue(), audioOutput.transport, measurement);
   const advancing = ws.isPlaying() && !media.seeking && media.readyState >= 3;
   presentationClock.record({ now, time: ws.getCurrentTime(), playing: advancing, rate: playbackRate });
   const previousState = presentationState;
-  presentationState = presentationDelay > 0
-    ? presentationClock.read(now, presentationDelay)
-    : { time: ws.getCurrentTime(), playing: advancing, rate: playbackRate };
+  presentationState = presentationClock.read(now, presentationDelay);
   presentationTime = presentationState.time;
   // Scrubbing gives immediate visual feedback; never queue the user's gesture.
   if (sectionEditorScrubState) return;
@@ -1436,7 +1435,8 @@ const renderPresentation = () => {
   SELECTORS.timeCur.dataset.seconds = String(presentationTime);
   updatePlayingRow(presentationTime);
   renderPresentationProgress(ws, presentationTime);
-  const transition = presentationState.segment !== previousState.segment
+  const transition = Math.abs(presentationDelay - previousDelay) > 0.04
+    || presentationState.segment !== previousState.segment
     || presentationState.playing !== previousState.playing || presentationState.rate !== previousState.rate;
   syncVideoToAudio(presentationTime, { force: transition });
   if (presentationState.playing) playVideo(); else pauseVideo();

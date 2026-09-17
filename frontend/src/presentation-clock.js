@@ -34,15 +34,26 @@ export function correctionSeconds(settings, transport, measuredDelay) {
 export class PresentationClock {
   points = [];
   segment = 0;
-  reset(now, time) { this.points = [{ now, time, playing: false, rate: 1, jump: true, segment: ++this.segment }]; }
+  lastAdvancedAt = -Infinity;
+  reset(now, time) {
+    this.lastAdvancedAt = -Infinity;
+    this.points = [{ now, time, playing: false, requestedPlaying: false, rate: 1, jump: true, segment: ++this.segment }];
+  }
   record({ now, time, playing, rate = 1, jump = false }) {
     const last = this.points.at(-1);
     if (last && now < last.now) this.points = [];
     const elapsed = last ? (now - last.now) / 1000 : 0;
-    const expected = last?.playing ? elapsed * last.rate : 0;
+    const expected = last?.requestedPlaying ? elapsed * last.rate : 0;
     const discontinuity = jump || !!last && Math.abs(time - last.time - expected) > 0.12;
-    if (discontinuity) this.segment++;
-    this.points.push({ now, time, playing, rate, jump: discontinuity, segment: this.segment });
+    if (discontinuity) { this.segment++; this.lastAdvancedAt = -Infinity; }
+    if (last && !discontinuity && time > last.time + 0.000001) this.lastAdvancedAt = now;
+    // Bluetooth may say "playing"/"running" while its clock is still frozen
+    // during device startup. Only start the picture after source time moves.
+    const moving = playing && now - this.lastAdvancedAt < 40;
+    // WaveSurfer and our animation loop can report the same frame twice.
+    if (last && !discontinuity && last.time === time && last.playing === moving
+        && last.requestedPlaying === playing && last.rate === rate && now - last.now < 8) return;
+    this.points.push({ now, time, playing: moving, requestedPlaying: playing, rate, jump: discontinuity, segment: this.segment });
     while (this.points.length > 2 && this.points[1].now < now - 1500) this.points.shift();
   }
   read(now, delay) {
@@ -55,7 +66,7 @@ export class PresentationClock {
       if (a.now > target) continue;
       if (!b || b.jump || b.now === a.now) return a;
       const fraction = (target - a.now) / (b.now - a.now);
-      return { ...a, time: a.time + (b.time - a.time) * fraction };
+      return { ...a, time: a.time + (b.time - a.time) * fraction, playing: a.playing && b.time > a.time };
     }
     return first;
   }

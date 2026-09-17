@@ -59,3 +59,19 @@ test('manual seeking immediately resets display; startup and stalls hold the cho
   clock.reset(1500, 2);
   assert.equal(clock.read(1500, .3).time, 2);
 });
+
+test('Bluetooth startup does not advance video while the supposedly playing source clock is frozen', () => {
+  const clock = new PresentationClock();
+  clock.reset(0, 0);
+  for (let now = 10; now <= 500; now += 10) {
+    clock.record({ now, time: 0, playing: true });
+    assert.equal(clock.read(now, 0).playing, false);
+    assert.equal(clock.read(now, .28).playing, false);
+  }
+  // A single audio quantum can arrive before a second hardware startup wait.
+  for (let now = 510; now <= 800; now += 10) clock.record({ now, time: .006, playing: true });
+  assert.equal(clock.read(800, .2).playing, false);
+  for (let now = 810; now <= 1300; now += 10) clock.record({ now, time: .006 + (now - 800) / 1000, playing: true });
+  assert.equal(clock.read(1300, .28).playing, true);
+  assert.ok(Math.abs(clock.read(1300, .28).time - .226) < 1e-8);
+});

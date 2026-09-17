@@ -27,17 +27,25 @@ function correctionSeconds(settings, transport, measuredDelay) {
 var PresentationClock = class {
   points = [];
   segment = 0;
+  lastAdvancedAt = -Infinity;
   reset(now, time) {
-    this.points = [{ now, time, playing: false, rate: 1, jump: true, segment: ++this.segment }];
+    this.lastAdvancedAt = -Infinity;
+    this.points = [{ now, time, playing: false, requestedPlaying: false, rate: 1, jump: true, segment: ++this.segment }];
   }
   record({ now, time, playing, rate = 1, jump = false }) {
     const last = this.points.at(-1);
     if (last && now < last.now) this.points = [];
     const elapsed = last ? (now - last.now) / 1e3 : 0;
-    const expected = last?.playing ? elapsed * last.rate : 0;
+    const expected = last?.requestedPlaying ? elapsed * last.rate : 0;
     const discontinuity = jump || !!last && Math.abs(time - last.time - expected) > 0.12;
-    if (discontinuity) this.segment++;
-    this.points.push({ now, time, playing, rate, jump: discontinuity, segment: this.segment });
+    if (discontinuity) {
+      this.segment++;
+      this.lastAdvancedAt = -Infinity;
+    }
+    if (last && !discontinuity && time > last.time + 1e-6) this.lastAdvancedAt = now;
+    const moving = playing && now - this.lastAdvancedAt < 40;
+    if (last && !discontinuity && last.time === time && last.playing === moving && last.requestedPlaying === playing && last.rate === rate && now - last.now < 8) return;
+    this.points.push({ now, time, playing: moving, requestedPlaying: playing, rate, jump: discontinuity, segment: this.segment });
     while (this.points.length > 2 && this.points[1].now < now - 1500) this.points.shift();
   }
   read(now, delay) {
@@ -50,7 +58,7 @@ var PresentationClock = class {
       if (a3.now > target) continue;
       if (!b2 || b2.jump || b2.now === a3.now) return a3;
       const fraction = (target - a3.now) / (b2.now - a3.now);
-      return { ...a3, time: a3.time + (b2.time - a3.time) * fraction };
+      return { ...a3, time: a3.time + (b2.time - a3.time) * fraction, playing: a3.playing && b2.time > a3.time };
     }
     return first;
   }
@@ -4381,18 +4389,19 @@ var renderPresentation = () => {
   const now = performance.now(), media = ws.getMediaElement();
   const measurement = outputDelaySeconds(audioCtx, now);
   measuredOutputDelay = measurement;
+  const previousDelay = presentationDelay;
   presentationDelay = correctionSeconds(syncSettingsValue(), audioOutput.transport, measurement);
   const advancing = ws.isPlaying() && !media.seeking && media.readyState >= 3;
   presentationClock.record({ now, time: ws.getCurrentTime(), playing: advancing, rate: playbackRate });
   const previousState = presentationState;
-  presentationState = presentationDelay > 0 ? presentationClock.read(now, presentationDelay) : { time: ws.getCurrentTime(), playing: advancing, rate: playbackRate };
+  presentationState = presentationClock.read(now, presentationDelay);
   presentationTime = presentationState.time;
   if (sectionEditorScrubState) return;
   SELECTORS.timeCur.textContent = fmt(presentationTime);
   SELECTORS.timeCur.dataset.seconds = String(presentationTime);
   updatePlayingRow(presentationTime);
   renderPresentationProgress(ws, presentationTime);
-  const transition = presentationState.segment !== previousState.segment || presentationState.playing !== previousState.playing || presentationState.rate !== previousState.rate;
+  const transition = Math.abs(presentationDelay - previousDelay) > 0.04 || presentationState.segment !== previousState.segment || presentationState.playing !== previousState.playing || presentationState.rate !== previousState.rate;
   syncVideoToAudio(presentationTime, { force: transition });
   if (presentationState.playing) playVideo();
   else pauseVideo();
