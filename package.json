@@ -49,6 +49,7 @@
       "desktop/desktop-secrets.cjs",
       "desktop/legacy-cloud-settings.cjs",
       "desktop/player-settings.cjs",
+      "desktop/audio-output.cjs",
       "desktop/playback-diagnostics.cjs",
       "desktop/analysis-settings.cjs",
       "desktop/update-policy.cjs",

@@ -30,6 +30,8 @@ const NUMBER_FIELDS = [
   "contextTime",
   "outputContextTime",
   "outputLatency",
+  "presentationTime",
+  "presentationDelay",
   "baseLatency",
   "clickEnabled",
   "loopEnabled",

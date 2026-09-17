@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("practiceLabDesktop", {
+  getAudioOutput: () => ipcRenderer.invoke("desktop:get-audio-output"),
   getVersion: () => ipcRenderer.invoke("desktop:get-version"),
   getPlayerSettings: () => ipcRenderer.sendSync("desktop:get-player-settings"),
   savePlayerSettings: settings => ipcRenderer.sendSync("desktop:save-player-settings", settings),

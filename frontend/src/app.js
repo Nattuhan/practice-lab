@@ -1,3 +1,4 @@
+import { PresentationClock, correctionSeconds, normalizeSyncSettings, outputDelaySeconds, renderPresentationProgress } from "./presentation-clock.js";
 import { beatCounts } from './count-voice.js';
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
@@ -363,6 +364,17 @@ let scoreRegionDrag = null;
 let currentScoreResult = null;
 let editingScoreResult = null;
 let lastVideoSyncAt = 0;
+const presentationClock = new PresentationClock();
+let presentationFrame = 0;
+let presentationDelay = 0;
+let presentationTime = 0;
+let presentationState = { time: 0, playing: false, rate: 1 };
+let loopPresentationSeek = false;
+let audioOutput = { transport: "unknown", name: "" };
+let audioOutputPending = false;
+let measuredOutputDelay = null;
+let syncSettings;
+let videoPlayPending = false;
 let videoClickTimer = 0;
 let stemPlayers = {};
 let stemReady = false;
@@ -1340,7 +1352,7 @@ const syncVideoToAudio = (time, { force = false } = {}) => {
   const action = mediaSyncAction({
     masterTime: time,
     mediaTime: video.currentTime,
-    playbackRate,
+    playbackRate: presentationDelay > 0 ? presentationState.rate : playbackRate,
     force,
     hardDriftSeconds: isMobileViewport() ? 0.2 : 0.28,
     softDriftSeconds: isMobileViewport() ? 0.04 : 0.06,
@@ -1361,13 +1373,89 @@ const syncVideoToAudio = (time, { force = false } = {}) => {
 
 const playVideo = () => {
   if (!videoAvailable || !SELECTORS.videoPlayer.src) return;
-  SELECTORS.videoPlayer.play().catch(() => {});
+  if (!SELECTORS.videoPlayer.paused || videoPlayPending) return;
+  videoPlayPending = true;
+  SELECTORS.videoPlayer.play().catch(() => {}).finally(() => { videoPlayPending = false; });
 };
 
 const pauseVideo = () => {
   if (!SELECTORS.videoPlayer.src) return;
   SELECTORS.videoPlayer.pause();
 };
+
+const syncSettingsValue = () => syncSettings ??= normalizeSyncSettings(cfg().bluetoothSync);
+const syncFieldState = () => {
+  const mode = document.getElementById("settings-sync-mode").value;
+  document.getElementById("settings-sync-adjustment-field").hidden = mode !== "auto";
+  document.getElementById("settings-sync-manual-field").hidden = mode !== "manual";
+};
+const updateSyncStatus = () => {
+  const settings = syncSettingsValue();
+  const ms = Math.round(presentationDelay * 1000);
+  const button = document.getElementById("bluetooth-sync-status");
+  button.hidden = !(ms > 0);
+  const label = `${settings.mode === "manual" ? "手動" : "Bluetooth"}補正中 · ${ms} ms（設定を開く）`;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-describedby", "bluetooth-sync-tooltip");
+  document.getElementById("bluetooth-sync-tooltip").textContent = label;
+  const name = audioOutput.name ? `${audioOutput.name} · ` : "";
+  const detail = audioOutput.transport === "builtin" ? "内蔵スピーカー · 補正なし"
+    : settings.mode === "off" ? "補正オフ"
+    : ms > 0 ? `${settings.mode === "manual" ? "手動" : "自動"}補正 ${ms} ms`
+    : settings.mode === "manual" ? "手動補正 0 ms"
+    : audioOutput.transport === "bluetooth" ? (measuredOutputDelay === null ? "Bluetooth · 再生時に遅延を確認します" : "Bluetooth · 補正 0 ms")
+    : audioOutput.transport === "unknown" ? "出力の種類を判別できません。自動補正は停止中です。"
+    : "Bluetooth以外の出力 · 自動補正なし";
+  document.getElementById("settings-sync-status").textContent = name + detail;
+};
+const refreshAudioOutput = async () => {
+  if (audioOutputPending || !window.practiceLabDesktop?.getAudioOutput) return;
+  audioOutputPending = true;
+  try { audioOutput = await window.practiceLabDesktop.getAudioOutput(); }
+  catch { audioOutput = { transport: "unknown", name: "" }; }
+  finally { audioOutputPending = false; }
+  presentationDelay = correctionSeconds(syncSettingsValue(), audioOutput.transport, measuredOutputDelay);
+  updateSyncStatus();
+};
+const renderPresentation = () => {
+  if (!ws || !audioReady) return;
+  const now = performance.now(), media = ws.getMediaElement();
+  const measurement = outputDelaySeconds(audioCtx, now);
+  measuredOutputDelay = measurement;
+  presentationDelay = correctionSeconds(syncSettingsValue(), audioOutput.transport, measurement);
+  const advancing = ws.isPlaying() && !media.seeking && media.readyState >= 3;
+  presentationClock.record({ now, time: ws.getCurrentTime(), playing: advancing, rate: playbackRate });
+  const previousState = presentationState;
+  presentationState = presentationDelay > 0
+    ? presentationClock.read(now, presentationDelay)
+    : { time: ws.getCurrentTime(), playing: advancing, rate: playbackRate };
+  presentationTime = presentationState.time;
+  // Scrubbing gives immediate visual feedback; never queue the user's gesture.
+  if (sectionEditorScrubState) return;
+  SELECTORS.timeCur.textContent = fmt(presentationTime);
+  SELECTORS.timeCur.dataset.seconds = String(presentationTime);
+  updatePlayingRow(presentationTime);
+  renderPresentationProgress(ws, presentationTime);
+  const transition = presentationState.segment !== previousState.segment
+    || presentationState.playing !== previousState.playing || presentationState.rate !== previousState.rate;
+  syncVideoToAudio(presentationTime, { force: transition });
+  if (presentationState.playing) playVideo(); else pauseVideo();
+  if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(presentationTime);
+};
+const startPresentationFrames = () => {
+  cancelAnimationFrame(presentationFrame);
+  const tick = () => {
+    renderPresentation();
+    if (ws?.isPlaying() || presentationState.playing) presentationFrame = requestAnimationFrame(tick);
+  };
+  tick();
+};
+setInterval(() => {
+  if (document.visibilityState === "visible") void refreshAudioOutput();
+  updateSyncStatus();
+}, 2000);
+window.addEventListener("focus", () => void refreshAudioOutput());
+navigator.mediaDevices?.addEventListener("devicechange", () => void refreshAudioOutput());
 
 const setVideoFullscreen = enabled => {
   if (enabled && (!videoAvailable || !SELECTORS.videoPlayer.src)) return;
@@ -1973,6 +2061,7 @@ setInterval(() => {
     reference: name, playbackRate, contextTime: audioCtx?.currentTime,
     outputContextTime: audioCtx?.getOutputTimestamp?.().contextTime,
     outputLatency: audioCtx?.outputLatency, baseLatency: audioCtx?.baseLatency,
+    presentationTime, presentationDelay,
     clickEnabled: Number(metroOn), loopEnabled: Number(loopOn),
     loopStart: range?.start, loopEnd: range?.end,
     ...Object.fromEntries(STEM_NAMES.map(stem => [`${stem}Time`, stemPlayers[stem]?.currentTime])),
@@ -1994,7 +2083,7 @@ const rebuildAlignedClicks = async () => {
   });
 };
 
-const seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
+const seekAudio = (targetTime, { respectLoopRange = true, loopTransition = false } = {}) => {
   if (!ws) return;
   const duration = ws.getDuration();
   if (!(duration > 0)) return;
@@ -2004,7 +2093,11 @@ const seekAudio = (targetTime, { respectLoopRange = true } = {}) => {
     if (loopRange && clampedTime < loopRange.start) clampedTime = loopRange.start;
   }
   stopMetro();
-  syncVideoToAudio(clampedTime, { force: true });
+  loopPresentationSeek = loopTransition;
+  if (!loopTransition) {
+    presentationClock.reset(performance.now(), clampedTime);
+    syncVideoToAudio(clampedTime, { force: true });
+  }
   ws.seekTo(clampedTime / duration);
   syncStemPlayers(clampedTime, { force: true });
 };
@@ -2616,6 +2709,7 @@ const restoreInterruptedJobs = async () => {
 
 const SETTINGS_SECTION_TITLES = {
   general: "一般設定",
+  playback: "再生・同期",
   analysis: "解析環境",
   features: "追加機能",
   cloud: "クラウド連携",
@@ -2634,7 +2728,7 @@ const selectSettingsSection = section => {
     panel.classList.toggle("active", panel.dataset.settingsPanel === selected);
   });
   SELECTORS.settingsTitle.textContent = SETTINGS_SECTION_TITLES[selected];
-  const editable = selected === "general"
+  const editable = selected === "playback" || selected === "general"
     || selected === "cloud"
     || (selected === "analysis" && desktopSettings?.platform === "win32");
   SELECTORS.settingsSave.hidden = !editable;
@@ -2766,6 +2860,18 @@ const removeOptionalFeature = async feature => {
 
 const openSettings = async (section = "general") => {
   const desktop = window.practiceLabDesktop;
+  const sync = syncSettingsValue();
+  document.getElementById("settings-sync-mode").value = sync.mode;
+  document.getElementById("settings-sync-adjustment").value = sync.adjustmentMs;
+  document.getElementById("settings-sync-manual").value = sync.manualMs;
+  syncFieldState();
+  void refreshAudioOutput();
+  updateSyncStatus();
+  if (!desktop?.getSettings && section === "playback") {
+    selectSettingsSection(section);
+    SELECTORS.settingsDialog.showModal();
+    return;
+  }
   if (!desktop?.getSettings) {
     await showAlert("設定はデスクトップアプリで利用できます。", { title: "設定" });
     return;
@@ -2833,6 +2939,19 @@ const openSettings = async (section = "general") => {
 const closeSettings = () => SELECTORS.settingsDialog?.close();
 
 const saveSettings = async () => {
+  if (document.querySelector("[data-settings-section].active")?.dataset.settingsSection === "playback") {
+    const fields = ["settings-sync-adjustment", "settings-sync-manual"].map(id => document.getElementById(id));
+    const mode = document.getElementById("settings-sync-mode").value;
+    const field = mode === "auto" ? fields[0] : mode === "manual" ? fields[1] : null;
+    if (field && !field.reportValidity()) return;
+    syncSettings = normalizeSyncSettings({ mode, adjustmentMs: fields[0].value, manualMs: fields[1].value });
+    saveCfg("bluetoothSync", syncSettings);
+    flushDesktopCfg();
+    renderPresentation();
+    updateSyncStatus();
+    closeSettings();
+    return;
+  }
   const desktop = window.practiceLabDesktop;
   if (!desktop?.saveSettings) return;
   const enabled = SELECTORS.settingsCloudEnabled.checked;
@@ -3245,6 +3364,10 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   const preparation = new AbortController();
   audioPreparation = preparation;
   audioReady = false;
+  cancelAnimationFrame(presentationFrame);
+  presentationClock.reset(performance.now(), 0);
+  presentationTime = 0;
+  loopPresentationSeek = false;
   for (const button of [SELECTORS.btnPlay, SELECTORS.btnFsPlay, SELECTORS.btnMetro, SELECTORS.btnFsMetro]) button.disabled = true;
   SELECTORS.waveformLoading.hidden = false;
   for (const output of alignedOutputs.values()) output.destroy();
@@ -3333,13 +3456,18 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
       if (loopOn) {
         const loopRange = getLoopRange();
         if (loopRange) {
-          seekAudio(loopRange.start);
+          seekAudio(loopRange.start, { loopTransition: true });
           ws.play();
           return;
         }
-        seekAudio(0);
+        seekAudio(0, { loopTransition: true });
         ws.play();
         return;
+      }
+      // Let the output queue and presentation finish before replacing the song.
+      if (presentationDelay > 0) {
+        await new Promise(resolve => setTimeout(resolve, presentationDelay * 1000));
+        if (ws !== sourceWs || !audioMedia.ended) return;
       }
       if (await playNextInGroup()) return;
       pauseVideo();
@@ -3362,15 +3490,15 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     if (ws !== sourceWs || !sourceWs.isPlaying() || audioMedia.readyState >= 3) return;
     stemTransport.setMasterWaiting(true);
     stopMetro();
-    pauseVideo();
+    if (!presentationDelay) pauseVideo();
   };
   audioMedia?.addEventListener("waiting", onMasterWaiting);
   audioMedia?.addEventListener("stalled", onMasterWaiting);
+  audioMedia?.addEventListener("seeked", () => { loopPresentationSeek = false; });
   audioMedia?.addEventListener("playing", () => {
     if (ws !== sourceWs) return;
     stemTransport.setMasterWaiting(false);
-    syncVideoToAudio(sourceWs.getCurrentTime(), { force: true });
-    playVideo();
+    renderPresentation();
     if (metroOn) startMetro();
   });
   const getRegions = () => ws.getActivePlugins()[0];
@@ -3512,6 +3640,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
 
   ws.on("decode", () => {
     audioReady = true;
+    startPresentationFrames();
     SELECTORS.waveformLoading.hidden = true;
     disableTransport(false);
     applyCurrentPlaybackRate();
@@ -3537,16 +3666,13 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   });
 
   ws.on("timeupdate", time => {
-    SELECTORS.timeCur.textContent = fmt(time);
-    updatePlayingRow(time);
-    syncVideoToAudio(time);
+    renderPresentation();
     syncStemPlayers(time);
     updateAlignedClickOutput();
-    if (SELECTORS.sectionEditor?.open) updateSectionEditorPlayer(time);
     if (loopOn && ws.isPlaying() && !SELECTORS.sectionEditor?.open) {
       const loopRange = getLoopRange();
       if (shouldRestartLoop(time, loopRange)) {
-        seekAudio(loopRange.start);
+        seekAudio(loopRange.start, { loopTransition: true });
       }
     }
   });
@@ -3554,8 +3680,8 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   ws.on("play", () => {
     logPlaybackDiagnostic("audio-play", mediaDiagnosticDetails(audioMedia));
     applyCurrentPlaybackRate();
-    syncVideoToAudio(ws.getCurrentTime(), { force: true });
-    playVideo();
+    void refreshAudioOutput();
+    startPresentationFrames();
     playStems();
     if (metroOn) startMetro();
     updatePlayButton();
@@ -3565,7 +3691,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   ws.on("pause", () => {
     if (ws.isPlaying()) return;
     logPlaybackDiagnostic("audio-pause", mediaDiagnosticDetails(audioMedia));
-    pauseVideo();
+    renderPresentation();
     pauseStems();
     stopMetro();
     updatePlayButton();
@@ -3575,7 +3701,11 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   ws.on("seeking", () => {
     const time = ws.getCurrentTime();
     stopMetro();
-    syncVideoToAudio(time, { force: true });
+    if (!loopPresentationSeek) {
+      presentationClock.reset(performance.now(), time);
+      syncVideoToAudio(time, { force: true });
+    }
+    renderPresentation();
     syncStemPlayers(time, { force: true });
   });
 
@@ -3894,7 +4024,7 @@ let sectionEditorScrubPointerId = null;
 let sectionEditorPlayheadPointerId = null;
 let sectionEditorScrubState = null;
 
-const updateSectionEditorPlayer = (time = ws?.getCurrentTime?.() || 0) => {
+const updateSectionEditorPlayer = (time = presentationTime) => {
   if (!SELECTORS.sectionEditorPlayerToggle) return;
   const duration = ws?.getDuration?.() || currentData?.duration || 0;
   const progress = duration > 0 ? Math.max(0, Math.min(1, time / duration)) : 0;
@@ -5114,6 +5244,9 @@ SELECTORS.btnJobHistory?.addEventListener("click", openJobHistory);
 SELECTORS.jobHistoryRefresh?.addEventListener("click", loadJobHistory);
 SELECTORS.btnSettings?.addEventListener("click", () => openSettings("general"));
 SELECTORS.btnTopSettings?.addEventListener("click", () => openSettings("general"));
+document.getElementById("bluetooth-sync-status").addEventListener("click", () => openSettings("playback"));
+document.getElementById("settings-sync-mode").addEventListener("change", syncFieldState);
+void refreshAudioOutput();
 SELECTORS.settingsClose?.addEventListener("click", closeSettings);
 SELECTORS.settingsCancel?.addEventListener("click", closeSettings);
 SELECTORS.settingsSave?.addEventListener("click", saveSettings);

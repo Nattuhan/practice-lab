@@ -1,3 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import ffmpeg from 'ffmpeg-static';
 import { expect, test } from '@playwright/test';
 import { silentWav, baselineResult, baselineSession } from './fixtures.js';
 
@@ -243,3 +248,131 @@ for (const rate of [0.75, 1.25]) {
     expect(await page.evaluate(() => window.__clickPeaks.length)).toBe(count);
   });
 }
+
+const simulateBluetoothOutput = async page => {
+  await page.addInitScript(() => {
+    window.__output = { transport: 'bluetooth', name: 'Test headphones' };
+    window.practiceLabDesktop = {
+      onUpdateStatus: () => () => {},
+      getAudioOutput: async () => window.__output,
+      getSettings: async () => ({ platform: 'darwin', cloud: {}, version: 'test' }),
+    };
+    Object.defineProperty(AudioContext.prototype, 'outputLatency', { get: () => .28 });
+    Object.defineProperty(AudioContext.prototype, 'baseLatency', { get: () => .006 });
+    AudioContext.prototype.getOutputTimestamp = () => ({ contextTime: 0, performanceTime: 0 });
+  });
+};
+const presentationGap = page => page.evaluate(() => window.__media.original.currentTime
+  - Number(document.querySelector('#time-cur').dataset.seconds));
+
+test('Bluetooth補正はカーソルと時計を遅らせ、アイコンから設定・保存・再起動できる', async ({ page }) => {
+  await simulateBluetoothOutput(page);
+  await start(page);
+  await expect(page.locator('#bluetooth-sync-status')).toBeVisible();
+  await expect.poll(() => presentationGap(page)).toBeGreaterThan(.24);
+  expect(await presentationGap(page)).toBeLessThan(.34);
+  const cursorGap = await page.locator('#waveform [part="cursor"]').evaluate(cursor => {
+    const width = cursor.parentElement.getBoundingClientRect().width;
+    const time = parseFloat(cursor.style.left) / 100 * 30;
+    return { width, difference: window.__media.original.currentTime - time };
+  });
+  expect(cursorGap.width).toBeGreaterThan(0);
+  expect(cursorGap.difference).toBeGreaterThan(.24);
+  expect(cursorGap.difference).toBeLessThan(.34);
+  await page.locator('#bluetooth-sync-status').hover();
+  await expect(page.locator('#bluetooth-sync-tooltip')).toBeVisible();
+  await expect(page.locator('#bluetooth-sync-tooltip')).toContainText('286 ms');
+  await page.screenshot({ path: test.info().outputPath('bluetooth-sync-indicator.png') });
+  await page.locator('#bluetooth-sync-status').click();
+  await expect(page.locator('#settings-title')).toHaveText('再生・同期');
+  await expect(page.locator('#settings-sync-mode')).toHaveValue('auto');
+  await page.screenshot({ path: test.info().outputPath('bluetooth-sync-settings.png') });
+  await page.locator('#settings-sync-mode').selectOption('manual');
+  await page.locator('#settings-sync-manual').fill('400');
+  await page.locator('#settings-save').click();
+  await expect.poll(() => presentationGap(page)).toBeGreaterThan(.36);
+  await page.reload();
+  await expect(page.locator('#btn-play')).toBeEnabled();
+  await page.locator('#btn-play').click();
+  await expect(page.locator('#bluetooth-sync-status')).toHaveAttribute('aria-label', /400 ms/);
+  await expect.poll(() => presentationGap(page)).toBeGreaterThan(.36);
+  await page.locator('#bluetooth-sync-status').click();
+  await page.locator('#settings-sync-mode').selectOption('off');
+  await page.locator('#settings-save').click();
+  await expect(page.locator('#bluetooth-sync-status')).toBeHidden();
+  await expect.poll(() => presentationGap(page)).toBeLessThan(.06);
+});
+
+test('Bluetoothから内蔵出力へ戻すと自動で補正解除し、速度変更でも音声時計を変えない', async ({ page }) => {
+  await simulateBluetoothOutput(page);
+  await start(page);
+  await page.locator('#playback-rate').evaluate(el => { el.value = '.5'; el.dispatchEvent(new Event('input')); });
+  await expect.poll(() => presentationGap(page)).toBeGreaterThan(.11);
+  await expect.poll(() => presentationGap(page)).toBeLessThan(.18);
+  expect(await page.evaluate(() => window.__media.original.playbackRate)).toBe(.5);
+  await page.evaluate(() => { window.__output = { transport: 'builtin', name: 'Internal speakers' }; window.dispatchEvent(new Event('focus')); });
+  await expect(page.locator('#bluetooth-sync-status')).toBeHidden();
+  await expect.poll(() => presentationGap(page)).toBeLessThan(.05);
+  expect(await page.evaluate(() => window.__media.original.playbackRate)).toBe(.5);
+});
+
+
+test('Bluetooth補正した映像と表示が速度変更・区間ループ・停止後も一致する', async ({ page }) => {
+  test.setTimeout(30000);
+  const temporary = mkdtempSync(path.join(tmpdir(), 'practice-lab-sync-'));
+  let movie;
+  try {
+    const file = path.join(temporary, 'clock.mp4');
+    execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x90:rate=30',
+      '-t', '8', '-an', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', file]);
+    movie = readFileSync(file);
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
+  await page.route('**/video/**', route => {
+    const range = route.request().headers().range?.match(/bytes=(\d+)-(\d*)/);
+    if (!range) return route.fulfill({ contentType: 'video/mp4', headers: { 'accept-ranges': 'bytes' }, body: movie });
+    const start = Number(range[1]), end = range[2] ? Math.min(Number(range[2]), movie.length - 1) : movie.length - 1;
+    return route.fulfill({ status: 206, contentType: 'video/mp4', headers: {
+      'accept-ranges': 'bytes', 'content-range': `bytes ${start}-${end}/${movie.length}`,
+    }, body: movie.subarray(start, end + 1) });
+  });
+  await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
+    ...baselineResult, duration: 8, beats: [0, .5, 1, 1.5, 2],
+    sections: [{ ...baselineResult.sections[0], start_time: 1, end_time: 2.5 }],
+  } }));
+  await page.route('**/audio/e2e-baseline.mp3', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(8) }));
+  await page.route('**/stems/e2e-baseline/*', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(8) }));
+  await simulateBluetoothOutput(page);
+  await start(page);
+  await expect.poll(() => page.evaluate(() => document.querySelector('#video-player').readyState)).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => presentationGap(page)).toBeGreaterThan(.24);
+  const videoGap = () => page.evaluate(() => Math.abs(document.querySelector('#video-player').currentTime
+    - Number(document.querySelector('#time-cur').dataset.seconds)));
+  await expect.poll(videoGap).toBeLessThan(.1);
+  await page.locator('#playback-rate').fill('0.75');
+  await page.locator('#btn-loop').click();
+  await page.getByRole('button', { name: '曲構成', exact: true }).click();
+  await page.locator('.sec-row').first().click();
+  const samples = await page.evaluate(async () => {
+    const samples = [], start = performance.now();
+    await new Promise(resolve => {
+      const sample = () => {
+        const video = document.querySelector('#video-player'), audio = window.__media.original;
+        samples.push({ at: performance.now(), audio: audio.currentTime, view: Number(document.querySelector('#time-cur').dataset.seconds), video: video.currentTime, seeking: video.seeking, paused: video.paused, rate: video.playbackRate, ready: video.readyState });
+        if (performance.now() - start < 6500) requestAnimationFrame(sample); else resolve();
+      };
+      sample();
+    });
+    return samples;
+  });
+  const wraps = samples.filter((item, i) => i && item.view < samples[i - 1].view - .5);
+  expect(wraps.length).toBeGreaterThanOrEqual(2);
+  const stable = samples.filter((item, i) => i > 30 && !item.seeking
+    && wraps.every(wrap => Math.abs(item.at - wrap.at) > 200));
+  expect(stable.length).toBeGreaterThan(60);
+  await test.info().attach('presentation-samples', { body: JSON.stringify(samples), contentType: 'application/json' });
+  expect(Math.max(...stable.map(item => Math.abs(item.video - item.view)))).toBeLessThan(.15);
+  await page.locator('#btn-play').click();
+  await expect.poll(() => presentationGap(page)).toBeLessThan(.03);
+  await expect.poll(videoGap).toBeLessThan(.05);
+  expect(await page.evaluate(() => document.querySelector('#video-player').paused)).toBe(true);
+});

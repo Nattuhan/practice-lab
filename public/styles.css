@@ -4485,3 +4485,15 @@ select:focus,
   font-size: 12px;
 }
 #reanalyze-mode { width: 100%; min-height: var(--control-lg); }
+
+/* A small status beside the playhead clock; keyboard focus exposes the same
+   explanation as hover, and touch opens the settings directly. */
+.sync-status { position: relative; display: inline-flex; align-items: center; justify-content: center; margin: -3px auto -3px 8px; width: 25px; height: 23px; border: 1px solid #60a5fa55; border-radius: 6px; background: #60a5fa18; color: #60a5fa; cursor: pointer; }
+.sync-status svg { width: 14px; height: 14px; }
+.sync-status:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
+.sync-tooltip { display: none; position: absolute; z-index: 30; left: 0; bottom: calc(100% + 7px); width: max-content; max-width: 240px; padding: 8px 10px; border-radius: 7px; background: #20252d; color: #f1f5f9; border: 1px solid #60a5fa55; font: 11px/1.5 var(--sans, sans-serif); box-shadow: 0 4px 16px #0005; pointer-events: none; }
+.sync-status:hover .sync-tooltip, .sync-status:focus-visible .sync-tooltip { display: block; }
+.sync-description { color: var(--gray-5); font-size: 12px; line-height: 1.7; }
+#settings-sync-status { margin-bottom: 16px; white-space: normal; }
+
+.settings-sync-fields { display: grid; gap: 18px; }

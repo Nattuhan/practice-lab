@@ -18,6 +18,9 @@ const { analysisEnvironment, sanitizeAnalysisMode } = require("./analysis-settin
 const { createDesktopSecretsStore } = require("./desktop-secrets.cjs");
 const { appendPlaybackEvent } = require("./playback-diagnostics.cjs");
 
+const { createAudioOutputReader } = require("./audio-output.cjs");
+const readAudioOutput = createAudioOutputReader();
+
 let mainWindow = null;
 let backend = null;
 let backendUrl = null;
@@ -552,6 +555,11 @@ function requireTrustedIpc(event) {
   } catch {}
   if (!backendUrl || senderOrigin !== backendUrl) throw new Error("許可されていない画面からの操作です");
 }
+
+ipcMain.handle("desktop:get-audio-output", event => {
+  requireTrustedIpc(event);
+  return readAudioOutput();
+});
 
 ipcMain.handle("desktop:get-version", event => {
   requireTrustedIpc(event);

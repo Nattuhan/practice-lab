@@ -198,6 +198,7 @@
         </div>
         <div class="time-bar">
           <span id="time-cur">00:00</span>
+          <button id="bluetooth-sync-status" class="sync-status" type="button" hidden aria-label="音声出力の同期設定"><i data-lucide="bluetooth" aria-hidden="true"></i><span class="sync-tooltip" role="tooltip" id="bluetooth-sync-tooltip"></span></button>
           <span id="time-tot">00:00</span>
         </div>
 
@@ -499,6 +500,7 @@
     <aside class="settings-nav">
       <div class="settings-brand"><i data-lucide="settings"></i><span>設定</span></div>
       <button class="settings-nav-item active" type="button" data-settings-section="general"><i data-lucide="sliders-horizontal"></i><span>一般</span></button>
+      <button class="settings-nav-item" type="button" data-settings-section="playback"><i data-lucide="bluetooth"></i><span>再生・同期</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="analysis"><i data-lucide="cpu"></i><span>解析環境</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="features"><i data-lucide="package-plus"></i><span>追加機能</span></button>
       <button class="settings-nav-item" type="button" data-settings-section="cloud"><i data-lucide="cloud"></i><span>クラウド連携</span></button>
@@ -547,6 +549,28 @@
             <h3>データ保存場所</h3>
             <div class="settings-path" id="settings-data-path">確認中...</div>
             <button class="settings-secondary" id="settings-open-data" type="button"><i data-lucide="folder-open"></i>保存場所を開く</button>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-panel="playback">
+          <div class="settings-group">
+            <h3>Bluetoothの映像・表示補正</h3>
+            <p class="sync-description">聞こえる音に合わせて、映像・波形カーソル・再生時間・セクション表示をそろえます。内蔵スピーカーでは補正しません。</p>
+            <div class="settings-path" id="settings-sync-status" role="status">音声出力を確認中…</div>
+            <div class="settings-sync-fields">
+              <label class="settings-field" for="settings-sync-mode"><span>補正モード</span>
+                <select id="settings-sync-mode"><option value="auto">自動（おすすめ）</option><option value="manual">手動</option><option value="off">オフ</option></select>
+                <small>自動判別はMacアプリに対応。判別できない環境では自動補正せず、手動で設定できます。</small>
+              </label>
+              <label class="settings-field" for="settings-sync-adjustment" id="settings-sync-adjustment-field"><span>自動補正の微調整（ms）</span>
+                <input id="settings-sync-adjustment" type="number" min="-250" max="250" step="10" value="0">
+                <small>＋で映像・表示をさらに遅らせ、−で早めます。</small>
+              </label>
+              <label class="settings-field" for="settings-sync-manual" id="settings-sync-manual-field" hidden><span>映像・表示を遅らせる量（ms）</span>
+                <input id="settings-sync-manual" type="number" min="0" max="1000" step="10" value="0">
+                <small>100 ms = 0.1秒。音源やクリック音のタイミングは変更しません。</small>
+              </label>
+            </div>
           </div>
         </section>
 
