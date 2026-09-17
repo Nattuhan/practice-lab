@@ -29,7 +29,7 @@ from .models import (
     StemExportRequest,
     StorageCleanupRequest,
 )
-from .services import analyze_local_audio, analyze_url, build_analysis_session_id, cancel_interrupted_job, cancel_job, cleanup_canceled_analysis, cleanup_canceled_stems, cleanup_stem_mix_export, cleanup_uploaded_analysis, create_stem_mix_export, create_stems, delete_result, delete_results, extract_video_id, get_job_status, get_resumable_job_spec, initialize_job_store, list_job_history, list_job_statuses, normalize_analysis_range, publish_folders_to_cloud, rename_result, save_bpm_correction, save_sections, save_uploaded_audio, set_job_status, submit_queued_job, sync_cloud_library, update_library_metadata
+from .services import reanalyze_saved_audio, validate_saved_analysis, analyze_local_audio, analyze_url, build_analysis_session_id, cancel_interrupted_job, cancel_job, cleanup_canceled_analysis, cleanup_canceled_stems, cleanup_stem_mix_export, cleanup_uploaded_analysis, create_stem_mix_export, create_stems, delete_result, delete_results, extract_video_id, get_job_status, get_resumable_job_spec, initialize_job_store, list_job_history, list_job_statuses, normalize_analysis_range, publish_folders_to_cloud, rename_result, save_bpm_correction, save_sections, save_uploaded_audio, set_job_status, submit_queued_job, sync_cloud_library, update_library_metadata
 from .storage import bootstrap_public_data, export_static_assets, load_folders, save_folders
 from .storage_usage import cleanup_storage, storage_report
 from .system_status import get_system_status, launch_nvidia_setup
@@ -50,6 +50,16 @@ def submit_job_spec(spec: dict) -> dict:
     if not isinstance(job_id, str) or not job_id:
         raise ValueError("ジョブIDがありません")
 
+    if job_type == "reanalyze_saved":
+        validate_saved_analysis(job_id)
+        return submit_queued_job(
+            job_id,
+            "Queued analysis from saved audio",
+            lambda: reanalyze_saved_audio(job_id),
+            cleanup=lambda: cleanup_canceled_analysis(job_id),
+            spec=spec,
+            kind="analysis",
+        )
     if job_type == "analyze_url":
         return submit_queued_job(
             job_id,
@@ -366,6 +376,13 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return JobStatusResponse(**job)
+
+    @app.post("/reanalyze/{video_id}", response_model=JobSubmissionResponse)
+    async def reanalyze(video_id: str):
+        try:
+            return JobSubmissionResponse(**submit_job_spec({"type": "reanalyze_saved", "jobId": video_id}))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/analyze", response_model=JobSubmissionResponse)
     async def analyze(request: AnalyzeRequest):

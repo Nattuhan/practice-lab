@@ -580,6 +580,20 @@ test("新しい解析と再解析をプレイヤーを押し下げないモー�
   await expect(page.getByRole("dialog", { name: "この曲を再解析" })).toBeVisible();
   await expect(page.locator("#url-input")).toHaveValue("https://www.youtube.com/watch?v=D8AZyKMBVVY");
   await expect(page.locator("#analyze-btn")).toHaveText("再解析を開始");
+  await expect(page.locator("#reanalyze-mode")).toHaveValue("saved");
+  await expect(page.locator("#url-input")).toBeHidden();
+  await expect(page.locator(".analysis-time-settings")).toBeHidden();
+  await page.locator("#reanalyze-mode").selectOption("download");
+  await expect(page.locator("#url-input")).toBeVisible();
+  await page.locator("#reanalyze-mode").selectOption("saved");
+  let savedRequest = false;
+  await page.route("**/reanalyze/analysis-modal", route => {
+    savedRequest = true;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jobId: "analysis-modal", stage: "queued" }) });
+  });
+  await page.locator("#analyze-btn").click();
+  await expect(page.locator("#analysis-dialog")).not.toBeVisible();
+  expect(savedRequest).toBe(true);
 });
 
 test("再起動で中断したジョブを利用者が再開できる", async ({ page }) => {

@@ -4481,3 +4481,13 @@ select:focus,
 .stem-recovery-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 .stem-recovery-actions[hidden] { display: none; }
 #session-sort { width: 100%; }
+
+#reanalyze-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--gray-6);
+  font-size: 12px;
+}
+#reanalyze-mode { width: 100%; min-height: var(--control-lg); }

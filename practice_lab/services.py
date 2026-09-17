@@ -1210,6 +1210,39 @@ def repair_double_time_beats(data: dict) -> dict:
     return adjusted
 
 
+def validate_saved_analysis(video_id: str) -> None:
+    if not SESSION_ID_PATTERN.fullmatch(video_id):
+        raise ValueError("曲IDが不正です")
+    if not (DATA_RESULTS_DIR / f"{video_id}.json").is_file():
+        raise ValueError("保存済みの解析結果がありません")
+    if not (DATA_AUDIO_DIR / f"{video_id}.wav").is_file():
+        raise ValueError("保存済みの元音声がありません。元動画を再取得するか、音声ファイルを追加してください")
+
+
+def reanalyze_saved_audio(video_id: str, job_id: str | None = None) -> dict:
+    """Recompute analysis only; keep media and the old result until inference succeeds."""
+    validate_saved_analysis(video_id)
+    job_id = job_id or video_id
+    result_file = DATA_RESULTS_DIR / f"{video_id}.json"
+    raise_if_job_canceled(job_id)
+    analysis = normalize_tempo_grid(run_analyzer(DATA_AUDIO_DIR / f"{video_id}.wav", video_id, job_id=job_id))
+    analysis.pop("device", None)
+    raise_if_job_canceled(job_id)
+    # Keep library/source metadata, never feed previous beat edits or diagnostics
+    # back into inference. Reload here to retain edits made while it was running.
+    previous = json.loads(result_file.read_text(encoding="utf-8"))
+    metadata_keys = ("id", "title", "sourceType", "sourceVideoId", "analysisStartSec",
+                     "analysisEndSec", "originalFilename", "assets", "tags", "lastOpenedAt")
+    data = attach_session_assets({**{key: previous[key] for key in metadata_keys if key in previous}, **analysis})
+    set_job_status(job_id, "saving", "Saving results")
+    save_json(result_file, data)
+    update_manifest(build_manifest_entry(data, entry_date=date.today().isoformat()))
+    export_static_assets()
+    cleanup_analysis_workdir(video_id)
+    set_job_status(job_id, "done", "Analysis complete", done=True)
+    return data
+
+
 def analyze_url(
     url: str,
     force: bool = False,

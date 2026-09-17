@@ -87,6 +87,13 @@
             </div>
             <button class="icon-btn analysis-dialog-close" id="analysis-dialog-close" type="button" aria-label="解析画面を閉じる"><i data-lucide="x"></i></button>
           </div>
+          <label id="reanalyze-options" hidden>
+            再解析の方法
+            <select id="reanalyze-mode">
+              <option value="saved">保存済み音声で再解析</option>
+              <option value="download">元動画を再取得して再解析</option>
+            </select>
+          </label>
           <div class="input-bar">
             <input type="text" id="url-input" placeholder="YouTubeのURLを貼り付けて解析">
             <button class="btn-analyze" id="analyze-btn">解析を開始</button>

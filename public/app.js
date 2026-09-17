@@ -3841,9 +3841,21 @@ var setAnalysisRangeInputs = ({ startSec = null, endSec = null } = {}) => {
   SELECTORS.analysisStartTime.value = hasRange && startSec !== null ? fmt(startSec) : "";
   SELECTORS.analysisEndTime.value = hasRange && endSec !== null ? fmt(endSec) : "";
 };
+var updateReanalysisInputs = () => {
+  const saved = analysisForce && document.getElementById("reanalyze-mode").value === "saved";
+  SELECTORS.urlInput.hidden = saved;
+  document.querySelector(".analysis-time-settings").hidden = saved;
+  SELECTORS.btnAudioFile.hidden = analysisForce;
+  document.getElementById("audio-drop-hint").hidden = analysisForce;
+  SELECTORS.analysisDialogDescription.textContent = saved ? "\u4FDD\u5B58\u6E08\u307F\u306E\u97F3\u58F0\u3067BPM\u30FB\u62CD\u30FB\u66F2\u69CB\u6210\u3092\u66F4\u65B0\u3057\u307E\u3059\u3002\u624B\u52D5\u3067\u7DE8\u96C6\u3057\u305FBPM\u3084\u66F2\u69CB\u6210\u3082\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059\u3002\u52D5\u753B\u30FB\u30D1\u30FC\u30C8\u5225\u97F3\u6E90\u306F\u4F5C\u308A\u76F4\u3057\u307E\u305B\u3093\u3002" : analysisForce ? "\u5143\u52D5\u753B\u3092\u518D\u53D6\u5F97\u3057\u3001\u6307\u5B9A\u3057\u305F\u7BC4\u56F2\u3092\u89E3\u6790\u3057\u307E\u3059\u3002" : "YouTube\u306EURL\u3001\u307E\u305F\u306F\u624B\u5143\u306E\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u89E3\u6790\u3092\u59CB\u3081\u307E\u3059\u3002";
+};
+document.getElementById("reanalyze-mode").addEventListener("change", updateReanalysisInputs);
 var openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
   if (!hasServer || !SELECTORS.analysisDialog) return;
   analysisForce = reanalyze;
+  document.getElementById("reanalyze-options").hidden = !reanalyze;
+  document.getElementById("reanalyze-mode").value = "saved";
+  document.querySelector('#reanalyze-mode option[value="download"]').disabled = currentData?.sourceType === "local_audio";
   SELECTORS.inputCard.hidden = false;
   SELECTORS.status.className = "status";
   SELECTORS.status.textContent = "";
@@ -3863,9 +3875,10 @@ var openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) =
     SELECTORS.urlInput.value = "";
     setAnalysisRangeInputs();
   }
+  updateReanalysisInputs();
   if (!SELECTORS.analysisDialog.open) SELECTORS.analysisDialog.showModal();
   if (openAudioPicker) SELECTORS.audioFileInput.click();
-  else SELECTORS.urlInput.focus({ preventScroll: true });
+  else (reanalyze ? SELECTORS.analyzeBtn : SELECTORS.urlInput).focus({ preventScroll: true });
 };
 var MIN_PLAYBACK_RATE = 0.25;
 var MAX_PLAYBACK_RATE = 1.25;
@@ -6409,7 +6422,7 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   SELECTORS.btnYouTube.hidden = !hasServer || isLocalAudio;
   SELECTORS.btnScoreExtractor.hidden = !hasServer || isLocalAudio;
   SELECTORS.btnCloudSync.hidden = !hasServer || staticLibraryMode;
-  SELECTORS.btnReanalyze.hidden = !hasServer || isLocalAudio;
+  SELECTORS.btnReanalyze.hidden = !hasServer;
   SELECTORS.btnClearRange.hidden = true;
   SELECTORS.btnBpmSave.hidden = !hasServer;
   SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
@@ -7254,11 +7267,12 @@ var queueStemGeneration = async (sessionId, { title = "", silent = false, refres
 };
 var generateStems = async ({ silent = false } = {}) => queueStemGeneration(currentId, { title: currentData?.title || currentId, silent, refreshCurrent: true });
 var doAnalyze = async (url, force = false, rangeOverride = null) => {
-  if (!url) return;
+  const saved = force && document.getElementById("reanalyze-mode").value === "saved";
+  if (!saved && !url) return;
   const videoId = extractVideoId(url);
   let range;
   try {
-    range = rangeOverride || getAnalysisTimePayload();
+    range = saved ? { startSec: null, endSec: null } : rangeOverride || getAnalysisTimePayload();
   } catch (error) {
     SELECTORS.status.className = "status err";
     SELECTORS.status.textContent = error.message;
@@ -7269,10 +7283,10 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
   SELECTORS.status.className = "status";
   SELECTORS.status.innerHTML = `<span class="spin"></span>${force ? "\u518D\u89E3\u6790\u3092\u51E6\u7406\u4E00\u89A7\u3078\u8FFD\u52A0\u4E2D..." : "\u89E3\u6790\u3092\u51E6\u7406\u4E00\u89A7\u3078\u8FFD\u52A0\u4E2D..."} `;
   try {
-    const response = await fetch("/analyze", {
+    const response = await fetch(saved ? `/reanalyze/${encodeURIComponent(currentId)}` : "/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, force, ...range })
+      body: saved ? void 0 : JSON.stringify({ url, force, ...range })
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
@@ -7280,7 +7294,7 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
     SELECTORS.status.textContent = `\u2713 ${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"}\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F`;
     closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
-      label: `${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"} \xB7 YouTube\u52D5\u753B${range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : ""}`,
+      label: `${force ? "\u518D\u89E3\u6790" : "\u89E3\u6790"} \xB7 ${saved ? "\u4FDD\u5B58\u6E08\u307F\u97F3\u58F0" : "YouTube\u52D5\u753B"}${range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : ""}`,
       kind: "analysis",
       rangeLabel: range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : "",
       onDone: async (data) => {
@@ -7289,7 +7303,7 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
         SELECTORS.status.className = data.cached ? "status ok" : "status";
         SELECTORS.status.textContent = data.cached ? "\u2713 \u4FDD\u5B58\u6E08\u307F\u306E\u89E3\u6790\u7D50\u679C\u3092\u8AAD\u307F\u8FBC\u307F\u307E\u3057\u305F" : "\u2713 \u89E3\u6790\u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F";
         await loadHistory();
-        if (force || !hasStemAssets(data.assets)) {
+        if (!saved && (force || !hasStemAssets(data.assets))) {
           await queueStemGeneration(data.id, { title: data.title || data.id, silent: true });
         }
       },

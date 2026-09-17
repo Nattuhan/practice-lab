@@ -1015,9 +1015,24 @@ const setAnalysisRangeInputs = ({ startSec = null, endSec = null } = {}) => {
   SELECTORS.analysisEndTime.value = hasRange && endSec !== null ? fmt(endSec) : "";
 };
 
+const updateReanalysisInputs = () => {
+  const saved = analysisForce && document.getElementById("reanalyze-mode").value === "saved";
+  SELECTORS.urlInput.hidden = saved;
+  document.querySelector(".analysis-time-settings").hidden = saved;
+  SELECTORS.btnAudioFile.hidden = analysisForce;
+  document.getElementById("audio-drop-hint").hidden = analysisForce;
+  SELECTORS.analysisDialogDescription.textContent = saved
+    ? "保存済みの音声でBPM・拍・曲構成を更新します。手動で編集したBPMや曲構成も置き換わります。動画・パート別音源は作り直しません。"
+    : analysisForce ? "元動画を再取得し、指定した範囲を解析します。" : "YouTubeのURL、または手元の音声ファイルから解析を始めます。";
+};
+document.getElementById("reanalyze-mode").addEventListener("change", updateReanalysisInputs);
+
 const openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
   if (!hasServer || !SELECTORS.analysisDialog) return;
   analysisForce = reanalyze;
+  document.getElementById("reanalyze-options").hidden = !reanalyze;
+  document.getElementById("reanalyze-mode").value = "saved";
+  document.querySelector('#reanalyze-mode option[value="download"]').disabled = currentData?.sourceType === "local_audio";
   SELECTORS.inputCard.hidden = false;
   SELECTORS.status.className = "status";
   SELECTORS.status.textContent = "";
@@ -1039,9 +1054,10 @@ const openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {})
     SELECTORS.urlInput.value = "";
     setAnalysisRangeInputs();
   }
+  updateReanalysisInputs();
   if (!SELECTORS.analysisDialog.open) SELECTORS.analysisDialog.showModal();
   if (openAudioPicker) SELECTORS.audioFileInput.click();
-  else SELECTORS.urlInput.focus({ preventScroll: true });
+  else (reanalyze ? SELECTORS.analyzeBtn : SELECTORS.urlInput).focus({ preventScroll: true });
 };
 
 const MIN_PLAYBACK_RATE = 0.25;
@@ -3793,7 +3809,7 @@ const showResult = (data, id, { autoplay = false } = {}) => {
   SELECTORS.btnYouTube.hidden = !hasServer || isLocalAudio;
   SELECTORS.btnScoreExtractor.hidden = !hasServer || isLocalAudio;
   SELECTORS.btnCloudSync.hidden = !hasServer || staticLibraryMode;
-  SELECTORS.btnReanalyze.hidden = !hasServer || isLocalAudio;
+  SELECTORS.btnReanalyze.hidden = !hasServer;
   SELECTORS.btnClearRange.hidden = true;
   SELECTORS.btnBpmSave.hidden = !hasServer;
   SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
@@ -4696,11 +4712,12 @@ const generateStems = async ({ silent = false } = {}) =>
   queueStemGeneration(currentId, { title: currentData?.title || currentId, silent, refreshCurrent: true });
 
 const doAnalyze = async (url, force = false, rangeOverride = null) => {
-  if (!url) return;
+  const saved = force && document.getElementById("reanalyze-mode").value === "saved";
+  if (!saved && !url) return;
   const videoId = extractVideoId(url);
   let range;
   try {
-    range = rangeOverride || getAnalysisTimePayload();
+    range = saved ? { startSec: null, endSec: null } : rangeOverride || getAnalysisTimePayload();
   } catch (error) {
     SELECTORS.status.className = "status err";
     SELECTORS.status.textContent = error.message;
@@ -4711,10 +4728,10 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
   SELECTORS.status.className = "status";
   SELECTORS.status.innerHTML = `<span class="spin"></span>${force ? "再解析を処理一覧へ追加中..." : "解析を処理一覧へ追加中..."} `;
   try {
-    const response = await fetch("/analyze", {
+    const response = await fetch(saved ? `/reanalyze/${encodeURIComponent(currentId)}` : "/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url, force, ...range }),
+      body: saved ? undefined : JSON.stringify({ url, force, ...range }),
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `サーバーエラー (${response.status})`);
@@ -4722,7 +4739,7 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
     SELECTORS.status.textContent = `✓ ${force ? "再解析" : "解析"}を追加しました`;
     closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
-      label: `${force ? "再解析" : "解析"} · YouTube動画${range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : ""}`,
+      label: `${force ? "再解析" : "解析"} · ${saved ? "保存済み音声" : "YouTube動画"}${range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : ""}`,
       kind: "analysis",
       rangeLabel: range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : "",
       onDone: async data => {
@@ -4731,7 +4748,7 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
         SELECTORS.status.className = data.cached ? "status ok" : "status";
         SELECTORS.status.textContent = data.cached ? "✓ 保存済みの解析結果を読み込みました" : "✓ 解析が完了しました";
         await loadHistory();
-        if (force || !hasStemAssets(data.assets)) {
+        if (!saved && (force || !hasStemAssets(data.assets))) {
           await queueStemGeneration(data.id, { title: data.title || data.id, silent: true });
         }
       },
