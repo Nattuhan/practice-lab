@@ -93,6 +93,9 @@ var AudioWaveform = [
   ]
 ];
 
+// node_modules/lucide/dist/esm/icons/chevron-up.js
+var ChevronUp = ["svg", defaultAttributes, [["path", { d: "m18 15-6-6-6 6" }]]];
+
 // node_modules/lucide/dist/esm/icons/cloud-upload.js
 var CloudUpload = [
   "svg",
@@ -2122,6 +2125,7 @@ var d2 = class _d extends e2 {
 // frontend/src/vendor.js
 var icons = {
   AudioWaveform,
+  ChevronUp,
   CloudUpload,
   Download,
   FileAudio,
@@ -7895,6 +7899,7 @@ lucide/dist/esm/createElement.js:
 lucide/dist/esm/replaceElement.js:
 lucide/dist/esm/defaultAttributes.js:
 lucide/dist/esm/icons/audio-waveform.js:
+lucide/dist/esm/icons/chevron-up.js:
 lucide/dist/esm/icons/cloud-upload.js:
 lucide/dist/esm/icons/download.js:
 lucide/dist/esm/icons/file-audio.js:

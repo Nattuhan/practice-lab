@@ -310,7 +310,12 @@ test("処理一覧を処理を消さずに最小化して再表示できる", as
     dock.querySelector("#queue-list").innerHTML = '<div class="queue-item running">処理中</div>';
   });
 
+  // Assert actual SVG rendering: an unregistered Lucide name leaves an empty i.
+  await expect(page.locator("#queue-toggle svg.queue-collapse-icon")).toBeVisible();
+  await expect(page.locator("#queue-toggle svg.queue-expand-icon")).toBeHidden();
   await page.locator("#queue-toggle").click();
+  await expect(page.locator("#queue-toggle svg.queue-expand-icon")).toBeVisible();
+  await expect(page.locator("#queue-toggle svg.queue-collapse-icon")).toBeHidden();
   await expect(page.locator("#queue-dock")).toHaveClass(/minimized/);
   await expect(page.locator("#queue-list")).toBeHidden();
   await expect(page.locator("#queue-toggle")).toHaveAttribute("aria-expanded", "false");
