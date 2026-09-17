@@ -222,3 +222,34 @@ def test_keeps_mixed_meter_when_recounting_would_erase_short_bars(tmp_path):
     audio = tmp_path / 'mixed-meter.wav'
     write_attacks(audio, actual, data['duration'])
     assert refine_timing_from_audio(data, audio) is data
+
+
+@pytest.mark.parametrize('period,offset', [(.3, .23), (.5, 1.13), (.7, .37)])
+def test_short_syncopation_repairs_pulse_without_erasing_two_beat_bar(tmp_path, period, offset):
+    actual = offset + np.arange(400) * period
+    # Twelve detections follow accents at 4/3 of the pulse for sixteen beats.
+    detected = np.r_[actual[:160], np.linspace(actual[160], actual[176], 13), actual[177:]]
+    beats = np.round(detected, 3).tolist()
+    # A genuine two-beat bar occurs later. It is independent of the missed beats.
+    positions = list(range(0, 224, 4)) + list(range(222, len(beats), 4))
+    data = dict(bpm=60/period, beats=beats, downbeats=[beats[i] for i in positions], duration=actual[-1]+period)
+    audio = tmp_path / 'syncopated-short-bar.wav'
+    attacks = list(actual[:160]) + list(actual[160] + np.arange(0, 16, .75) * period) + list(actual[176:])
+    write_attacks(audio, attacks, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    fixed = np.asarray(result['beats'])
+    assert len(fixed) == len(actual)
+    assert np.max(abs(fixed - actual)) < .002
+    # Repairing a fill must not recount subsequent short bars into 4/4.
+    assert [b for b in result['downbeats'] if b > actual[180]] == [b for b in data['downbeats'] if b > actual[180]]
+
+
+@pytest.mark.parametrize('period', [.3, .5, .7])
+def test_short_real_rational_tempo_change_is_not_mistaken_for_syncopation(tmp_path, period):
+    actual = .23 + np.arange(400) * period
+    detected = np.r_[actual[:160], np.linspace(actual[160], actual[176], 13), actual[177:]]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4], duration=actual[-1]+period)
+    audio = tmp_path / 'real-metric-modulation.wav'
+    write_attacks(audio, beats, data['duration'])
+    assert refine_timing_from_audio(data, audio)['beats'] == beats

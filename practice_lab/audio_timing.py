@@ -1,7 +1,8 @@
 """Conservative beat repair supported by attacks in the source audio.
 
-Timing alone cannot distinguish syncopation from a real tempo change. Candidate
-spans must also contain attacks supporting the same quarter/eighth-note grid.
+Timing alone cannot distinguish syncopation from a real tempo change. Compare
+source attacks too; for short ambiguous rhythmic aliases, preserve a strongly
+established clock unless the recording decisively supports the changed pulse.
 """
 from pathlib import Path
 from statistics import median
@@ -135,7 +136,12 @@ def _apply_verified_grid(data: dict, correction: dict) -> dict:
         start, end, count = span["start"], span["end"], span["intervals"]
         grid = [round(start + (end - start) * i / count, 3) for i in range(count + 1)]
         beats = sorted([b for b in beats if b < start or b > end] + grid)
-        downbeats = sorted([b for b in downbeats if b < start or b > end] + grid[::4])
+        heads = grid[::4]
+        if span.get("preserve_end_downbeat") and end not in heads:
+            # A short bar may end the bridge. Its right anchor is measured,
+            # so never shift every later bar just to enforce four-beat meter.
+            heads.append(end)
+        downbeats = sorted([b for b in downbeats if b < start or b > end] + heads)
     if any(span.get("rebuild_downbeats") for span in correction["spans"]):
         # A missed beat changes subsequent bar numbering too. Keep the first
         # measured bar head and count the repaired beats, not the old detections.
@@ -170,8 +176,10 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
     # Recounting bars is only safe for a consistently detected four-beat meter.
     # Preserve mixed meters rather than extending a majority meter over them.
     detected_bar_positions = np.argmin(abs(downbeats[:, None] - beats[None, :]), axis=1)
-    if np.any(np.diff(detected_bar_positions) != 4):
+    meter_steps = np.diff(detected_bar_positions)
+    if np.any(~np.isin(meter_steps, [2, 4])) or np.mean(meter_steps == 4) < .8:
         return []
+    mixed_meter = bool(np.any(meter_steps == 2))
     gaps = np.diff(beats)
     typical = float(np.median(gaps))
     if typical <= 0 or np.any(gaps <= 0):
@@ -262,13 +270,55 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             if (supported and np.any((np.mean(gains, axis=0) > 0)
                                      & (np.max(gains, axis=0) > .02))):
                 verified.append({"start": float(start), "end": float(end), "intervals": count,
-                                 "rebuild_downbeats": bool(count % 4)})
+                                 "rebuild_downbeats": bool(count % 4) and not mixed_meter,
+                                 **({"preserve_end_downbeat": True} if mixed_meter else {})})
                 break
+        else:
+            # A short syncopated fill / rest can make absolute onset alignment
+            # weak even though the proposed clock beats the detector's drift.
+            # Only use this continuity prior with a near-unanimous track clock,
+            # stable phase on BOTH sides, and no decisive contrary audio evidence.
+            if np.mean(consistent) < .95 or not 4 <= count <= 32:
+                continue
+            before = beats[(beats < start) & (beats >= start - 8 * period)]
+            after = beats[(beats > end) & (beats <= end + 8 * period)]
+            if min(len(before), len(after)) < 6:
+                continue
+            if any(np.max(abs(np.diff(flank) / fitted - 1)) > .1 for flank in (before, after)):
+                continue
+            attacks = _attacks(audio, start, end, .1, fitted)
+            if len(attacks) < 6:
+                continue
+            times, strengths = np.asarray(attacks).T
+            original = beats[(beats >= start - period) & (beats <= end + period)]
+            old_sub = np.sort(np.r_[original, (original[:-1] + original[1:]) / 2])
+            old_error = np.min(abs(times[:, None] - old_sub[None, :]), axis=1) / fitted
+            positions = (times - start) / fitted
+            new_error = abs(positions * 2 - np.rint(positions * 2)) / 2
+            gain = float(np.average(old_error - new_error, weights=strengths))
+            # Decisive conflicting audio (including a genuine local tempo change) must
+            # still win over the continuity prior. Do not fill unsupported silence.
+            ratios = np.diff(original) / fitted
+            drift = ratios[abs(ratios - 1) > .12]
+            rhythmic_alias = (len(drift) >= 4 and np.mean(np.min(
+                abs(drift[:, None] - np.asarray([2/3, 3/4, 4/3, 3/2])[None, :]), axis=1) < .07) >= .8)
+            old_fit = float(np.average(old_error, weights=strengths))
+            new_fit = float(np.average(new_error, weights=strengths))
+            # Around an eighth-note lattice, uninformative onset phase has
+            # expected distance 1/8 beat. When neither fit is decisive and the
+            # detector follows a rhythmic subdivision, retain the long clock.
+            # A clearly audible changed pulse fits the old grid much better and
+            # is excluded even when its tempo ratio happens to be rational.
+            ambiguous_alias = rhythmic_alias and old_fit > .08 and new_fit < .13 and gain > -.04
+            if ((gain > .02 and np.average(new_error < .12, weights=strengths) > .4)
+                    or ambiguous_alias):
+                verified.append({"start": float(start), "end": float(end), "intervals": count,
+                                 "preserve_end_downbeat": True})
     return verified
 
 
 def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
-    """Return unchanged data unless independent audio evidence supports repair."""
+    """Repair source-supported drift or short ambiguous aliases of a stable pulse."""
     with sf.SoundFile(audio_path) as audio:
         dominant_spans = _dominant_grid_spans(audio, data)
         if dominant_spans:
@@ -283,5 +333,5 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
     if intro:
         correction["intro"] = intro
     adjusted = _apply_verified_grid(data, correction)
-    adjusted["audioTimingRepair"] = {"version": 2, **correction}
+    adjusted["audioTimingRepair"] = {"version": 3, **correction}
     return adjusted
