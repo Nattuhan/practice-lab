@@ -935,19 +935,50 @@ test("デスクトップの再生設定を固定保存先から復元して変�
   await expect(page.locator("#settings-click-pitch-field")).toBeHidden();
   await page.locator("#settings-click-sound").selectOption("classic");
   await expect(page.locator("#settings-click-pitch-field")).toBeVisible();
+  await expect(page.locator("#settings-voice-pitch-field")).toBeHidden();
   await expect(page.locator("#settings-click-pitch")).toHaveValue("high");
   await page.locator("#settings-click-pitch").selectOption("low");
-  await page.locator("#settings-click-sound").selectOption("voice-high");
+  await page.locator("#settings-click-sound").selectOption("voice");
   await expect(page.locator("#settings-click-pitch-field")).toBeHidden();
+  await expect(page.locator("#settings-voice-pitch-field")).toBeVisible();
+  await page.locator("#settings-voice-pitch").selectOption("high");
   await page.locator("#settings-save").click();
-  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickSound)).toBe("voice-high");
+  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickSound)).toBe("voice");
   await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickPitch)).toBe("low");
+  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.voicePitch)).toBe("high");
 });
 
 test("保存設定がない場合もクリック音量の表示は85%を維持する", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("#vol-metro")).toHaveValue("85");
   await expect(page.locator("#vol-metro-val")).toHaveText("85%");
+});
+
+test("旧形式の高い読み上げ設定を一つの読み上げ音と高さ設定へ移行する", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__savedPlayerSettings = { clickSound: "voice-high" };
+    window.practiceLabDesktop = {
+      getPlayerSettings: () => window.__savedPlayerSettings,
+      savePlayerSettings: settings => {
+        window.__savedPlayerSettings = structuredClone(settings);
+        return { ok: true, settings };
+      },
+      getSettings: async () => ({ autoUpdate: true, version: "1.4.1", cloud: { enabled: false } }),
+      saveSettings: async settings => settings,
+      getToken: async () => "test-token",
+      onUpdateStatus: () => () => {},
+      onCommand: () => () => {},
+    };
+  });
+  await page.goto("/");
+  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings)).toMatchObject({
+    clickSound: "voice",
+    voicePitch: "high",
+  });
+  await page.locator("#btn-top-settings").click();
+  await expect(page.locator("#settings-click-sound")).toHaveValue("voice");
+  await expect(page.locator("#settings-voice-pitch")).toHaveValue("high");
+  await expect(page.locator("#settings-voice-pitch-field")).toBeVisible();
 });
 
 test("アップデート確認の結果を設定画面へ表示する", async ({ page }) => {

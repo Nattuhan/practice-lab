@@ -5,6 +5,7 @@ const PLAYER_SETTING_KEYS = new Set([
   "volMetro",
   "clickSound",
   "clickPitch",
+  "voicePitch",
   "playbackRate",
   "bluetoothSync",
   "loop",

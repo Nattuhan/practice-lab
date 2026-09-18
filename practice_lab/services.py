@@ -588,6 +588,7 @@ def export_stem_mix(
     click_volume: float = 0,
     click_sound: str = "classic",
     click_pitch: str = "standard",
+    voice_pitch: str = "standard",
 ) -> Path:
     """Render the enabled stems and their current volume levels to a temporary MP3."""
     active_stems: list[tuple[str, float]] = []
@@ -617,6 +618,8 @@ def export_stem_mix(
         raise ValueError("Invalid click sound")
     if click_pitch not in {"low", "standard", "high"}:
         raise ValueError("Invalid click pitch")
+    if voice_pitch not in {"standard", "high"}:
+        raise ValueError("Invalid voice pitch")
 
     stem_dir = (PUBLIC_STEMS_DIR / video_id).resolve()
     if PUBLIC_STEMS_DIR.resolve() not in stem_dir.parents:
@@ -640,7 +643,14 @@ def export_stem_mix(
 
     click_path = None
     if click_times and click_volume > 0:
-        click_path = create_export_click_track(click_times, click_volume, click_sound, click_pitch, click_counts=click_counts)
+        click_path = create_export_click_track(
+            click_times,
+            click_volume,
+            click_sound,
+            click_pitch,
+            voice_pitch=voice_pitch,
+            click_counts=click_counts,
+        )
         command.extend(["-i", str(click_path)])
 
     filters = []
@@ -680,14 +690,16 @@ def create_export_click_track(
     volume: float,
     click_sound: str = "classic",
     click_pitch: str = "standard",
-    *, click_counts: list[int] | None = None,
+    *, voice_pitch: str = "standard", click_counts: list[int] | None = None,
 ) -> Path:
     sample_rate = 44100
     voices = {}
     voice_rate = sample_rate
     if click_sound in {"voice", "voice-high"}:
         from .count_voice import voice_samples
-        voice_rate, voices = voice_samples('high' if click_sound == 'voice-high' else 'standard')
+        voice_rate, voices = voice_samples(
+            'high' if click_sound == 'voice-high' or voice_pitch == 'high' else 'standard'
+        )
     click_duration = max(len(v) for v in voices.values()) / voice_rate if voices else 0.055
     total_frames = max(1, math.ceil((click_times[-1] + click_duration) * sample_rate))
     samples = array("h", [0]) * total_frames
@@ -755,6 +767,7 @@ def create_stem_mix_export(
     click_volume: float = 0,
     click_sound: str = "classic",
     click_pitch: str = "standard",
+    voice_pitch: str = "standard",
     output_filename: str = "stem-mix.mp3",
     job_id: str,
 ) -> dict:
@@ -765,9 +778,11 @@ def create_stem_mix_export(
         start_sec=start_sec,
         end_sec=end_sec,
         click_times=click_times,
+        click_counts=click_counts,
         click_volume=click_volume,
         click_sound=click_sound,
         click_pitch=click_pitch,
+        voice_pitch=voice_pitch,
     )
     export_dir = DATA_WORK_DIR / "stem-exports"
     export_dir.mkdir(parents=True, exist_ok=True)

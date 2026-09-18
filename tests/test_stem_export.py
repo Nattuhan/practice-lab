@@ -109,13 +109,17 @@ class StemExportTests(unittest.TestCase):
             temporary_mix.write_bytes(b"mix")
             with (
                 patch.object(services, "DATA_WORK_DIR", root / "work"),
-                patch.object(services, "export_stem_mix", return_value=temporary_mix),
+                patch.object(services, "export_stem_mix", return_value=temporary_mix) as export_mix,
                 patch.object(services, "set_job_status") as set_status,
             ):
                 result = services.create_stem_mix_export(
                     "video123",
                     "a" * 32,
                     {"vocals": 100},
+                    click_times=[0.1],
+                    click_counts=[1],
+                    click_sound="voice",
+                    voice_pitch="high",
                     output_filename="楓_only_drums.mp3",
                     job_id="video123:stem-export:job",
                 )
@@ -127,6 +131,18 @@ class StemExportTests(unittest.TestCase):
             self.assertEqual(result["downloadUrl"], "/jobs/video123:stem-export:job/download")
             self.assertEqual(result["filename"], "楓_only_drums.mp3")
             self.assertTrue((root / "work" / "stem-exports" / f"{'a' * 32}.mp3").is_file())
+            export_mix.assert_called_once_with(
+                "video123",
+                {"vocals": 100},
+                start_sec=None,
+                end_sec=None,
+                click_times=[0.1],
+                click_counts=[1],
+                click_volume=0,
+                click_sound="voice",
+                click_pitch="standard",
+                voice_pitch="high",
+            )
 
     def test_adds_click_track_to_mix_and_removes_temporary_wav(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,7 +1,7 @@
 // AudioWorklet modules run in a separate global scope. Keep the source inside
 // the app bundle so desktop authentication cannot block a second file request.
 export const DEFAULT_CLICK_SOUND = 'classic';
-export const CLICK_SOUND_IDS = Object.freeze(['classic', 'wood', 'hihat', 'voice', 'voice-high']);
+export const CLICK_SOUND_IDS = Object.freeze(['classic', 'wood', 'hihat', 'voice']);
 export const normalizeClickSound = value => CLICK_SOUND_IDS.includes(value) ? value : DEFAULT_CLICK_SOUND;
 export const DEFAULT_CLICK_PITCH = 'standard';
 export const CLICK_PITCH_IDS = Object.freeze(['low', 'standard', 'high']);

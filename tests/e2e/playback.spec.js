@@ -240,7 +240,24 @@ for (const rate of [0.75, 1.25]) {
     await page.locator('#playback-rate').fill(String(rate));
     await page.locator('#btn-metro').click();
     await page.locator('#btn-play').click();
-    await expect.poll(() => page.evaluate(() => window.__clickPeaks.length)).toBeGreaterThanOrEqual(4);
+    await expect.poll(() => page.evaluate(beats => new Set(window.__clickPeaks.map(peak => {
+      const distances = beats.map(beat => Math.abs(beat - peak.position));
+      return distances.indexOf(Math.min(...distances));
+    })).size, beats)).toBeGreaterThanOrEqual(4);
+    expect(await page.evaluate(() => window.__media.original.playbackRate)).toBe(rate);
+    const spokenIntervals = await page.evaluate(beats => {
+      const firstByBeat = new Map();
+      for (const peak of window.__clickPeaks) {
+        const distances = beats.map(beat => Math.abs(beat - peak.position));
+        const index = distances.indexOf(Math.min(...distances));
+        if (distances[index] < .12 && !firstByBeat.has(index)) firstByBeat.set(index, peak.contextTime);
+      }
+      const times = [...firstByBeat.entries()].sort(([a], [b]) => a - b).slice(0, 4)
+        .map(([, time]) => time);
+      return times.slice(1).map((time, index) => time - times[index]);
+    }, beats);
+    expect(spokenIntervals.reduce((sum, interval) => sum + interval, 0) / spokenIntervals.length)
+      .toBeCloseTo(.36 / rate, 1);
     await page.locator('#btn-play').click();
     await page.waitForTimeout(150);
     const count = await page.evaluate(() => window.__clickPeaks.length);

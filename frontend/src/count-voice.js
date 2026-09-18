@@ -30,9 +30,12 @@ export const beatCounts = (beats, downbeats) => {
 };
 
 const cache = new Map();
+export const VOICE_PITCH_IDS = Object.freeze(['standard', 'high']);
+export const normalizeVoicePitch = value => VOICE_PITCH_IDS.includes(value) ? value : 'standard';
 export const countVoiceSamples = (sampleRate, variant = 'standard') => {
-  const data = variant === 'high' ? highVoiceData : voiceData;
-  const cacheKey = `${variant}:${sampleRate}`;
+  const pitch = normalizeVoicePitch(variant);
+  const data = pitch === 'high' ? highVoiceData : voiceData;
+  const cacheKey = `${pitch}:${sampleRate}`;
   if (!cache.has(cacheKey)) {
     const voices = {};
     for (const [number, encoded] of Object.entries(data.samples)) {

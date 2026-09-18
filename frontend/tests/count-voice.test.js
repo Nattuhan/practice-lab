@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { beatCounts, countVoiceSamples } from '../src/count-voice.js';
+import { VOICE_PITCH_IDS, beatCounts, countVoiceSamples, normalizeVoicePitch } from '../src/count-voice.js';
 import { alignedWav } from '../src/aligned-click.js';
 
 test('4拍・2拍・4拍で小節頭から読み上げ直す', () => {
@@ -49,7 +49,9 @@ test('高めの読み上げは専用音声を同期チャンネルへ収録す�
   const normal = countVoiceSamples(sampleRate)[1];
   const high = countVoiceSamples(sampleRate, 'high')[1];
   assert.notDeepEqual([...high.slice(0, 1000)], [...normal.slice(0, 1000)]);
-  const blob = await alignedWav(original, [.1], { counts: [1], clickSound: 'voice-high' });
+  assert.deepEqual(VOICE_PITCH_IDS, ['standard', 'high']);
+  assert.equal(normalizeVoicePitch('unknown'), 'standard');
+  const blob = await alignedWav(original, [.1], { counts: [1], voicePitch: 'high' });
   const pcm = new Float32Array(await blob.arrayBuffer(), 44);
   const start = Math.round(.1 * sampleRate);
   for (let k = 50; k < high.length - 50; k++) assert.equal(pcm[(start + k) * 4 + 3], high[k]);

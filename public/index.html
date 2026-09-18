@@ -530,8 +530,7 @@
                   <option value="classic">標準</option>
                   <option value="wood">ウッド</option>
                   <option value="hihat">ハイハット</option>
-                  <option value="voice">読み上げ（ワン・ツー）</option>
-                  <option value="voice-high">読み上げ（高め）</option>
+                  <option value="voice">読み上げ</option>
                 </select>
                 <small>練習中とクリックを含むパート書き出しで使用します。</small>
               </label>
@@ -543,6 +542,14 @@
                   <option value="high">高め（2400 Hz）</option>
                 </select>
                 <small>クリック音で「標準」を選んだ場合に使用します。</small>
+              </label>
+              <label class="settings-field" id="settings-voice-pitch-field" for="settings-voice-pitch" hidden>
+                <span>読み上げの声の高さ</span>
+                <select id="settings-voice-pitch">
+                  <option value="standard">標準</option>
+                  <option value="high">高め（5半音）</option>
+                </select>
+                <small>クリック音で「読み上げ」を選んだ場合に使用します。</small>
               </label>
             </div>
           </div>

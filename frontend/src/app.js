@@ -1,5 +1,5 @@
 import { PresentationClock, correctionSeconds, normalizeSyncSettings, outputDelaySeconds, renderPresentationProgress } from "./presentation-clock.js";
-import { beatCounts } from './count-voice.js';
+import { beatCounts, normalizeVoicePitch } from './count-voice.js';
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "./library.js";
@@ -212,6 +212,8 @@ const SELECTORS = {
   settingsClickSound: document.getElementById("settings-click-sound"),
   settingsClickPitch: document.getElementById("settings-click-pitch"),
   settingsClickPitchField: document.getElementById("settings-click-pitch-field"),
+  settingsVoicePitch: document.getElementById("settings-voice-pitch"),
+  settingsVoicePitchField: document.getElementById("settings-voice-pitch-field"),
   playbackRate: document.getElementById("playback-rate"),
   playbackRateVal: document.getElementById("playback-rate-val"),
   btnSpeedReset: document.getElementById("btn-speed-reset"),
@@ -341,6 +343,7 @@ let videoAvailable = true;
 let playbackRate = 1;
 let clickSound = "classic";
 let clickPitch = "standard";
+let voicePitch = "standard";
 let audioCtx = null;
 let audioPreparation = null;
 let alignedAssetUrls = [];
@@ -1274,6 +1277,7 @@ const exportStemMix = async () => {
         clickVolume: includeClick ? Number(SELECTORS.volMetro.value) : 0,
         clickSound,
         clickPitch,
+        voicePitch,
         outputFilename: downloadName,
       }),
     });
@@ -2740,8 +2744,9 @@ const syncCloudFieldsState = () => {
   SELECTORS.settingsCloudFields?.classList.toggle("disabled", !SELECTORS.settingsCloudEnabled?.checked);
 };
 
-const syncClickPitchFieldState = () => {
+const syncClickOptionFieldsState = () => {
   SELECTORS.settingsClickPitchField.hidden = SELECTORS.settingsClickSound.value !== "classic";
+  SELECTORS.settingsVoicePitchField.hidden = SELECTORS.settingsClickSound.value !== "voice";
 };
 
 const renderCloudStatus = status => {
@@ -2887,7 +2892,8 @@ const openSettings = async (section = "general") => {
   SELECTORS.settingsAutoUpdate.checked = desktopSettings.autoUpdate !== false;
   SELECTORS.settingsClickSound.value = clickSound;
   SELECTORS.settingsClickPitch.value = clickPitch;
-  syncClickPitchFieldState();
+  SELECTORS.settingsVoicePitch.value = voicePitch;
+  syncClickOptionFieldsState();
   const manualUpdates = desktopSettings.updateMode === "manual";
   SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
   if (manualUpdates) SELECTORS.settingsAutoUpdate.checked = false;
@@ -2978,11 +2984,15 @@ const saveSettings = async () => {
         endpointUrl: SELECTORS.settingsCloudEndpoint.value,
       },
     });
+    const previousVoicePitch = voicePitch;
     clickSound = normalizeClickSound(SELECTORS.settingsClickSound.value);
     clickPitch = normalizeClickPitch(SELECTORS.settingsClickPitch.value);
+    voicePitch = normalizeVoicePitch(SELECTORS.settingsVoicePitch.value);
     saveCfg("clickSound", clickSound);
     saveCfg("clickPitch", clickPitch);
+    saveCfg("voicePitch", voicePitch);
     updateAlignedClickOutput();
+    if (voicePitch !== previousVoicePitch && currentData) void rebuildAlignedClicks();
     SELECTORS.settingsSaveStatus.textContent = "保存しました。設定を反映します...";
     setTimeout(closeSettings, 150);
   } catch (error) {
@@ -3402,7 +3412,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     }
     await loadClickRenderer(getCtx());
     preparation.signal.throwIfAborted();
-    const blob = await alignedWav(original, beats, { tracks, clickSound, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
+    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
   } catch (error) {
@@ -3856,8 +3866,15 @@ const setupControls = () => {
 
   setVol(SELECTORS.volMusic, SELECTORS.volMusicVal, "volMusic", applyMusicVolume);
   setVol(SELECTORS.volMetro, SELECTORS.volMetroVal, "volMetro", updateAlignedClickOutput);
-  clickSound = normalizeClickSound(cfg().clickSound);
+  const savedClickSound = cfg().clickSound;
+  const legacyHighVoice = savedClickSound === "voice-high";
+  clickSound = legacyHighVoice ? "voice" : normalizeClickSound(savedClickSound);
   clickPitch = normalizeClickPitch(cfg().clickPitch);
+  voicePitch = normalizeVoicePitch(cfg().voicePitch ?? (legacyHighVoice ? "high" : "standard"));
+  if (legacyHighVoice) {
+    saveCfg("clickSound", clickSound);
+    saveCfg("voicePitch", voicePitch);
+  }
   SELECTORS.playbackRate.oninput = () => applyPlaybackRate(SELECTORS.playbackRate.value);
   SELECTORS.btnSpeedReset.onclick = () => applyPlaybackRate(DEFAULT_PLAYBACK_RATE);
 
@@ -5253,7 +5270,7 @@ SELECTORS.settingsSave?.addEventListener("click", saveSettings);
 SELECTORS.settingsCloudExport?.addEventListener("click", exportCloudConnection);
 SELECTORS.settingsCloudImport?.addEventListener("click", importCloudConnection);
 SELECTORS.settingsCloudEnabled?.addEventListener("change", syncCloudFieldsState);
-SELECTORS.settingsClickSound?.addEventListener("change", syncClickPitchFieldState);
+SELECTORS.settingsClickSound?.addEventListener("change", syncClickOptionFieldsState);
 SELECTORS.settingsDialog?.querySelectorAll("[data-settings-section]").forEach(button => {
   button.addEventListener("click", () => {
     selectSettingsSection(button.dataset.settingsSection);

@@ -1,3 +1,4 @@
+import json
 import wave
 from unittest.mock import patch
 
@@ -26,7 +27,21 @@ def test_export_supports_high_voice_variant(tmp_path):
     _, high = voice_samples('high')
     assert high[1] != normal[1]
     with patch.object(services, 'DATA_WORK_DIR', tmp_path):
-        path = services.create_export_click_track([0], 80, 'voice-high', click_counts=[1])
+        path = services.create_export_click_track(
+            [0], 80, 'voice', voice_pitch='high', click_counts=[1]
+        )
     with wave.open(str(path)) as wav:
         rendered = wav.readframes(wav.getnframes())
     assert rendered[:2000] != bytes(2000)
+
+
+def test_high_voice_is_five_semitones_and_preserves_word_lengths():
+    from practice_lab.config import SOURCE_ROOT
+
+    high = json.loads((SOURCE_ROOT / 'practice_lab/assets/count_voice_high.json').read_text())
+    assert high['pitchSemitones'] == 5
+    _, standard_samples = voice_samples('standard')
+    _, high_samples = voice_samples('high')
+    assert {number: len(samples) for number, samples in standard_samples.items()} == {
+        number: len(samples) for number, samples in high_samples.items()
+    }
