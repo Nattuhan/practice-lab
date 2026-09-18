@@ -69,6 +69,9 @@ const dataDirectory = () => isDevelopmentBuild()
 const runtimeDirectory = () => isDevelopmentBuild()
   ? path.join(path.dirname(dataDirectory()), "runtime")
   : path.join(app.getPath("userData"), "runtime");
+const publicMediaDirectory = () => isDevelopmentBuild()
+  ? path.join(path.dirname(dataDirectory()), "public")
+  : path.join(app.getPath("userData"), "public");
 const displayedDataPath = () => isDevelopmentBuild() ? path.dirname(dataDirectory()) : app.getPath("userData");
 
 function readJson(file, fallback) {
@@ -312,6 +315,12 @@ async function startBackend({ cloudSecret = "" } = {}) {
       PRACTICE_LAB_DATA_DIR: dataDirectory(),
       PRACTICE_LAB_RUNTIME_DIR: runtimeDirectory(),
       PRACTICE_LAB_RUNTIME_READ_ONLY: isDevelopmentBuild() ? "1" : "0",
+      // Keep the Dev UI cache isolated, but serve the normal app's generated
+      // media so saved songs remain playable without copying gigabytes.
+      PRACTICE_LAB_PUBLIC_AUDIO_DIR: path.join(publicMediaDirectory(), "audio"),
+      PRACTICE_LAB_PUBLIC_VIDEO_DIR: path.join(publicMediaDirectory(), "video"),
+      PRACTICE_LAB_PUBLIC_SCORE_DIR: path.join(publicMediaDirectory(), "score"),
+      PRACTICE_LAB_PUBLIC_STEMS_DIR: path.join(publicMediaDirectory(), "stems"),
       PRACTICE_LAB_RESOURCE_DIR: runtime.resourceDir,
       PRACTICE_LAB_PORT: String(port),
       PRACTICE_LAB_HOST: "127.0.0.1",

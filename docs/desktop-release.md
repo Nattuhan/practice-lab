@@ -72,7 +72,7 @@ PRACTICE_LAB_AUDIT_APP="$PWD/desktop/dist/installer/mac-arm64/PracticeLab.app/Co
 npm run desktop:dist:mac:dev
 ```
 
-成果物は`desktop/dist/dev-installer/mac-arm64/PracticeLab Dev.app`です。通常版とはアプリ識別子、設定、秘密情報、キャッシュ、ログ、自動更新を分離し、`~/Library/Application Support/practice-lab/data`にある楽曲・動画・譜面・ステム・解析結果を共有します。通常版に導入済みの追加ランタイムも読み取り専用で利用し、Dev版から追加・削除・上書きは行いません。開発確認版のバージョンは通常版と同じままにし、ローカル確認を理由に変更しません。
+成果物は`desktop/dist/dev-installer/mac-arm64/PracticeLab Dev.app`です。通常版とはアプリ識別子、設定、秘密情報、画面キャッシュ、ログ、自動更新を分離し、`~/Library/Application Support/practice-lab/data`にある保存データと、通常版が生成した`public`内の再生用音声・動画・譜面・ステムを共有します。通常版に導入済みの追加ランタイムも読み取り専用で利用し、Dev版から追加・削除・上書きは行いません。開発確認版のバージョンは通常版と同じままにし、ローカル確認を理由に変更しません。
 
 同じ保存データへの同時書き込みを避けるため、通常版と開発確認版は同時に使用しません。通常版が起動中なら開発確認版は起動を止め、開発確認版の使用中に通常版を起動した場合は開発確認版を終了します。確認後は`node scripts/macos-verification.cjs --check`で通常版の署名と自動更新設定を再確認します。
 
