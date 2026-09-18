@@ -96,7 +96,10 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
     # Demand repeated, distributed evidence, and a strong majority among
     # decisive passages. Fills and breakdowns may be ambiguous, but one riff
     # must not set the tempo of an otherwise unresolved recording.
-    if (len(faster) < 4 or len(faster) < eligible / 3 or len(faster) < .8 * len(votes)
+    # Real songs can keep the same quarter-note tempo while several breakdowns
+    # use a half-time backbeat. A two-thirds majority still requires broad,
+    # repeated evidence while allowing those slower-feel passages to coexist.
+    if (len(faster) < 4 or len(faster) < eligible / 3 or len(faster) < (2 / 3) * len(votes)
             or faster[-1][0] - faster[0][0] < len(beats) / 2):
         return data
     parity_counts = np.bincount([vote[2] for vote in faster], minlength=2)
@@ -118,7 +121,7 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
         if key in data:
             adjusted[key] = bars_from_sections(data[key], new_downbeats)
     adjusted["tempoOctaveResolution"] = {
-        "version": 1, "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
+        "version": 2, "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
         "eligibleWindows": eligible, "fasterVotes": len(faster),
         "originalVotes": len(votes) - len(faster), "kickParity": kick_parity,
     }

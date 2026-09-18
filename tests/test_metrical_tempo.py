@@ -8,7 +8,8 @@ from practice_lab.metrical_tempo import resolve_tempo_octave
 
 def write_drums(path, period, offset, count=192, *, hats=True, snare_first=False,
                 inverted=False, four_on_floor=False, change_at=None, only_hats=False,
-                kick_frequency=65, snare_frequency=220):
+                kick_frequency=65, snare_frequency=220, slow_windows=(),
+                ambiguous_windows=()):
     rate = 8000
     rng = np.random.default_rng(812)
     duration = offset + count * period
@@ -28,9 +29,10 @@ def write_drums(path, period, offset, count=192, *, hats=True, snare_first=False
 
     for i in range(count):
         time = offset + i * period
-        if not only_hats:
+        window = i // 32
+        if not only_hats and window not in ambiguous_windows:
             is_snare = (i + int(snare_first)) % 2 != 0
-            if change_at is not None and i >= change_at:
+            if (change_at is not None and i >= change_at) or window in slow_windows:
                 # The second region really has the slower kick/snare pattern.
                 is_snare = (i // 2 + int(snare_first)) % 2 != 0
                 if i % 2 == 0:
@@ -89,6 +91,22 @@ def test_keeps_uncertain_tempo_when_passages_disagree(tmp_path):
     write_drums(audio, .32, .17, count=192, change_at=64)
     original = detected_grid(.64, .17)
     assert resolve_tempo_octave(original, audio) is original
+
+
+@pytest.mark.parametrize('period', [.27, .33, .48])
+def test_promotes_majority_clock_despite_distributed_half_time_breakdowns(tmp_path, period):
+    audio = tmp_path / f'half-time-breakdowns-{period}.wav'
+    fast_windows = {0, 1, 3, 4, 6, 8, 10, 12, 15, 18}
+    slow_windows = {2, 7, 13, 16}
+    ambiguous_windows = set(range(19)) - fast_windows - slow_windows
+    write_drums(audio, period, .17, count=19 * 32 + 2,
+                slow_windows=slow_windows, ambiguous_windows=ambiguous_windows)
+    original = detected_grid(period * 2, .17, count=19 * 16 + 1)
+    result = resolve_tempo_octave(original, audio)
+    assert result['bpm'] == round(original['bpm'] * 2, 1)
+    assert result['tempoOctaveResolution']['version'] == 2
+    assert result['tempoOctaveResolution']['fasterVotes'] >= 10
+    assert result['tempoOctaveResolution']['originalVotes'] >= 4
 
 
 def test_backbeat_phase_is_inferred_when_detector_follows_snare(tmp_path):
