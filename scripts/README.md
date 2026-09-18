@@ -14,6 +14,6 @@
 - `sync_r2.py`: ハッシュ比較で新規・変更・削除だけを Cloudflare R2 に同期。初回は `--initialize-index`、強制再送は `--session ID` または `--all-sessions`
 - `verify_desktop_release.cjs`: 公開したデスクトップ版のCI、タグ、`main`、Release、必須配布物を一括検証
 - `analyze_audio.py`: CUDA、MPS、CPUを選択する共通解析コマンド
-- `build_count_voice_high.py`: 標準の読み上げ音声から5半音高い同じ長さの音声を再生成
+- `build_count_voice_high.py`: macOS音声合成で自然な高めの読み上げ音声を再生成
 - `split_stems.py`: CUDA、MPS、CPUを選択する共通stems分離コマンド
 - `wsl_analyze.py` / `wsl_split_stems.py`: 旧呼び出しとの互換ラッパー

@@ -35,13 +35,13 @@ def test_export_supports_high_voice_variant(tmp_path):
     assert rendered[:2000] != bytes(2000)
 
 
-def test_high_voice_is_five_semitones_and_preserves_word_lengths():
+def test_high_voice_is_naturally_synthesized_at_requested_pitch():
     from practice_lab.config import SOURCE_ROOT
 
     high = json.loads((SOURCE_ROOT / 'practice_lab/assets/count_voice_high.json').read_text())
-    assert high['pitchSemitones'] == 5
+    assert high['voice'] == 'Samantha'
+    assert high['pitchBase'] == 52
     _, standard_samples = voice_samples('standard')
     _, high_samples = voice_samples('high')
-    assert {number: len(samples) for number, samples in standard_samples.items()} == {
-        number: len(samples) for number, samples in high_samples.items()
-    }
+    assert set(standard_samples) == set(high_samples) == set(range(1, 13))
+    assert all(high_samples[number] != standard_samples[number] for number in range(1, 13))

@@ -6,9 +6,10 @@ Samantha speech samples generated locally with macOS `say` at 320 words/minute;
 they contain no recording of a user or performer. Leading/trailing silence was
 trimmed, peaks normalized to 0.8, and 2 ms edge fades applied.
 
-The high variant is the same voice shifted upward by five semitones while
-preserving word duration. The UI exposes it as a pitch option under the single
-`読み上げ` click type.
+The high variant raises Samantha's pitch base inside the speech synthesizer.
+Generating the voice at the requested pitch preserves natural speech formants;
+pitch-shifting the standard PCM after synthesis does not. The UI exposes it as
+a voice option under the single `読み上げ` click type.
 
 Regenerate the high variant with `.venv/bin/python scripts/build_count_voice_high.py`.
 
