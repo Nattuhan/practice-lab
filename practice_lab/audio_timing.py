@@ -106,27 +106,201 @@ def _audio_supported_spans(audio: sf.SoundFile, start: float, end: float, period
 def _missing_intro(audio: sf.SoundFile, data: dict) -> dict | None:
     beats = data.get("beats") or []
     downbeats = data.get("downbeats") or []
-    if len(beats) < 32 or not downbeats or abs(downbeats[0] - beats[0]) > 0.03:
+    if len(beats) < 32 or not downbeats:
         return None
     leading = np.asarray(beats[:32], dtype=float)
     period, _ = np.polyfit(np.arange(len(leading)), leading, 1)
     first = float(beats[0])
-    if not 2 * period < first < min(8 * period, 8):
+    if first < 2 * period:
         return None
     if any(abs(gap / period - 1) > 0.1 for gap in np.diff(leading)):
         return None
-    if any(abs((downbeats[i] - first) / period - i * 4) > 0.15
+    first_head_index = int(round((downbeats[0] - first) / period))
+    if not 0 <= first_head_index < 4:
+        return None
+    if any(abs((downbeats[i] - first) / period - (first_head_index + i * 4)) > 0.15
            for i in range(min(8, len(downbeats)))):
         return None
-    attacks = _attacks(audio, 0, first, 0.035)
-    if len(attacks) < 2 or attacks[-1][0] - attacks[0][0] < period:
+
+    rate = audio.samplerate
+    audio.seek(0)
+    samples = audio.read(min(audio.frames, int((first + 16 * period) * rate)),
+                         always_2d=True, dtype="float32")
+    frame = max(1, round(rate * period / 2))
+    frame_count = len(samples) // frame
+    if frame_count < 8:
         return None
-    # Music before the detector's first beat must follow its eighth-note phase.
-    # Silence or an unrelated/free-time introduction provides no such evidence.
-    if any(abs((first - time) / period * 2 - round((first - time) / period * 2)) > 0.24
-           for time, _ in attacks):
+    rms = np.sqrt(np.mean(samples[:frame_count * frame].reshape(frame_count, frame, -1) ** 2,
+                          axis=(1, 2)))
+    frame_times = (np.arange(frame_count) + 1) * frame / rate
+    after = rms[(frame_times >= first) & (frame_times <= first + 8 * period)]
+    if not len(after):
         return None
-    return {"downbeat": first, "period": round(float(period), 6)}
+    threshold = max(1e-4, float(np.percentile(after, 75)) * .03)
+    before_mask = frame_times <= first
+    before_times, before_active = frame_times[before_mask], rms[before_mask] > threshold
+    active_indexes = np.flatnonzero(before_active)
+    if not len(active_indexes):
+        return None
+    # The beat-scaled frames above establish continuity; use finer frames for
+    # the actual boundary so a frame beginning in silence does not add a beat.
+    edge_frame = max(1, round(rate * min(.02, period / 16)))
+    edge_count = min(len(samples), int(first * rate)) // edge_frame
+    edge_rms = np.sqrt(np.mean(
+        samples[:edge_count * edge_frame].reshape(edge_count, edge_frame, -1) ** 2,
+        axis=(1, 2)))
+    edge_active = np.flatnonzero(edge_rms > threshold)
+    if not len(edge_active):
+        return None
+    audible_start = float(edge_active[0] * edge_frame / rate)
+    attacks = [attack for attack in _attacks(audio, 0, first + period / 2, .035, period)
+               if attack[0] >= audible_start - period / 2]
+    intervals = int(np.floor((first - audible_start) / period + .5))
+    if not 2 <= intervals <= min(32, int(first / period)):
+        return None
+
+    active_rms = rms[before_mask][active_indexes[0]:]
+    active_fraction = float(np.mean(before_active[active_indexes[0]:]))
+    smooth_change = (float(np.median(abs(np.diff(active_rms))))
+                     / max(float(np.median(active_rms)), 1e-7))
+    sustained_intro = active_fraction >= .8 and smooth_change < .12
+    if len(attacks) >= 2 and not sustained_intro:
+        times, strengths = np.asarray(attacks).T
+        positions = (times - first) / period
+        eighth_distance = abs(positions * 2 - np.rint(positions * 2)) / 2
+        if (times[-1] - times[0] < period
+                or np.average(eighth_distance < .12, weights=strengths) < .6
+                or np.average(eighth_distance, weights=strengths) > .12):
+            return None
+    elif not sustained_intro:
+        return None
+    return {"start": first, "period": round(float(period), 6),
+            "intervals": intervals, "firstDownbeatIndex": first_head_index}
+
+
+def _missing_outro(audio: sf.SoundFile, data: dict) -> dict | None:
+    """Extend a proven constant clock when the detector drops the song ending."""
+    beats = np.asarray(data.get("beats") or [], dtype=float)
+    downbeats = np.asarray(data.get("downbeats") or [], dtype=float)
+    if len(beats) < 64 or len(downbeats) < 16:
+        return None
+    gaps = np.diff(beats)
+    typical = float(np.median(gaps))
+    if typical <= 0 or np.any(gaps <= 0):
+        return None
+    cuts = np.r_[0, np.flatnonzero(abs(gaps / typical - 1) > .1) + 1, len(beats)]
+    left, right = max(zip(cuts[:-1], cuts[1:]), key=lambda pair: pair[1] - pair[0])
+    if right - left < 32:
+        return None
+    period, phase = np.polyfit(np.arange(right - left), beats[left:right], 1)
+    for _ in range(4):
+        indexes = np.rint((beats - phase) / period)
+        consistent = abs(beats - (phase + indexes * period)) < .12 * period
+        if np.count_nonzero(consistent) < 32:
+            return None
+        period, phase = np.polyfit(indexes[consistent], beats[consistent], 1)
+    if np.mean(consistent) < .8:
+        return None
+
+    # If the terminal detections first drift away from the established clock,
+    # replace from the last reliable beat. Otherwise extend after the last beat.
+    bad = np.flatnonzero(abs(gaps / period - 1) > .1)
+    tail_bad = bad[bad >= max(0, len(gaps) - 64)]
+    anchor_index = int(tail_bad[0]) if len(tail_bad) else len(beats) - 1
+    anchor = float(beats[anchor_index])
+    duration = min(float(data.get("duration") or audio.frames / audio.samplerate),
+                   audio.frames / audio.samplerate)
+    if duration - anchor < 4 * period:
+        return None
+
+    # Find the end of the contiguous audible tail. This lets a proven clock
+    # continue through held notes and fades, where no new onset exists. Stop at
+    # the first sustained silence instead of extending into later video audio.
+    rate = audio.samplerate
+    first = max(0, int((anchor - 16 * period) * rate))
+    audio.seek(first)
+    samples = audio.read(max(0, int(duration * rate) - first), always_2d=True,
+                         dtype="float32")
+    frame = max(1, round(rate * period / 2))
+    frame_count = len(samples) // frame
+    if frame_count < 8:
+        return None
+    rms = np.sqrt(np.mean(samples[:frame_count * frame].reshape(frame_count, frame, -1) ** 2,
+                          axis=(1, 2)))
+    frame_times = first / rate + (np.arange(frame_count) + 1) * frame / rate
+    before = rms[frame_times <= anchor]
+    if not len(before):
+        return None
+    threshold = max(1e-4, float(np.percentile(before, 75)) * .03)
+    tail_mask = frame_times > anchor
+    tail_times, tail_active = frame_times[tail_mask], rms[tail_mask] > threshold
+    if not np.any(tail_active):
+        return None
+    stop = len(tail_active)
+    inactive_run = 0
+    for index, active in enumerate(tail_active):
+        inactive_run = 0 if active else inactive_run + 1
+        if inactive_run >= 4:
+            stop = index - inactive_run + 1
+            break
+    active_indexes = np.flatnonzero(tail_active[:stop])
+    if not len(active_indexes):
+        return None
+    audible_end = float(tail_times[active_indexes[-1]])
+    intervals = int(np.floor((audible_end - anchor) / period + .1))
+    if intervals < 4:
+        return None
+    end = anchor + intervals * period
+    attacks = [attack for attack in _attacks(audio, anchor, duration, .1, period)
+               if attack[0] <= audible_end + period / 2]
+    active_rms = rms[tail_mask][:stop]
+    active_fraction = float(np.mean(tail_active[:stop]))
+    smooth_change = (float(np.median(abs(np.diff(active_rms))))
+                     / max(float(np.median(active_rms[tail_active[:stop]])), 1e-7))
+    sustained_tail = active_fraction >= .8 and smooth_change < .12
+    required_attacks = max(3, min(8, intervals // 2))
+    if len(attacks) >= required_attacks and not sustained_tail:
+        times, strengths = np.asarray(attacks).T
+        positions = (times - anchor) / period
+        quarter_distance = abs(positions - np.rint(positions))
+        eighth_distance = abs(positions * 2 - np.rint(positions * 2)) / 2
+        if (np.average(eighth_distance < .12, weights=strengths) < .65
+                or np.average(quarter_distance < .12, weights=strengths) < .2
+                or np.average(eighth_distance, weights=strengths) > .1):
+            return None
+        if len(tail_bad):
+            original = beats[anchor_index:]
+            old_distance = np.min(abs(times[:, None] - original[None, :]), axis=1) / period
+            if float(np.average(old_distance - quarter_distance, weights=strengths)) < .08:
+                return None
+        strong = strengths >= float(np.max(strengths)) * .15
+        supported_quarters = np.rint(positions[strong & (quarter_distance < .12)]).astype(int)
+        if len(supported_quarters):
+            intervals = max(intervals, int(np.max(supported_quarters)))
+            end = anchor + intervals * period
+        # Drum fills can weaken quarter-note accents, but every eight-beat
+        # window must retain some phase evidence.
+        window_starts = np.arange(anchor, max(anchor, end - 8 * period), 8 * period).tolist()
+        window_starts.append(max(anchor, end - 8 * period))
+        for window_start in window_starts:
+            window_end = min(end, window_start + 8 * period)
+            mask = (times >= window_start) & (times <= window_end)
+            if np.count_nonzero(mask) < 3:
+                return None
+            if (np.average(eighth_distance[mask] < .12, weights=strengths[mask]) < .4
+                    and np.average(eighth_distance[mask], weights=strengths[mask]) > .15):
+                return None
+    else:
+        # Sparse onsets are valid only for a continuously sounding held/fading
+        # ending. Pulses at a conflicting tempo leave inactive gaps and fail.
+        if not sustained_tail:
+            return None
+    previous_heads = downbeats[downbeats <= anchor + .12 * period]
+    if not len(previous_heads):
+        return None
+    downbeat_offset = int(round((anchor - previous_heads[-1]) / period)) % 4
+    return {"start": round(anchor, 3), "end": round(float(end), 3),
+            "intervals": intervals, "downbeatOffset": downbeat_offset}
 
 
 def _apply_verified_grid(data: dict, correction: dict) -> dict:
@@ -148,13 +322,23 @@ def _apply_verified_grid(data: dict, correction: dict) -> dict:
         first = min(range(len(beats)), key=lambda i: abs(beats[i] - data["downbeats"][0]))
         downbeats = beats[first::4]
     if correction.get("intro"):
-        anchor = correction["intro"]["downbeat"]
+        anchor = correction["intro"]["start"]
         period = correction["intro"]["period"]
+        intervals = correction["intro"]["intervals"]
+        head_index = correction["intro"]["firstDownbeatIndex"]
         leading = [(i, round(anchor - i * period, 3))
-                   for i in range(0, int(anchor / period) + 1)]
+                   for i in range(intervals, -1, -1)]
         beats = sorted([b for b in beats if b > anchor] + [b for _, b in leading])
         downbeats = sorted([b for b in downbeats if b > anchor]
-                           + [b for i, b in leading if i % 4 == 0])
+                           + [b for i, b in leading if (i + head_index) % 4 == 0])
+    if correction.get("outro"):
+        outro = correction["outro"]
+        anchor, end, count = outro["start"], outro["end"], outro["intervals"]
+        grid = [round(anchor + (end - anchor) * i / count, 3) for i in range(count + 1)]
+        beats = sorted([b for b in beats if b < anchor] + grid)
+        offset = int(outro["downbeatOffset"])
+        heads = [beat for index, beat in enumerate(grid) if (offset + index) % 4 == 0]
+        downbeats = sorted([b for b in downbeats if b < anchor] + heads)
     adjusted = {**data, "beats": beats, "downbeats": downbeats, "total_bars": len(downbeats)}
     for key in ("sections", "automaticSections"):
         if key in data:
@@ -360,14 +544,17 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
         if dominant_spans:
             data = _apply_verified_grid(data, {"spans": dominant_spans})
         intro = _missing_intro(audio, data)
+        outro = _missing_outro(audio, data)
         spans = list(dominant_spans)
         for start, end, period in _candidate_spans(data):
             spans.extend(_audio_supported_spans(audio, start, end, period))
-    if not intro and not spans:
+    if not intro and not outro and not spans:
         return data
     correction = {"spans": spans}
     if intro:
         correction["intro"] = intro
+    if outro:
+        correction["outro"] = outro
     adjusted = _apply_verified_grid(data, correction)
-    adjusted["audioTimingRepair"] = {"version": 3, **correction}
+    adjusted["audioTimingRepair"] = {"version": 4, **correction}
     return adjusted

@@ -84,6 +84,27 @@ def test_backfills_missing_intro_only_with_audio_support(tmp_path, period):
     assert refine_timing_from_audio(data, audio) is data
 
 
+def test_backfills_held_intro_before_first_detected_beat(tmp_path):
+    period, first = .44, 6.38
+    beats = [round(first + i * period, 3) for i in range(64)]
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[2::4],
+                duration=beats[-1]+period)
+    audio = tmp_path / 'held-intro.wav'
+    write_attacks(audio, beats, data['duration'])
+    samples, rate = sf.read(audio, dtype='float32')
+    start = round((first - 6 * period) * rate)
+    end = round(first * rate)
+    time = np.arange(end - start) / rate
+    fade_in = np.minimum(1, time / period)
+    samples[start:end] += .2 * np.sin(2 * np.pi * 220 * time) * fade_in
+    sf.write(audio, samples, rate, subtype='FLOAT')
+    result = refine_timing_from_audio(data, audio)
+    assert len(result['beats']) >= len(beats) + 5
+    assert result['beats'][0] < first - 4 * period
+    assert max(np.diff(result['beats'][:8])) < period * 1.01
+    assert refine_timing_from_audio(result, audio) == result
+
+
 def test_fresh_analyzer_output_is_repaired_without_session_identity_or_saved_correction(tmp_path, monkeypatch, capsys):
     import importlib.util
     import json
@@ -179,6 +200,77 @@ def test_keeps_genuine_half_time_passages_in_octave_mixed_detection(tmp_path):
     audio = tmp_path / 'real-half-time-passages.wav'
     # The outer passages genuinely carry strong attacks only at half rate.
     attacks = np.r_[actual[:96:2], actual[96:384], actual[384::2]]
+    write_attacks(audio, attacks, data['duration'])
+    assert refine_timing_from_audio(data, audio) is data
+
+
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.49, 1.13), (.68, .37)])
+def test_extends_source_supported_constant_clock_through_missing_outro(tmp_path, period, offset):
+    actual = offset + np.arange(360) * period
+    detected = actual[:-24]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1]+period,
+                sections=[dict(start_time=0, end_time=actual[-1]+period)])
+    audio = tmp_path / 'missing-outro.wav'
+    write_attacks(audio, actual, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+    assert result['audioTimingRepair']['outro']['intervals'] == 24
+    assert result['bpm'] == data['bpm']
+    assert refine_timing_from_audio(result, audio) == result
+
+
+def test_replaces_drifting_terminal_detections_with_source_supported_clock(tmp_path):
+    period, offset = .41, .23
+    actual = offset + np.arange(360) * period
+    detected = np.r_[actual[:-24], actual[-24] + np.arange(16) * period * 1.5]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1]+period)
+    audio = tmp_path / 'drifting-outro.wav'
+    write_attacks(audio, actual, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+    assert refine_timing_from_audio(result, audio) == result
+
+
+def test_extends_constant_clock_through_held_fading_outro(tmp_path):
+    period, offset = .46, .21
+    actual = offset + np.arange(320) * period
+    detected = actual[:-20]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1]+period)
+    audio = tmp_path / 'held-fade.wav'
+    write_attacks(audio, detected, data['duration'])
+    samples, rate = sf.read(audio, dtype='float32')
+    start = round(detected[-1] * rate)
+    tail = np.arange(len(samples) - start) / rate
+    fade = np.maximum(0, 1 - tail / (20 * period))
+    samples[start:] += .2 * np.sin(2 * np.pi * 220 * tail) * fade
+    sf.write(audio, samples, rate, subtype='FLOAT')
+    result = refine_timing_from_audio(data, audio)
+    assert len(result['beats']) > len(beats) + 16
+    assert max(np.diff(result['beats'][-20:])) < period * 1.01
+    assert refine_timing_from_audio(result, audio) == result
+
+
+@pytest.mark.parametrize('case', ['silence', 'different_phase', 'different_tempo'])
+def test_does_not_extend_outro_without_matching_source_clock(tmp_path, case):
+    period, offset = .47, .17
+    actual = offset + np.arange(360) * period
+    detected = actual[:-24]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1]+period)
+    if case == 'silence':
+        attacks = detected
+    elif case == 'different_phase':
+        attacks = np.r_[detected, actual[-24:] + .25 * period]
+    else:
+        attacks = np.r_[detected, actual[-24] + np.arange(24) * period * .8]
+    audio = tmp_path / f'{case}.wav'
     write_attacks(audio, attacks, data['duration'])
     assert refine_timing_from_audio(data, audio) is data
 
