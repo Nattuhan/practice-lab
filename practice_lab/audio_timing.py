@@ -225,6 +225,40 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
         fitted = (end - start) / count
         if abs(fitted / period - 1) > .015:
             continue
+        inner = beats[(beats >= start - .001) & (beats <= end + .001)]
+        ratios = np.diff(inner) / fitted
+        octave_sparse = (len(ratios) >= 8
+                         and np.mean(abs(ratios - 2) < .08) >= .9)
+        if octave_sparse:
+            # A detector can keep the numeric tempo while returning every
+            # other beat for long passages. Only fill that octave gap when
+            # strong source attacks consistently prefer the established
+            # full-rate grid over the detected half-rate grid. A genuine
+            # half-time passage keeps its strong attacks near `inner` and is
+            # therefore rejected by the old-vs-new comparison.
+            supported = True
+            window_starts = np.arange(start, max(start, end - 16 * fitted), 16 * fitted).tolist()
+            window_starts.append(max(start, end - 16 * fitted))
+            for window_start in window_starts:
+                window_end = min(end, window_start + 16 * fitted)
+                attacks = _attacks(audio, window_start, window_end, .1, fitted)
+                if len(attacks) < 6:
+                    supported = False
+                    break
+                times, strengths = np.asarray(attacks).T
+                old_distance = np.min(abs(times[:, None] - inner[None, :]), axis=1) / fitted
+                positions = (times - start) / fitted
+                new_distance = abs(positions - np.rint(positions))
+                old_fit = float(np.average(old_distance, weights=strengths))
+                new_fit = float(np.average(new_distance, weights=strengths))
+                if old_fit < .35 or new_fit > .34 or old_fit - new_fit < .1:
+                    supported = False
+                    break
+            if supported:
+                verified.append({"start": float(start), "end": float(end), "intervals": count,
+                                 "rebuild_downbeats": bool(count % 4) and not mixed_meter,
+                                 **({"preserve_end_downbeat": True} if mixed_meter else {})})
+                continue
         # Half-time beat tracking can place audible attacks on sixteenths.
         # Keep the same fractional tolerance at either rhythmic resolution.
         for subdivisions in (2, 4):

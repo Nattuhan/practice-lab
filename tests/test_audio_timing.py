@@ -145,6 +145,44 @@ def test_repairs_phase_drift_and_missing_beats_from_audio(tmp_path, period, offs
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.49, 1.13), (.68, .37)])
+def test_restores_long_leading_and_trailing_half_rate_detections(tmp_path, period, offset):
+    actual = offset + np.arange(480) * period
+    detected = np.r_[actual[:96:2], actual[96:384], actual[384::2]]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1]+period,
+                sections=[dict(start_time=0, end_time=actual[-1])])
+    audio = tmp_path / 'octave-mixed-grid.wav'
+    write_attacks(audio, actual, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    # Repair only between measured bar anchors; do not extrapolate beats past
+    # the final detection into a possibly silent outro.
+    assert len(result['beats']) > len(beats)
+    for span in result['audioTimingRepair']['spans']:
+        repaired = np.asarray([beat for beat in result['beats']
+                               if span['start'] <= beat <= span['end']])
+        expected = actual[(actual >= span['start'] - .001) & (actual <= span['end'] + .001)]
+        assert len(repaired) == len(expected)
+        assert np.max(abs(repaired - expected)) < .002
+    assert result['bpm'] == data['bpm']
+    assert refine_timing_from_audio(result, audio) == result
+
+
+def test_keeps_genuine_half_time_passages_in_octave_mixed_detection(tmp_path):
+    period, offset = .5, .17
+    actual = offset + np.arange(480) * period
+    detected = np.r_[actual[:96:2], actual[96:384], actual[384::2]]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1]+period)
+    audio = tmp_path / 'real-half-time-passages.wav'
+    # The outer passages genuinely carry strong attacks only at half rate.
+    attacks = np.r_[actual[:96:2], actual[96:384], actual[384::2]]
+    write_attacks(audio, attacks, data['duration'])
+    assert refine_timing_from_audio(data, audio) is data
+
+
 @pytest.mark.parametrize('case', ['tempo_change', 'silence', 'different_phase', 'accelerando'])
 def test_dominant_tempo_does_not_override_conflicting_local_audio(tmp_path, case):
     period = .493
