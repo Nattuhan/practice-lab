@@ -56,15 +56,56 @@ test("主要画面をネットワークCDNなしで開ける", async ({ page }) 
   expect(dependencyRequests).toEqual([]);
 });
 
-test("小さいUI文字を読みやすくし数値表示の大きさは維持する", async ({ page }) => {
+test("小さいUI文字と操作値を読みやすくする", async ({ page }) => {
   await page.goto("/");
   for (const selector of [".si-meta", ".stat-lbl", ".sec-time", ".sec-bars"]) {
     await expect.poll(() => page.locator(selector).first().evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
   }
-  await expect.poll(() => page.locator("#vol-music-val").evaluate(element => getComputedStyle(element).fontSize)).toBe("10px");
-  await expect.poll(() => page.locator("#playback-rate-val").evaluate(element => getComputedStyle(element).fontSize)).toBe("10px");
-  await expect.poll(() => page.locator("#stem-vocals-value").evaluate(element => getComputedStyle(element).fontSize)).toBe("11px");
+  await expect.poll(() => page.locator("#vol-music-val").evaluate(element => getComputedStyle(element).fontSize)).toBe("16px");
+  await expect.poll(() => page.locator("#playback-rate-val").evaluate(element => getComputedStyle(element).fontSize)).toBe("16px");
+  await expect.poll(() => page.locator("#stem-vocals-value").evaluate(element => getComputedStyle(element).fontSize)).toBe("16px");
   await expect.poll(() => page.locator("#meta-bpm").evaluate(element => getComputedStyle(element).fontSize)).toBe("23px");
+});
+
+test("文字を拡大しても音量・BPM・速度操作がプレイヤー内に収まる", async ({ page }) => {
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await page.goto("/");
+  await expect(page.locator(".vol-bar")).toBeVisible();
+  const bar = await page.locator(".vol-bar").boundingBox();
+  expect(bar).not.toBeNull();
+  for (const selector of [".volume-controls", ".tempo-controls", "#meta-bpm", "#playback-rate-val"]) {
+    const box = await page.locator(selector).boundingBox();
+    expect(box, selector).not.toBeNull();
+    expect(box.x, selector).toBeGreaterThanOrEqual(bar.x - 1);
+    expect(box.x + box.width, selector).toBeLessThanOrEqual(bar.x + bar.width + 1);
+  }
+  const volumeControls = await page.locator(".volume-controls").boundingBox();
+  const tempoControls = await page.locator(".tempo-controls").boundingBox();
+  expect(Math.abs(volumeControls.x - tempoControls.x)).toBeLessThanOrEqual(1);
+  for (const label of await page.locator(".vol-bar .vol-lbl").all()) {
+    expect(await label.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  }
+
+  const stemRow = await page.locator(".stem-row").first().boundingBox();
+  expect(stemRow).not.toBeNull();
+  for (const selector of [".stem-mode-buttons", ".stem-name", "input[type=range]", ".stem-value"]) {
+    const box = await page.locator(".stem-row").first().locator(selector).boundingBox();
+    expect(box, selector).not.toBeNull();
+    expect(box.x, selector).toBeGreaterThanOrEqual(stemRow.x - 1);
+    expect(box.x + box.width, selector).toBeLessThanOrEqual(stemRow.x + stemRow.width + 1);
+  }
+  await expect.poll(() => page.locator(".stem-name").first().evaluate(element => ({
+    wrapped: element.scrollHeight > element.clientHeight,
+    whiteSpace: getComputedStyle(element).whiteSpace,
+  }))).toEqual({ wrapped: false, whiteSpace: "nowrap" });
+
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const wideVolumeControls = await page.locator(".volume-controls").boundingBox();
+  const wideTempoControls = await page.locator(".tempo-controls").boundingBox();
+  const volumeCenterY = wideVolumeControls.y + wideVolumeControls.height / 2;
+  const tempoCenterY = wideTempoControls.y + wideTempoControls.height / 2;
+  expect(Math.abs(volumeCenterY - tempoCenterY)).toBeLessThanOrEqual(1);
+  expect(wideVolumeControls.x + wideVolumeControls.width).toBeLessThanOrEqual(wideTempoControls.x);
 });
 
 test("デスクトップ版は同期済み動画とパートをローカルから再生する", async ({ page }) => {
