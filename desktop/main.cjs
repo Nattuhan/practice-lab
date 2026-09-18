@@ -15,16 +15,31 @@ const { cloudSettingsFromLegacyEnv, parseEnv, stripLegacyR2Settings } = require(
 const { sanitizePlayerSettings } = require("./player-settings.cjs");
 const { RELEASES_LATEST_URL, getUpdateMode, hasDeveloperIdSignature } = require("./update-policy.cjs");
 const { analysisEnvironment, sanitizeAnalysisMode } = require("./analysis-settings.cjs");
+const {
+  hasNormalMacAppProcess,
+  isSharedDataDevelopmentBuild,
+  normalMacDataDirectory,
+} = require("./development-build.cjs");
 const { createDesktopSecretsStore } = require("./desktop-secrets.cjs");
 const { appendPlaybackEvent } = require("./playback-diagnostics.cjs");
 
 const { createAudioOutputReader } = require("./audio-output.cjs");
 const readAudioOutput = createAudioOutputReader();
+const sharedDataDevelopmentBuild = isSharedDataDevelopmentBuild(app.getName(), process.platform, process.execPath);
+
+// Electron derives userData from package.json's internal name. Override it
+// before any settings, cache or single-instance state is opened by the Dev app.
+if (sharedDataDevelopmentBuild) {
+  app.setName("PracticeLab Dev");
+  app.setPath("userData", path.join(app.getPath("appData"), "practice-lab-dev"));
+}
 
 let mainWindow = null;
 let backend = null;
 let backendUrl = null;
 let updateDownloaded = false;
+let dataLock = null;
+let normalAppWatch = null;
 const desktopToken = randomBytes(32).toString("hex");
 const selectedConnectionFiles = new Map();
 
@@ -46,6 +61,12 @@ const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 const secretsFile = () => path.join(app.getPath("userData"), "secrets.bin");
 const playerSettingsFile = () => path.join(app.getPath("userData"), "player-settings.json");
 const desktopSecretsStore = createDesktopSecretsStore({ safeStorage, fs, filePath: secretsFile });
+const isDevelopmentBuild = () => sharedDataDevelopmentBuild;
+const desktopProductName = () => isDevelopmentBuild() ? "PracticeLab Dev" : "PracticeLab";
+const dataDirectory = () => isDevelopmentBuild()
+  ? normalMacDataDirectory(app.getPath("home"))
+  : path.join(app.getPath("userData"), "data");
+const displayedDataPath = () => isDevelopmentBuild() ? path.dirname(dataDirectory()) : app.getPath("userData");
 
 function readJson(file, fallback) {
   try {
@@ -94,7 +115,8 @@ function settingsForRenderer() {
   return {
     ...settings,
     cloud: { ...settings.cloud, hasSecret: desktopSecretsStore.hasStored() },
-    dataPath: app.getPath("userData"),
+    dataPath: displayedDataPath(),
+    productName: desktopProductName(),
     version: app.getVersion(),
     packaged: app.isPackaged,
     platform: process.platform,
@@ -284,6 +306,7 @@ async function startBackend({ cloudSecret = "" } = {}) {
       PATH: `${runtimeBin}${process.env.PATH || ""}`,
       PRACTICE_LAB_DESKTOP: "1",
       PRACTICE_LAB_HOME: appHome,
+      PRACTICE_LAB_DATA_DIR: dataDirectory(),
       PRACTICE_LAB_RESOURCE_DIR: runtime.resourceDir,
       PRACTICE_LAB_PORT: String(port),
       PRACTICE_LAB_HOST: "127.0.0.1",
@@ -367,6 +390,7 @@ function sendUpdateStatus(payload) {
 
 let desktopUpdateMode;
 function getDesktopUpdateMode() {
+  if (isDevelopmentBuild()) return "development";
   if (desktopUpdateMode === undefined) {
     const developerIdSigned = app.isPackaged && process.platform === "darwin" && hasDeveloperIdSignature(
       spawnSync("/usr/bin/codesign", ["-dvv", path.resolve(process.resourcesPath, "../..")], { encoding: "utf8", timeout: 5000 }),
@@ -488,7 +512,7 @@ function configureApplicationMenu() {
           label: process.platform === "darwin" ? "最新版の配布ページを開く" : "アップデートを確認",
           click: checkForUpdates,
         },
-        { label: "データ保存場所を開く", click: () => shell.openPath(app.getPath("userData")) },
+        { label: "データ保存場所を開く", click: () => shell.openPath(displayedDataPath()) },
         { type: "separator" },
         { label: "PracticeLabについて", click: () => sendCommand("about") },
       ],
@@ -712,7 +736,7 @@ ipcMain.handle("desktop:prepare-cloud", async event => {
 });
 ipcMain.handle("desktop:open-data-folder", event => {
   requireTrustedIpc(event);
-  return shell.openPath(app.getPath("userData"));
+  return shell.openPath(displayedDataPath());
 });
 ipcMain.handle("desktop:check-for-updates", event => {
   requireTrustedIpc(event);
@@ -724,6 +748,74 @@ ipcMain.handle("desktop:install-update", event => {
   return updateDownloaded;
 });
 
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function normalAppIsRunning() {
+  const result = spawnSync(
+    "/usr/bin/pgrep",
+    ["-f", "^/Applications/PracticeLab.app/Contents/MacOS/PracticeLab$"],
+    { encoding: "utf8", timeout: 5000 },
+  );
+  if (result.status === 0) return true;
+  // Keep parsing available for systems where pgrep cannot inspect GUI apps.
+  const processList = spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: 5000 });
+  return processList.status === 0 && hasNormalMacAppProcess(processList.stdout, process.pid);
+}
+
+function acquireDataLock() {
+  const directory = dataDirectory();
+  fs.mkdirSync(directory, { recursive: true });
+  const lockPath = path.join(directory, ".desktop-data.lock");
+  const owner = readJson(lockPath, null);
+  if (owner?.pid && owner.pid !== process.pid && processIsAlive(owner.pid)) {
+    throw new Error(`${owner.appName || "別のPracticeLab"}が同じ楽曲データを使用中です。先に終了してください。`);
+  }
+  if (fs.existsSync(lockPath)) fs.rmSync(lockPath, { force: true });
+  const token = randomBytes(16).toString("hex");
+  try {
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, appName: desktopProductName(), token }), { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if (error.code === "EEXIST") throw new Error("別のPracticeLabが同じ楽曲データを使用中です。先に終了してください。");
+    throw error;
+  }
+  dataLock = { lockPath, token };
+}
+
+function releaseDataLock() {
+  if (!dataLock) return;
+  const owner = readJson(dataLock.lockPath, null);
+  if (owner?.token === dataLock.token) fs.rmSync(dataLock.lockPath, { force: true });
+  dataLock = null;
+}
+
+function watchForNormalApp() {
+  if (!isDevelopmentBuild()) return;
+  writeBackendLog("PracticeLab Dev normal-app watcher started\n");
+  normalAppWatch = setInterval(() => {
+    if (!normalAppIsRunning()) return;
+    writeBackendLog("PracticeLab Dev detected the normal app and is quitting\n");
+    clearInterval(normalAppWatch);
+    normalAppWatch = null;
+    app.quit();
+  }, 1000);
+}
+
+async function startApplication() {
+  if (isDevelopmentBuild() && normalAppIsRunning()) {
+    throw new Error("通常版のPracticeLabが起動中です。終了してからPracticeLab Devを起動してください。");
+  }
+  acquireDataLock();
+  watchForNormalApp();
+  await createWindow();
+}
+
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
   app.quit();
@@ -734,13 +826,15 @@ if (!hasLock) {
       mainWindow.focus();
     }
   });
-  app.whenReady().then(createWindow).catch(error => {
-    dialog.showErrorBox("PracticeLabを起動できません", error.stack || error.message);
+  app.whenReady().then(startApplication).catch(error => {
+    dialog.showErrorBox(`${desktopProductName()}を起動できません`, error.stack || error.message);
     app.quit();
   });
 }
 
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
+  if (normalAppWatch) clearInterval(normalAppWatch);
   if (backend && backend.exitCode === null) backend.kill();
+  releaseDataLock();
 });

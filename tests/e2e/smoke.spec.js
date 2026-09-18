@@ -1008,6 +1008,32 @@ test("アップデート確認の結果を設定画面へ表示する", async ({
   await expect(page.locator("#settings-update-status")).toHaveText("現在のバージョンが最新です。");
 });
 
+test("開発確認版は通常版と区別して自動更新を無効にする", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.practiceLabDesktop = {
+      getPlayerSettings: () => ({}),
+      savePlayerSettings: settings => ({ ok: true, settings }),
+      getSettings: async () => ({
+        autoUpdate: true,
+        version: "1.4.1",
+        productName: "PracticeLab Dev",
+        updateMode: "development",
+        dataPath: "/Users/test/Library/Application Support/practice-lab",
+        cloud: { enabled: false },
+      }),
+      getToken: async () => "test-token",
+      onUpdateStatus: () => () => {},
+      onCommand: () => () => {},
+    };
+  });
+  await page.goto("/");
+  await page.locator("#btn-top-settings").click();
+  await page.getByRole("button", { name: "アップデート", exact: true }).click();
+  await expect(page.locator("#settings-auto-update")).toBeDisabled();
+  await expect(page.locator("#settings-version")).toHaveText("PracticeLab Dev 1.4.1");
+  await expect(page.locator("#settings-update-status")).toHaveText("開発確認版です。通常版の自動更新には影響しません。");
+});
+
 test("小節長の異なる曲でも編集画面の境界は生成時刻と一致する", async ({ page }) => {
   const session = { id: 'uneven-editor', title: 'Uneven boundaries', bpm: 160, date: '2026-09-18' };
   const result = { ...session, duration: 20, total_bars: 6, beats: [], downbeats: [8, 10, 12, 14, 16, 18], sections: [

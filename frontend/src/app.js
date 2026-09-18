@@ -2895,25 +2895,31 @@ const openSettings = async (section = "general") => {
   SELECTORS.settingsVoicePitch.value = voicePitch;
   syncClickOptionFieldsState();
   const manualUpdates = desktopSettings.updateMode === "manual";
-  SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
-  if (manualUpdates) SELECTORS.settingsAutoUpdate.checked = false;
+  const developmentUpdates = desktopSettings.updateMode === "development";
+  const updatesDisabled = manualUpdates || developmentUpdates;
+  SELECTORS.settingsAutoUpdate.disabled = updatesDisabled;
+  if (updatesDisabled) SELECTORS.settingsAutoUpdate.checked = false;
   if (SELECTORS.settingsAutoUpdateDescription) {
-    SELECTORS.settingsAutoUpdateDescription.textContent = manualUpdates
-      ? "未署名のMac版は、GitHubの配布ページから手動で更新します。"
-      : "起動時に新しいバージョンを確認します。";
+    SELECTORS.settingsAutoUpdateDescription.textContent = developmentUpdates
+      ? "開発確認版では自動更新しません。通常版の更新設定には影響しません。"
+      : manualUpdates
+        ? "未署名のMac版は、GitHubの配布ページから手動で更新します。"
+        : "起動時に新しいバージョンを確認します。";
   }
   if (SELECTORS.settingsCheckUpdateLabel) {
     SELECTORS.settingsCheckUpdateLabel.textContent = manualUpdates ? "最新版の配布ページを開く" : "アップデートを確認";
   }
   if (SELECTORS.settingsUpdateStatus) {
-    SELECTORS.settingsUpdateStatus.hidden = !manualUpdates;
+    SELECTORS.settingsUpdateStatus.hidden = !updatesDisabled;
     SELECTORS.settingsUpdateStatus.className = "settings-update-status";
-    SELECTORS.settingsUpdateStatus.textContent = manualUpdates
-      ? "Mac版は手動更新です。ボタンから最新版を確認できます。"
-      : "";
+    SELECTORS.settingsUpdateStatus.textContent = developmentUpdates
+      ? "開発確認版です。通常版の自動更新には影響しません。"
+      : manualUpdates
+        ? "Mac版は手動更新です。ボタンから最新版を確認できます。"
+        : "";
   }
   SELECTORS.settingsDataPath.textContent = desktopSettings.dataPath || "";
-  SELECTORS.settingsVersion.textContent = `PracticeLab ${desktopSettings.version || ""}`;
+  SELECTORS.settingsVersion.textContent = `${desktopSettings.productName || "PracticeLab"} ${desktopSettings.version || ""}`;
   SELECTORS.settingsCloudEnabled.checked = !!cloud.enabled;
   SELECTORS.settingsCloudAccount.value = cloud.accountId || "";
   SELECTORS.settingsCloudBucket.value = cloud.bucket || "";

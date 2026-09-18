@@ -7,7 +7,9 @@ SOURCE_ROOT = Path(os.environ.get("PRACTICE_LAB_RESOURCE_DIR", Path(__file__).re
 ROOT_DIR = Path(os.environ.get("PRACTICE_LAB_HOME", SOURCE_ROOT)).resolve()
 PUBLIC_SOURCE_DIR = SOURCE_ROOT / "public"
 PUBLIC_DIR = ROOT_DIR / "public"
-DATA_DIR = ROOT_DIR / "data"
+# A development desktop build can share only user-created songs and analysis
+# results with the normal app while keeping settings, caches and runtime apart.
+DATA_DIR = Path(os.environ.get("PRACTICE_LAB_DATA_DIR", ROOT_DIR / "data")).resolve()
 RUNTIME_DIR = ROOT_DIR / "runtime"
 DATA_AUDIO_DIR = DATA_DIR / "audio"
 DATA_VIDEO_DIR = DATA_DIR / "video"

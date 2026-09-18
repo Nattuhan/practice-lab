@@ -5748,21 +5748,23 @@ var openSettings = async (section = "general") => {
   SELECTORS.settingsVoicePitch.value = voicePitch;
   syncClickOptionFieldsState();
   const manualUpdates = desktopSettings.updateMode === "manual";
-  SELECTORS.settingsAutoUpdate.disabled = manualUpdates;
-  if (manualUpdates) SELECTORS.settingsAutoUpdate.checked = false;
+  const developmentUpdates = desktopSettings.updateMode === "development";
+  const updatesDisabled = manualUpdates || developmentUpdates;
+  SELECTORS.settingsAutoUpdate.disabled = updatesDisabled;
+  if (updatesDisabled) SELECTORS.settingsAutoUpdate.checked = false;
   if (SELECTORS.settingsAutoUpdateDescription) {
-    SELECTORS.settingsAutoUpdateDescription.textContent = manualUpdates ? "\u672A\u7F72\u540D\u306EMac\u7248\u306F\u3001GitHub\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u304B\u3089\u624B\u52D5\u3067\u66F4\u65B0\u3057\u307E\u3059\u3002" : "\u8D77\u52D5\u6642\u306B\u65B0\u3057\u3044\u30D0\u30FC\u30B8\u30E7\u30F3\u3092\u78BA\u8A8D\u3057\u307E\u3059\u3002";
+    SELECTORS.settingsAutoUpdateDescription.textContent = developmentUpdates ? "\u958B\u767A\u78BA\u8A8D\u7248\u3067\u306F\u81EA\u52D5\u66F4\u65B0\u3057\u307E\u305B\u3093\u3002\u901A\u5E38\u7248\u306E\u66F4\u65B0\u8A2D\u5B9A\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002" : manualUpdates ? "\u672A\u7F72\u540D\u306EMac\u7248\u306F\u3001GitHub\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u304B\u3089\u624B\u52D5\u3067\u66F4\u65B0\u3057\u307E\u3059\u3002" : "\u8D77\u52D5\u6642\u306B\u65B0\u3057\u3044\u30D0\u30FC\u30B8\u30E7\u30F3\u3092\u78BA\u8A8D\u3057\u307E\u3059\u3002";
   }
   if (SELECTORS.settingsCheckUpdateLabel) {
     SELECTORS.settingsCheckUpdateLabel.textContent = manualUpdates ? "\u6700\u65B0\u7248\u306E\u914D\u5E03\u30DA\u30FC\u30B8\u3092\u958B\u304F" : "\u30A2\u30C3\u30D7\u30C7\u30FC\u30C8\u3092\u78BA\u8A8D";
   }
   if (SELECTORS.settingsUpdateStatus) {
-    SELECTORS.settingsUpdateStatus.hidden = !manualUpdates;
+    SELECTORS.settingsUpdateStatus.hidden = !updatesDisabled;
     SELECTORS.settingsUpdateStatus.className = "settings-update-status";
-    SELECTORS.settingsUpdateStatus.textContent = manualUpdates ? "Mac\u7248\u306F\u624B\u52D5\u66F4\u65B0\u3067\u3059\u3002\u30DC\u30BF\u30F3\u304B\u3089\u6700\u65B0\u7248\u3092\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002" : "";
+    SELECTORS.settingsUpdateStatus.textContent = developmentUpdates ? "\u958B\u767A\u78BA\u8A8D\u7248\u3067\u3059\u3002\u901A\u5E38\u7248\u306E\u81EA\u52D5\u66F4\u65B0\u306B\u306F\u5F71\u97FF\u3057\u307E\u305B\u3093\u3002" : manualUpdates ? "Mac\u7248\u306F\u624B\u52D5\u66F4\u65B0\u3067\u3059\u3002\u30DC\u30BF\u30F3\u304B\u3089\u6700\u65B0\u7248\u3092\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002" : "";
   }
   SELECTORS.settingsDataPath.textContent = desktopSettings.dataPath || "";
-  SELECTORS.settingsVersion.textContent = `PracticeLab ${desktopSettings.version || ""}`;
+  SELECTORS.settingsVersion.textContent = `${desktopSettings.productName || "PracticeLab"} ${desktopSettings.version || ""}`;
   SELECTORS.settingsCloudEnabled.checked = !!cloud.enabled;
   SELECTORS.settingsCloudAccount.value = cloud.accountId || "";
   SELECTORS.settingsCloudBucket.value = cloud.bucket || "";

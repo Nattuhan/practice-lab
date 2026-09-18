@@ -19,7 +19,8 @@
     "desktop:dist:mac": "electron-builder --mac --arm64",
     "test:unit": "node --test frontend/tests/*.test.js desktop/tests/*.test.cjs",
     "test:e2e": "playwright test",
-    "test:audio": "node scripts/diagnose_playback.mjs"
+    "test:audio": "node scripts/diagnose_playback.mjs",
+    "desktop:dist:mac:dev": "npm run build && npm run desktop:prepare:mac && npm run desktop:backend:mac && electron-builder --mac --arm64 --publish=never --config scripts/electron-builder.dev.cjs"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",
@@ -52,6 +53,7 @@
       "desktop/audio-output.cjs",
       "desktop/playback-diagnostics.cjs",
       "desktop/analysis-settings.cjs",
+      "desktop/development-build.cjs",
       "desktop/update-policy.cjs",
       "package.json"
     ],

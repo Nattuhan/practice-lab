@@ -71,6 +71,8 @@ PracticeLabでは、手元でビルドしたアプリの検証と、普段使い
 5. 自動テストでも同じ分離を守る。Bluetooth実機検証は`PRACTICE_LAB_AUDIT_APP=/absolute/path/PracticeLab.app/Contents/MacOS/PracticeLab node scripts/diagnose_presentation.mjs`を使える。これは無音の合成メディアと実機の出力時計による確認であり、聴感やマイク測定と混同しない。
 6. 普段使い版への適用は、正式署名・公証済みReleaseからのアプリ内更新を標準とする。実際の更新を検証する場合は新版検出、ダウンロード、再起動適用、適用後の署名・版番号まで確認する。
 
+実際の保存済み楽曲と解析結果を使う開発確認が必要な場合は、`npm run desktop:dist:mac:dev`で`PracticeLab Dev.app`を作る。通常版の設定・秘密情報・キャッシュ・ログ・追加ランタイム・自動更新は共有せず、通常版の`data`だけを読む。通常版とDev版の同時使用は禁止し、実装済みの起動保護とデータロックを外さない。通常版の`/Applications/PracticeLab.app`は置き換えず、確認後に`node scripts/macos-verification.cjs --check`を通す。
+
 詳細は`docs/desktop-release.md`の「手元検証と自動更新の両立」を参照。通常版の置換が明示的に依頼されても、自動更新維持の要件がある場合は仮署名版への置換で済ませない。正式署名版の用意または隔離検証で目的を満たす。
 
 ## 通常版の置換を明示的に依頼された場合
