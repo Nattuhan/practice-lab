@@ -937,8 +937,10 @@ test("デスクトップの再生設定を固定保存先から復元して変�
   await expect(page.locator("#settings-click-pitch-field")).toBeVisible();
   await expect(page.locator("#settings-click-pitch")).toHaveValue("high");
   await page.locator("#settings-click-pitch").selectOption("low");
+  await page.locator("#settings-click-sound").selectOption("voice-high");
+  await expect(page.locator("#settings-click-pitch-field")).toBeHidden();
   await page.locator("#settings-save").click();
-  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickSound)).toBe("classic");
+  await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickSound)).toBe("voice-high");
   await expect.poll(() => page.evaluate(() => window.__savedPlayerSettings?.clickPitch)).toBe("low");
 });
 

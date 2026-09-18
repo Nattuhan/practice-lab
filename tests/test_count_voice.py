@@ -19,3 +19,14 @@ def test_export_uses_numbered_voice_and_restarts_at_short_bar(tmp_path):
         return data[start:start+round(.15*out_rate)*width]
     assert chunk(0)==chunk(4)==chunk(6)
     assert chunk(0)!=chunk(1)
+
+
+def test_export_supports_high_voice_variant(tmp_path):
+    _, normal = voice_samples()
+    _, high = voice_samples('high')
+    assert high[1] != normal[1]
+    with patch.object(services, 'DATA_WORK_DIR', tmp_path):
+        path = services.create_export_click_track([0], 80, 'voice-high', click_counts=[1])
+    with wave.open(str(path)) as wav:
+        rendered = wav.readframes(wav.getnframes())
+    assert rendered[:2000] != bytes(2000)

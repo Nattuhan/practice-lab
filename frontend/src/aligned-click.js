@@ -21,7 +21,7 @@ export const clickWave = sampleRate => {
   return wave;
 };
 
-export const alignedWav = async (buffer, beats, { tracks = [], counts = [], signal, yieldTask = () => new Promise(resolve => setTimeout(resolve, 0)) } = {}) => {
+export const alignedWav = async (buffer, beats, { tracks = [], counts = [], clickSound = 'voice', signal, yieldTask = () => new Promise(resolve => setTimeout(resolve, 0)) } = {}) => {
   const { sampleRate, length } = buffer;
   const buffers = [buffer, ...tracks];
   if (buffers.some(track => track && track.sampleRate !== sampleRate)) throw new Error('サンプルレートが一致しません');
@@ -38,7 +38,7 @@ export const alignedWav = async (buffer, beats, { tracks = [], counts = [], sign
   text(36, 'data'); view.setUint32(40, length * bytesPerFrame, true);
   const click = clickWave(sampleRate);
   const positions = [...new Set(beats.filter(Number.isFinite).filter(t => t >= 0).map(t => Math.round(t * sampleRate)))].sort((a, b) => a - b);
-  const voices = countVoiceSamples(sampleRate);
+  const voices = countVoiceSamples(sampleRate, clickSound === 'voice-high' ? 'high' : 'standard');
   const numbers = new Map(beats.map((time, index) => [Math.round(time * sampleRate), counts[index]]));
   const events = positions.map((position, index) => {
     const wave = voices[numbers.get(position)];
@@ -142,8 +142,9 @@ export const connectAlignedOutput = (ctx, source, media, stems = []) => {
   const setPlaybackRate = playbackRate => clickRenderer.port.postMessage({ playbackRate });
   const setClickSound = clickSound => {
     const sound = normalizeClickSound(clickSound);
-    tickGain.gain.value = sound === 'voice' ? 0 : 1;
-    voiceGain.gain.value = sound === 'voice' ? 1 : 0;
+    const isVoice = sound === 'voice' || sound === 'voice-high';
+    tickGain.gain.value = isVoice ? 0 : 1;
+    voiceGain.gain.value = isVoice ? 1 : 0;
     clickRenderer.port.postMessage({ clickSound: sound });
   };
   const setClickPitch = clickPitch => clickRenderer.port.postMessage({ clickPitch: normalizeClickPitch(clickPitch) });

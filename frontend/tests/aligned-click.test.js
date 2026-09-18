@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { alignedWav, clickWave } from '../src/aligned-click.js';
 import { CLICK_PITCH_IDS, CLICK_SOUND_IDS, CLICK_SOURCE_GAIN, normalizeClickPitch, normalizeClickSound } from '../src/click-renderer-worklet-source.js';
 
-test('クリック音は共通の4種類だけを受け付け、不正値は標準へ戻す', () => {
-  assert.deepEqual(CLICK_SOUND_IDS, ['classic', 'wood', 'hihat', 'voice']);
+test('クリック音は共通の5種類だけを受け付け、不正値は標準へ戻す', () => {
+  assert.deepEqual(CLICK_SOUND_IDS, ['classic', 'wood', 'hihat', 'voice', 'voice-high']);
   assert.equal(normalizeClickSound('wood'), 'wood');
+  assert.equal(normalizeClickSound('voice-high'), 'voice-high');
   assert.equal(normalizeClickSound('unknown'), 'classic');
   assert.equal(normalizeClickSound(undefined), 'classic');
 });

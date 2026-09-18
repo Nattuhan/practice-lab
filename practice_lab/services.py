@@ -605,7 +605,7 @@ def export_stem_mix(
         raise ValueError("Export range must have a positive duration")
     original_times = [float(value) for value in (click_times or [])]
     click_times = sorted(original_times)
-    if click_sound == "voice":
+    if click_sound in {"voice", "voice-high"}:
         if len(click_counts or []) != len(original_times) or any(not isinstance(n, int) or not 0 <= n <= 12 for n in click_counts):
             raise ValueError("読み上げの拍番号が不正です")
         click_counts = [n for _, n in sorted(zip(original_times, click_counts), key=lambda pair: pair[0])]
@@ -613,7 +613,7 @@ def export_stem_mix(
         raise ValueError("Invalid click times")
     if not 0 <= click_volume <= 100:
         raise ValueError("Invalid click volume")
-    if click_sound not in {"classic", "wood", "hihat", "voice"}:
+    if click_sound not in {"classic", "wood", "hihat", "voice", "voice-high"}:
         raise ValueError("Invalid click sound")
     if click_pitch not in {"low", "standard", "high"}:
         raise ValueError("Invalid click pitch")
@@ -685,9 +685,9 @@ def create_export_click_track(
     sample_rate = 44100
     voices = {}
     voice_rate = sample_rate
-    if click_sound == "voice":
+    if click_sound in {"voice", "voice-high"}:
         from .count_voice import voice_samples
-        voice_rate, voices = voice_samples()
+        voice_rate, voices = voice_samples('high' if click_sound == 'voice-high' else 'standard')
     click_duration = max(len(v) for v in voices.values()) / voice_rate if voices else 0.055
     total_frames = max(1, math.ceil((click_times[-1] + click_duration) * sample_rate))
     samples = array("h", [0]) * total_frames
@@ -697,7 +697,7 @@ def create_export_click_track(
     classic_frequency = {"low": 1200, "standard": 1800, "high": 2400}[click_pitch]
     for index, click_time in enumerate(click_times):
         start_frame = round(click_time * sample_rate)
-        if click_sound == "voice":
+        if click_sound in {"voice", "voice-high"}:
             word = voices.get((click_counts or [])[index])
             if word is None:
                 continue

@@ -1,4 +1,5 @@
 import voiceData from '../../practice_lab/assets/count_voice.json' with { type: 'json' };
+import highVoiceData from '../../practice_lab/assets/count_voice_high.json' with { type: 'json' };
 
 // Reset at measured bar heads, never at index % 4: a two-beat bar is 1, 2,
 // followed by 1 at the next bar. Seeking/looping therefore needs no counter state.
@@ -20,22 +21,24 @@ export const beatCounts = (beats, downbeats) => {
 };
 
 const cache = new Map();
-export const countVoiceSamples = sampleRate => {
-  if (!cache.has(sampleRate)) {
+export const countVoiceSamples = (sampleRate, variant = 'standard') => {
+  const data = variant === 'high' ? highVoiceData : voiceData;
+  const cacheKey = `${variant}:${sampleRate}`;
+  if (!cache.has(cacheKey)) {
     const voices = {};
-    for (const [number, encoded] of Object.entries(voiceData.samples)) {
+    for (const [number, encoded] of Object.entries(data.samples)) {
       const bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0));
       const view = new DataView(bytes.buffer);
       const length = bytes.length / 2;
-      voices[number] = Float32Array.from({ length: Math.ceil(length * sampleRate / voiceData.sampleRate) }, (_, i) => {
-        const position = i * voiceData.sampleRate / sampleRate;
+      voices[number] = Float32Array.from({ length: Math.ceil(length * sampleRate / data.sampleRate) }, (_, i) => {
+        const position = i * data.sampleRate / sampleRate;
         const left = Math.floor(position), fraction = position - left;
         const a = view.getInt16(Math.min(left, length - 1) * 2, true);
         const b = view.getInt16(Math.min(left + 1, length - 1) * 2, true);
         return (a + (b - a) * fraction) / 32768;
       });
     }
-    cache.set(sampleRate, voices);
+    cache.set(cacheKey, voices);
   }
-  return cache.get(sampleRate);
+  return cache.get(cacheKey);
 };

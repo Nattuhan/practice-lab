@@ -27,3 +27,15 @@ test('読み上げ音声は楽曲と独立した同期チャンネルに収録�
     }
   }
 });
+
+test('高めの読み上げは専用音声を同期チャンネルへ収録する', async () => {
+  const sampleRate = 8000, length = 8000;
+  const original = { sampleRate, length, numberOfChannels: 1, getChannelData: () => new Float32Array(length) };
+  const normal = countVoiceSamples(sampleRate)[1];
+  const high = countVoiceSamples(sampleRate, 'high')[1];
+  assert.notDeepEqual([...high.slice(0, 1000)], [...normal.slice(0, 1000)]);
+  const blob = await alignedWav(original, [.1], { counts: [1], clickSound: 'voice-high' });
+  const pcm = new Float32Array(await blob.arrayBuffer(), 44);
+  const start = Math.round(.1 * sampleRate);
+  for (let k = 50; k < high.length - 50; k++) assert.equal(pcm[(start + k) * 4 + 3], high[k]);
+});

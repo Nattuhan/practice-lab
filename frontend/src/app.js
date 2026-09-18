@@ -3402,7 +3402,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     }
     await loadClickRenderer(getCtx());
     preparation.signal.throwIfAborted();
-    const blob = await alignedWav(original, beats, { tracks, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
+    const blob = await alignedWav(original, beats, { tracks, clickSound, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
   } catch (error) {
