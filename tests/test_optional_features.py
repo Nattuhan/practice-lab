@@ -14,6 +14,31 @@ from practice_lab import optional_features
 
 
 class OptionalFeatureTests(unittest.TestCase):
+    def test_shared_runtime_is_detected_but_cannot_be_removed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            runtime_root = Path(temp_dir) / "runtime"
+            executable = (
+                runtime_root / optional_features.MAC_ANALYSIS_FEATURE_KEY
+                / optional_features.MAC_ANALYSIS_RUNTIME_ABI
+                / "practice-lab-analysis-runtime" / "practice-lab-analysis-runtime"
+            )
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"runtime")
+            with (
+                patch.dict(os.environ, {
+                    "PRACTICE_LAB_RUNTIME_DIR": str(runtime_root),
+                    "PRACTICE_LAB_RUNTIME_READ_ONLY": "1",
+                }, clear=False),
+                patch.object(optional_features.platform, "system", return_value="Darwin"),
+                patch.object(optional_features.platform, "machine", return_value="arm64"),
+            ):
+                status = optional_features.feature_status()[optional_features.MAC_ANALYSIS_FEATURE_KEY]
+                self.assertTrue(status["installed"])
+                self.assertTrue(status["shared"])
+                with self.assertRaisesRegex(RuntimeError, "共有している追加機能"):
+                    optional_features.uninstall_mac_analysis_runtime()
+                self.assertTrue(executable.is_file())
+
     def test_unpublished_version_uses_latest_abi_compatible_pack(self):
         compatible = {
             "name": "PracticeLab-Windows-CPU-1.1.5.zip",

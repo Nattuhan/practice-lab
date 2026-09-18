@@ -2804,16 +2804,16 @@ const renderOptionalFeatures = features => {
   SELECTORS.settingsFeatureCpu.hidden = !analysis.available;
   SELECTORS.settingsFeatureCpu.dataset.featureKey = analysisKey;
   SELECTORS.settingsFeatureCpuStatus.textContent = analysis.installed
-    ? `追加済み${analysis.bytes ? ` · ${formatBytes(analysis.bytes)}` : ""}`
+    ? `${analysis.shared ? "通常版と共有" : "追加済み"}${analysis.bytes ? ` · ${formatBytes(analysis.bytes)}` : ""}`
     : "未追加 · 曲構成解析とパート分離を使う場合に必要です";
-  SELECTORS.settingsFeatureCpuInstall.hidden = !!analysis.installed;
-  SELECTORS.settingsFeatureCpuRemove.hidden = !analysis.installed;
+  SELECTORS.settingsFeatureCpuInstall.hidden = !!analysis.installed || !!analysis.shared;
+  SELECTORS.settingsFeatureCpuRemove.hidden = !analysis.installed || !!analysis.shared;
   SELECTORS.settingsFeatureScore.hidden = !score.available;
   SELECTORS.settingsFeatureScoreStatus.textContent = score.installed
-    ? `追加済み${score.bytes ? ` · ${formatBytes(score.bytes)}` : ""}`
+    ? `${score.shared ? "通常版と共有" : "追加済み"}${score.bytes ? ` · ${formatBytes(score.bytes)}` : ""}`
     : "未追加 · 基本アプリの容量には含まれません";
-  SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed;
-  SELECTORS.settingsFeatureScoreRemove.hidden = !score.installed;
+  SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed || !!score.shared;
+  SELECTORS.settingsFeatureScoreRemove.hidden = !score.installed || !!score.shared;
   setScoreFeatureVisible(!!score.installed);
 };
 

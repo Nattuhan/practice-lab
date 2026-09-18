@@ -33,6 +33,15 @@ def app_version() -> str:
     return os.environ.get("PRACTICE_LAB_VERSION", "").strip()
 
 
+def runtime_is_read_only() -> bool:
+    return os.environ.get("PRACTICE_LAB_RUNTIME_READ_ONLY") == "1"
+
+
+def _ensure_runtime_writable() -> None:
+    if runtime_is_read_only():
+        raise RuntimeError("開発確認版では通常版と共有している追加機能を変更できません")
+
+
 def windows_cpu_asset_name(version: str | None = None) -> str:
     resolved = version or app_version()
     if not resolved:
@@ -41,7 +50,9 @@ def windows_cpu_asset_name(version: str | None = None) -> str:
 
 
 def _feature_root(feature_key: str) -> Path:
-    return ROOT_DIR / "runtime" / feature_key
+    configured = os.environ.get("PRACTICE_LAB_RUNTIME_DIR", "").strip()
+    runtime_root = Path(configured).resolve() if configured else ROOT_DIR / "runtime"
+    return runtime_root / feature_key
 
 
 def _stable_runtime_dir(feature_key: str, runtime_abi: str) -> Path:
@@ -68,7 +79,8 @@ def _resolve_compatible_runtime(feature_key: str, runtime_abi: str, marker: Path
     feature_root = _feature_root(feature_key)
     stable = feature_root / runtime_abi
     if (stable / marker).exists():
-        _cleanup_legacy_runtimes(feature_root, stable)
+        if not runtime_is_read_only():
+            _cleanup_legacy_runtimes(feature_root, stable)
         return stable
     if not feature_root.is_dir():
         return stable
@@ -83,6 +95,8 @@ def _resolve_compatible_runtime(feature_key: str, runtime_abi: str, marker: Path
     for candidate in candidates:
         if not (candidate / marker).exists():
             continue
+        if runtime_is_read_only():
+            return candidate
         try:
             candidate.replace(stable)
         except OSError:
@@ -186,18 +200,21 @@ def feature_status() -> dict:
             "installed": cpu_executable.is_file(),
             "version": app_version(),
             "bytes": _directory_size(windows_cpu_runtime_dir()),
+            "shared": runtime_is_read_only(),
         },
         MAC_ANALYSIS_FEATURE_KEY: {
             "available": platform.system() == "Darwin" and platform.machine() == "arm64",
             "installed": mac_analysis_runtime_executable().is_file(),
             "version": app_version(),
             "bytes": _directory_size(mac_analysis_runtime_dir()),
+            "shared": runtime_is_read_only(),
         },
         SCORE_FEATURE_KEY: {
             "available": score_platform_name() != "unsupported",
             "installed": score_installed,
             "version": app_version(),
             "bytes": _directory_size(score_path),
+            "shared": runtime_is_read_only(),
         },
     }
 
@@ -310,6 +327,7 @@ def _safe_extract(archive: Path, destination: Path) -> None:
 
 
 def install_windows_cpu_runtime(progress: Callable[[str], None] | None = None) -> dict:
+    _ensure_runtime_writable()
     if platform.system() != "Windows" or os.environ.get("PRACTICE_LAB_DESKTOP") != "1":
         raise RuntimeError("CPU解析パックはWindowsデスクトップ版でのみ追加できます")
     version = app_version()
@@ -342,6 +360,7 @@ def install_windows_cpu_runtime(progress: Callable[[str], None] | None = None) -
 
 
 def uninstall_windows_cpu_runtime() -> dict:
+    _ensure_runtime_writable()
     feature_root = _feature_root(CPU_FEATURE_KEY)
     if feature_root.exists():
         shutil.rmtree(feature_root)
@@ -349,6 +368,7 @@ def uninstall_windows_cpu_runtime() -> dict:
 
 
 def install_mac_analysis_runtime(progress: Callable[[str], None] | None = None) -> dict:
+    _ensure_runtime_writable()
     if (
         platform.system() != "Darwin"
         or platform.machine() != "arm64"
@@ -396,6 +416,7 @@ def install_mac_analysis_runtime(progress: Callable[[str], None] | None = None) 
 
 
 def uninstall_mac_analysis_runtime() -> dict:
+    _ensure_runtime_writable()
     feature_root = _feature_root(MAC_ANALYSIS_FEATURE_KEY)
     if feature_root.exists():
         shutil.rmtree(feature_root)
@@ -403,6 +424,7 @@ def uninstall_mac_analysis_runtime() -> dict:
 
 
 def install_score_runtime(progress: Callable[[str], None] | None = None) -> dict:
+    _ensure_runtime_writable()
     if score_platform_name() == "unsupported" or os.environ.get("PRACTICE_LAB_DESKTOP") != "1":
         raise RuntimeError("楽譜抽出パックは対応するデスクトップ版でのみ追加できます")
     version = app_version()
@@ -437,6 +459,7 @@ def install_score_runtime(progress: Callable[[str], None] | None = None) -> dict
 
 
 def uninstall_score_runtime() -> dict:
+    _ensure_runtime_writable()
     feature_root = _feature_root(SCORE_FEATURE_KEY)
     if feature_root.exists():
         shutil.rmtree(feature_root)

@@ -66,6 +66,9 @@ const desktopProductName = () => isDevelopmentBuild() ? "PracticeLab Dev" : "Pra
 const dataDirectory = () => isDevelopmentBuild()
   ? normalMacDataDirectory(app.getPath("home"))
   : path.join(app.getPath("userData"), "data");
+const runtimeDirectory = () => isDevelopmentBuild()
+  ? path.join(path.dirname(dataDirectory()), "runtime")
+  : path.join(app.getPath("userData"), "runtime");
 const displayedDataPath = () => isDevelopmentBuild() ? path.dirname(dataDirectory()) : app.getPath("userData");
 
 function readJson(file, fallback) {
@@ -307,6 +310,8 @@ async function startBackend({ cloudSecret = "" } = {}) {
       PRACTICE_LAB_DESKTOP: "1",
       PRACTICE_LAB_HOME: appHome,
       PRACTICE_LAB_DATA_DIR: dataDirectory(),
+      PRACTICE_LAB_RUNTIME_DIR: runtimeDirectory(),
+      PRACTICE_LAB_RUNTIME_READ_ONLY: isDevelopmentBuild() ? "1" : "0",
       PRACTICE_LAB_RESOURCE_DIR: runtime.resourceDir,
       PRACTICE_LAB_PORT: String(port),
       PRACTICE_LAB_HOST: "127.0.0.1",

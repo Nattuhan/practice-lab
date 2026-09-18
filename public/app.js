@@ -5662,13 +5662,13 @@ var renderOptionalFeatures = (features) => {
   const score = features?.score || {};
   SELECTORS.settingsFeatureCpu.hidden = !analysis.available;
   SELECTORS.settingsFeatureCpu.dataset.featureKey = analysisKey;
-  SELECTORS.settingsFeatureCpuStatus.textContent = analysis.installed ? `\u8FFD\u52A0\u6E08\u307F${analysis.bytes ? ` \xB7 ${formatBytes(analysis.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u66F2\u69CB\u6210\u89E3\u6790\u3068\u30D1\u30FC\u30C8\u5206\u96E2\u3092\u4F7F\u3046\u5834\u5408\u306B\u5FC5\u8981\u3067\u3059";
-  SELECTORS.settingsFeatureCpuInstall.hidden = !!analysis.installed;
-  SELECTORS.settingsFeatureCpuRemove.hidden = !analysis.installed;
+  SELECTORS.settingsFeatureCpuStatus.textContent = analysis.installed ? `${analysis.shared ? "\u901A\u5E38\u7248\u3068\u5171\u6709" : "\u8FFD\u52A0\u6E08\u307F"}${analysis.bytes ? ` \xB7 ${formatBytes(analysis.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u66F2\u69CB\u6210\u89E3\u6790\u3068\u30D1\u30FC\u30C8\u5206\u96E2\u3092\u4F7F\u3046\u5834\u5408\u306B\u5FC5\u8981\u3067\u3059";
+  SELECTORS.settingsFeatureCpuInstall.hidden = !!analysis.installed || !!analysis.shared;
+  SELECTORS.settingsFeatureCpuRemove.hidden = !analysis.installed || !!analysis.shared;
   SELECTORS.settingsFeatureScore.hidden = !score.available;
-  SELECTORS.settingsFeatureScoreStatus.textContent = score.installed ? `\u8FFD\u52A0\u6E08\u307F${score.bytes ? ` \xB7 ${formatBytes(score.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u57FA\u672C\u30A2\u30D7\u30EA\u306E\u5BB9\u91CF\u306B\u306F\u542B\u307E\u308C\u307E\u305B\u3093";
-  SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed;
-  SELECTORS.settingsFeatureScoreRemove.hidden = !score.installed;
+  SELECTORS.settingsFeatureScoreStatus.textContent = score.installed ? `${score.shared ? "\u901A\u5E38\u7248\u3068\u5171\u6709" : "\u8FFD\u52A0\u6E08\u307F"}${score.bytes ? ` \xB7 ${formatBytes(score.bytes)}` : ""}` : "\u672A\u8FFD\u52A0 \xB7 \u57FA\u672C\u30A2\u30D7\u30EA\u306E\u5BB9\u91CF\u306B\u306F\u542B\u307E\u308C\u307E\u305B\u3093";
+  SELECTORS.settingsFeatureScoreInstall.hidden = !!score.installed || !!score.shared;
+  SELECTORS.settingsFeatureScoreRemove.hidden = !score.installed || !!score.shared;
   setScoreFeatureVisible(!!score.installed);
 };
 var loadOptionalFeatures = async () => {

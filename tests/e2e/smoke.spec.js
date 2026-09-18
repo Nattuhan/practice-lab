@@ -56,6 +56,17 @@ test("主要画面をネットワークCDNなしで開ける", async ({ page }) 
   expect(dependencyRequests).toEqual([]);
 });
 
+test("小さいUI文字を読みやすくし数値表示の大きさは維持する", async ({ page }) => {
+  await page.goto("/");
+  for (const selector of [".si-meta", ".stat-lbl", ".sec-time", ".sec-bars"]) {
+    await expect.poll(() => page.locator(selector).first().evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14);
+  }
+  await expect.poll(() => page.locator("#vol-music-val").evaluate(element => getComputedStyle(element).fontSize)).toBe("10px");
+  await expect.poll(() => page.locator("#playback-rate-val").evaluate(element => getComputedStyle(element).fontSize)).toBe("10px");
+  await expect.poll(() => page.locator("#stem-vocals-value").evaluate(element => getComputedStyle(element).fontSize)).toBe("11px");
+  await expect.poll(() => page.locator("#meta-bpm").evaluate(element => getComputedStyle(element).fontSize)).toBe("23px");
+});
+
 test("デスクトップ版は同期済み動画とパートをローカルから再生する", async ({ page }) => {
   const cloudAssets = {
     result: "https://media.example.test/sessions/e2e-baseline/session.json",
@@ -1026,12 +1037,20 @@ test("開発確認版は通常版と区別して自動更新を無効にする",
       onCommand: () => () => {},
     };
   });
+  await page.route("**/features", route => route.fulfill({ json: {
+    "windows-cpu": { available: false, installed: false, shared: true, bytes: 0 },
+    "mac-analysis": { available: true, installed: true, shared: true, bytes: 657_000_000 },
+    score: { available: true, installed: false, shared: true, bytes: 0 },
+  } }));
   await page.goto("/");
   await page.locator("#btn-top-settings").click();
   await page.getByRole("button", { name: "アップデート", exact: true }).click();
   await expect(page.locator("#settings-auto-update")).toBeDisabled();
   await expect(page.locator("#settings-version")).toHaveText("PracticeLab Dev 1.4.1");
   await expect(page.locator("#settings-update-status")).toHaveText("開発確認版です。通常版の自動更新には影響しません。");
+  await page.getByRole("button", { name: "追加機能" }).click();
+  await expect(page.locator("#settings-feature-cpu-status")).toContainText("通常版と共有");
+  await expect(page.locator("#settings-feature-cpu-remove")).toBeHidden();
 });
 
 test("小節長の異なる曲でも編集画面の境界は生成時刻と一致する", async ({ page }) => {

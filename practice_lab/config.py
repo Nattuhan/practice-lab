@@ -10,7 +10,7 @@ PUBLIC_DIR = ROOT_DIR / "public"
 # A development desktop build can share only user-created songs and analysis
 # results with the normal app while keeping settings, caches and runtime apart.
 DATA_DIR = Path(os.environ.get("PRACTICE_LAB_DATA_DIR", ROOT_DIR / "data")).resolve()
-RUNTIME_DIR = ROOT_DIR / "runtime"
+RUNTIME_DIR = Path(os.environ.get("PRACTICE_LAB_RUNTIME_DIR", ROOT_DIR / "runtime")).resolve()
 DATA_AUDIO_DIR = DATA_DIR / "audio"
 DATA_VIDEO_DIR = DATA_DIR / "video"
 DATA_SCORE_DIR = DATA_DIR / "score"
