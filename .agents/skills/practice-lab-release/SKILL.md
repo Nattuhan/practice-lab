@@ -32,17 +32,20 @@ UI・静的ビューア変更を含む場合は、`practice-lab-r2-sync`スキ�
 
 ## 公開
 
-1. リリース変更をコミットして`main`へpushする。
-2. MornNotaryを`git pull --ff-only`で最新化し、`docs/macos-notarization.md`に従って同リポジトリの`sign.sh`へビルド済み`.app`を渡す。スクリプトが送信、必要時の分割、署名待ち、取得、検証、掃除まで完了させる。受け取ったZIPから検証済みDMG、自動更新用ZIP、`latest-mac.yml`、DMGのSHA-256台帳を対象バージョンのdraft Releaseへ用意する。タグのCIはこれらを入力として必要とする。
-3. 配布物の元になったコミットへ`vX.Y.Z`の注釈付きタグを作成してpushする。未公開リリースの修正では、下記の手順で既存タグを付け替えられる。
-4. タグで起動した`release-desktop.yml`の正確なrunを監視する。Windows、Apple Silicon Mac、`release-metadata`の全jobが成功するまで完了扱いにしない。
-5. ワークフローは両OSの成果物検証後、Releaseを非draftかつlatestとして公開する。途中のArtifactを正式Releaseとして代用しない。
-6. 公開Releaseに少なくとも次があり、バージョンが一致することを確認する。
+1. リリース変更をコミットして`main`へpushし、配布元のコミットIDを固定する。以後ソース変更がない限り、通過済みテストや同じローカルビルドを理由なく繰り返さない。独立した状態確認はまとめて実行する。
+2. Macビルドを隔離起動まで検証してから、MornNotaryを`git pull --ff-only`で最新化し、`docs/macos-notarization.md`に従って同リポジトリの`sign.sh`へ同じビルド済み`.app`を渡す。スクリプトが送信、必要時の分割、署名待ち、取得、検証、掃除まで完了させる。通信だけがrun作成前に失敗した場合は、入力ハッシュを維持して同じ提出を再試行する。run作成後に不明となった場合はrunと依頼ブランチを確認してから再試行する。
+3. 受け取ったZIPから検証済みDMG、自動更新用ZIP、`latest-mac.yml`、DMGのSHA-256台帳を対象バージョンのdraft Releaseへ用意し、4ファイルの名前・サイズ・バージョンを確認する。タグのCIはこれらを入力として必要とする。
+4. 配布物の元になったコミットへ`vX.Y.Z`の注釈付きタグを作成してpushする。未公開リリースの修正では、下記の手順で既存タグを付け替えられる。
+5. タグで起動した`release-desktop.yml`の正確なrun IDを記録し、そのrunだけを監視する。Windows、Apple Silicon Mac、`release-metadata`の全jobが成功するまで完了扱いにしない。
+6. ワークフローは両OSの成果物検証後、Releaseを非draftかつlatestとして公開する。途中のArtifactを正式Releaseとして代用しない。
+7. `node scripts/verify_desktop_release.cjs X.Y.Z RUN_ID`を実行し、公開状態、タグ・配布元コミット・`main`、3 job、必須配布物を一括確認する。公開Releaseに少なくとも次があり、バージョンが一致することを確認する。
    - `PracticeLab-Setup-X.Y.Z.exe`
    - `.exe.blockmap`
    - `latest.yml`
    - `PracticeLab-X.Y.Z-arm64.dmg`
    - `PracticeLab-X.Y.Z-arm64.zip`と`latest-mac.yml`
+
+公開だけが依頼された場合、通常版アプリの置換やアプリ内更新の実行を追加しない。R2同期も別途明示された場合だけ行う。
 
 CI失敗時は失敗stepとログを確認する。一時的な実行環境の問題なら同じコミットの失敗jobを再実行できる。コードや配布物の修正が必要なら、再検証と必要な再ビルド・再署名を行う。未公開の場合は指定バージョンを維持して下記の手順で続行し、CI失敗だけを理由にバージョンを上げない。壊れたReleaseを成功として報告しない。
 

@@ -12,6 +12,7 @@
 - `publish_pages.bat`: `public/` を `gh-pages` に公開
 - `setup_wsl.sh`: WSL 側の解析環境セットアップ
 - `sync_r2.py`: ハッシュ比較で新規・変更・削除だけを Cloudflare R2 に同期。初回は `--initialize-index`、強制再送は `--session ID` または `--all-sessions`
+- `verify_desktop_release.cjs`: 公開したデスクトップ版のCI、タグ、`main`、Release、必須配布物を一括検証
 - `analyze_audio.py`: CUDA、MPS、CPUを選択する共通解析コマンド
 - `split_stems.py`: CUDA、MPS、CPUを選択する共通stems分離コマンド
 - `wsl_analyze.py` / `wsl_split_stems.py`: 旧呼び出しとの互換ラッパー
