@@ -12,9 +12,18 @@ export const beatCounts = (beats, downbeats) => {
     }
     if (best >= 0) heads.add(best);
   }
+  const headIndexes = [...heads].sort((a, b) => a - b);
+  const firstHead = headIndexes[0];
+  const openingBarLength = headIndexes.length >= 2 ? headIndexes[1] - firstHead : 0;
   let count = 0;
   return beats.map((_, index) => {
     if (heads.has(index)) count = 1;
+    // A vocal pickup can begin before the first detected bar head. Once two
+    // measured heads establish that opening bar's length, count its preceding
+    // beats backwards so spoken clicks cover the pickup as well.
+    else if (index < firstHead && openingBarLength >= 2 && openingBarLength <= 12) {
+      count = ((index - firstHead) % openingBarLength + openingBarLength) % openingBarLength + 1;
+    }
     else if (count) count++;
     return count <= 12 ? count : 0;
   });

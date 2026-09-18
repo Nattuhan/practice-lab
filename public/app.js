@@ -84,10 +84,15 @@ var beatCounts = (beats, downbeats) => {
     }
     if (best >= 0) heads.add(best);
   }
+  const headIndexes = [...heads].sort((a3, b2) => a3 - b2);
+  const firstHead = headIndexes[0];
+  const openingBarLength = headIndexes.length >= 2 ? headIndexes[1] - firstHead : 0;
   let count = 0;
   return beats.map((_, index) => {
     if (heads.has(index)) count = 1;
-    else if (count) count++;
+    else if (index < firstHead && openingBarLength >= 2 && openingBarLength <= 12) {
+      count = ((index - firstHead) % openingBarLength + openingBarLength) % openingBarLength + 1;
+    } else if (count) count++;
     return count <= 12 ? count : 0;
   });
 };

@@ -11,6 +11,21 @@ test('4拍・2拍・4拍で小節頭から読み上げ直す', () => {
   assert.deepEqual(counts.slice(3, 9), [4,1,2,1,2,3]);
 });
 
+test('最初の小節頭より前のボーカルピックアップも確定した拍子で逆算する', () => {
+  const beats = Array.from({ length: 14 }, (_, i) => .11 + i * .33);
+  assert.deepEqual(
+    beatCounts(beats, [beats[6], beats[10]]),
+    [3,4,1,2,3,4,1,2,3,4,1,2,3,4],
+  );
+  // The same rule follows a measured two-beat opening bar instead of assuming 4/4.
+  assert.deepEqual(
+    beatCounts(beats, [beats[3], beats[5], beats[9]]).slice(0, 6),
+    [2,1,2,1,2,1],
+  );
+  // One isolated head does not establish a meter for the preceding audio.
+  assert.deepEqual(beatCounts(beats.slice(0, 5), [beats[3]]), [0,0,0,1,2]);
+});
+
 test('読み上げ音声は楽曲と独立した同期チャンネルに収録する', async () => {
   const sampleRate = 8000, length = 16000;
   const original = { sampleRate, length, numberOfChannels: 1, getChannelData: () => new Float32Array(length) };
