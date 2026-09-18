@@ -39,7 +39,9 @@ jobs:
           # no MornNotary account token or signing credential is copied here.
           curl --fail --silent --show-error --location "$ARTIFACT_URL" --output received/artifact.zip
           ditto -x -k received/artifact.zip received
-          cp "received/PracticeLab-$VERSION-arm64-signed.zip" "release/PracticeLab-$VERSION-arm64.zip"
+          # Current MornNotary names the file inside its app-signed artifact
+          # app-signed.zip; verify the embedded identity/version below.
+          cp received/app-signed.zip "release/PracticeLab-$VERSION-arm64.zip"
           ditto -x -k "release/PracticeLab-$VERSION-arm64.zip" source
       - name: Recover the signed app from the staged DMG
         if: inputs.from_staged_dmg
