@@ -11,6 +11,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+# The optional frozen runtime imports practice_lab before executing this file.
+# sys.path alone cannot redirect an already-loaded package: use the app's
+# current post-processing modules, while keeping heavyweight model dependencies
+# in the installed runtime. Otherwise app updates silently run old beat repair.
+import practice_lab
+practice_lab.__path__.insert(0, str(REPO_ROOT / "practice_lab"))
+for module_name in ("compute_device", "jpop_sections", "timing", "audio_timing", "metrical_tempo"):
+    sys.modules.pop(f"practice_lab.{module_name}", None)
+
 import numpy as np
 
 for name in ("MutableSequence", "MutableMapping", "Sequence", "Mapping"):

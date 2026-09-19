@@ -104,7 +104,7 @@ def test_promotes_majority_clock_despite_distributed_half_time_breakdowns(tmp_pa
     original = detected_grid(period * 2, .17, count=19 * 16 + 1)
     result = resolve_tempo_octave(original, audio)
     assert result['bpm'] == round(original['bpm'] * 2, 1)
-    assert result['tempoOctaveResolution']['version'] == 2
+    assert result['tempoOctaveResolution']['version'] == 3
     assert result['tempoOctaveResolution']['fasterVotes'] >= 10
     assert result['tempoOctaveResolution']['originalVotes'] >= 4
 
@@ -174,3 +174,48 @@ def test_decision_survives_different_drum_tunings(tmp_path, kick, snare, half_ti
         assert result['bpm'] == round(original['bpm'] * 2, 1)
     else:
         assert result is original
+
+@pytest.mark.parametrize('period,offset', [(.28, .17), (.36, 1.13), (.47, .29)])
+def test_octave_promotion_preserves_short_bar_after_audio_verified_repair(tmp_path, period, offset):
+    from practice_lab.audio_timing import refine_timing_from_audio
+
+    audio = tmp_path / 'short-bar.wav'
+    write_drums(audio, period, offset, count=514)
+    actual = offset + np.arange(257) * period * 2
+    # The detector stretches four slow intervals over five. Its next measured
+    # bar head remains correct; this is 4 + 4 + 2 beats at the true tempo.
+    detected = np.r_[actual[:64], np.linspace(actual[64], actual[69], 5)[:-1], actual[69:]]
+    beats = np.round(detected, 3).tolist()
+    raw = dict(bpm=30 / period, beats=beats, downbeats=beats[::4],
+               duration=float(actual[-1]), sections=[])
+    repaired = refine_timing_from_audio(raw, audio)
+    result = resolve_tempo_octave(repaired, audio)
+    assert result['bpm'] == round(60 / period, 1)
+    heads = np.asarray(result['downbeats'])
+    end = round(float(actual[69]), 3)
+    index = int(np.argmin(abs(heads - end)))
+    assert abs(heads[index] - end) < .002
+    assert abs(heads[index] - heads[index - 1] - 2 * period) < .002
+    assert np.max(abs(np.diff(heads[index:]) - 4 * period)) < .002
+    assert resolve_tempo_octave(result, audio) is result
+
+
+def test_entry_uses_app_logic_when_runtime_has_preloaded_old_package(tmp_path, monkeypatch):
+    import inspect
+    import runpy
+    import sys
+    from pathlib import Path
+    from types import SimpleNamespace
+    import practice_lab
+
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(practice_lab, '__path__', [str(tmp_path / 'old-runtime')])
+    monkeypatch.setitem(sys.modules, 'practice_lab.metrical_tempo',
+                        SimpleNamespace(resolve_tempo_octave=lambda data, audio: data))
+    monkeypatch.setitem(sys.modules, 'allin1fix', SimpleNamespace())
+    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace())
+    entry = runpy.run_path(str(root / 'scripts/analyze_audio.py'), run_name='test_entry')
+    for name, filename in [('normalize_tempo_grid', 'timing.py'),
+                           ('refine_timing_from_audio', 'audio_timing.py'),
+                           ('resolve_tempo_octave', 'metrical_tempo.py')]:
+        assert Path(inspect.getfile(entry[name])) == root / 'practice_lab' / filename

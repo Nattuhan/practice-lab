@@ -114,15 +114,32 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
         first_bar -= 1
     first_bar = max(first_bar, kick_parity)
     new_beats = np.round(expanded, 3).tolist()
-    new_downbeats = new_beats[first_bar::4]
+    # A repaired half-time span can contain an odd number of slow beats:
+    # after promotion its remainder is a two-beat bar, not a tempo change.
+    # Timing repair may have recounted slow bars globally to restore missed
+    # beats. Recover its measured right-hand bar anchor at the final meter
+    # resolution instead of carrying that recount through every later bar.
+    anchors = {first_bar}
+    for span in data.get("audioTimingRepair", {}).get("spans", []):
+        if not span.get("rebuild_downbeats") or span.get("intervals", 0) % 2 != 1:
+            continue
+        position = int(np.argmin(abs(expanded - span["end"])))
+        if (position > first_bar and (position - first_bar) % 2 == 0
+                and abs(expanded[position] - span["end"]) < .01):
+            anchors.add(position)
+    boundaries = sorted(anchors) + [len(new_beats)]
+    new_downbeats = [new_beats[index]
+                     for left, right in zip(boundaries[:-1], boundaries[1:])
+                     for index in range(left, right, 4)]
     adjusted = {**data, "bpm": round(bpm * 2, 1), "beats": new_beats,
                 "downbeats": new_downbeats, "total_bars": len(new_downbeats)}
     for key in ("sections", "automaticSections"):
         if key in data:
             adjusted[key] = bars_from_sections(data[key], new_downbeats)
     adjusted["tempoOctaveResolution"] = {
-        "version": 2, "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
+        "version": 3, "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
         "eligibleWindows": eligible, "fasterVotes": len(faster),
         "originalVotes": len(votes) - len(faster), "kickParity": kick_parity,
+        "preservedBarAnchors": [new_beats[index] for index in sorted(anchors) if index != first_bar],
     }
     return adjusted
