@@ -4518,3 +4518,9 @@ select:focus,
 #settings-sync-status { margin-bottom: 16px; white-space: normal; }
 
 .settings-sync-fields { display: grid; gap: 18px; }
+
+/* Completion notices float above the queue without moving the player or taking focus. */
+#completion-notifications{position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;max-width:min(480px,calc(100vw - 32px));max-height:50vh;overflow:auto;pointer-events:none}
+.completion-toast{display:flex;align-items:center;gap:12px;padding:14px 16px;background:#20262e;color:#f0f2f5;border:1px solid #586473;border-left:4px solid #38d9a9;border-radius:10px;box-shadow:0 4px 20px #0006;font-size:14px;pointer-events:auto}
+.completion-toast span{min-width:0;overflow-wrap:anywhere}
+.completion-toast button{flex-shrink:0;border:1px solid #586473;border-radius:6px;padding:6px 10px;background:transparent;color:inherit;font:inherit;cursor:pointer}

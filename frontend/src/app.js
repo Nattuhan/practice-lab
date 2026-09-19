@@ -1613,11 +1613,11 @@ const regenerateScore = async (data = currentScoreResult) => {
       retainDone: true,
       onDone: result => {
         saveScoreHistory(result);
-        if (currentScoreResult?.videoId === result.videoId) renderScoreOutputs(result);
+        // Keep the current score view until the user chooses the queued result.
       },
     });
     SELECTORS.scoreResultStatus.className = "score-status score-result-status ok";
-    SELECTORS.scoreResultStatus.textContent = "再生成を処理一覧へ追加しました。完了後にこの楽譜を更新します。";
+    SELECTORS.scoreResultStatus.textContent = "再生成を処理一覧へ追加しました。完了後は処理一覧から結果を開けます。";
   } catch (error) {
     SELECTORS.scoreResultStatus.className = "score-status score-result-status err";
     SELECTORS.scoreResultStatus.textContent = error.message;
@@ -2575,6 +2575,31 @@ const stopQueuePollingIfIdle = () => {
   }
 };
 
+// Background completion must not replace the user's current song or restart playback.
+const notifyJobCompleted = (item, status) => {
+  const toast = document.createElement("div");
+  toast.className = "completion-toast";
+  const message = document.createElement("span");
+  const title = status.result?.title || status.display_title;
+  message.textContent = `${title ? `${queueOperationLabel(item.kind)} · ${title}` : item.label} が完了しました`;
+  toast.append(message);
+  if (status.result?.id && ["analysis", "stems"].includes(item.kind)) {
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "開く";
+    open.onclick = () => { void loadResult(status.result); toast.remove(); };
+    toast.append(open);
+  }
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "通知を閉じる");
+  close.onclick = () => toast.remove();
+  toast.append(close);
+  document.getElementById("completion-notifications").append(toast);
+  setTimeout(() => toast.remove(), 12000);
+};
+
 const pollTrackedJobs = async () => {
   const now = Date.now();
   for (const [jobId, item] of trackedJobs.entries()) {
@@ -2584,12 +2609,16 @@ const pollTrackedJobs = async () => {
     }
     try {
       const status = await fetchJobStatus(jobId);
+      if (item.status?.done) continue; // Another poll may have completed this job while awaiting.
       item.status = status;
       if (status.done) {
         item.doneAt = now;
         if (status.canceled) {}
         else if (status.error) item.onError?.(new Error(status.error));
-        else item.onDone?.(status.result);
+        else {
+          notifyJobCompleted(item, status);
+          item.onDone?.(status.result);
+        }
       }
     } catch (error) {
       item.status = { stage: "error", message: error.message, done: true, error: error.message };
@@ -4831,9 +4860,9 @@ const queueStemGeneration = async (sessionId, { title = "", silent = false, refr
     const response = await fetch(`/results/${sessionId}/stems`, { method: "POST" });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `サーバーエラー (${response.status})`);
-    trackQueuedJob(submitted.jobId, { label: `パート生成 · ${title || sessionId}` });
+    trackQueuedJob(submitted.jobId, { label: `パート生成 · ${title || sessionId}`, kind: "stems" });
     const data = await waitForJobResult(submitted.jobId);
-    if (refreshCurrent || currentId === data.id) showResult(data, data.id);
+    if (currentId === sessionId) SELECTORS.stemStatus.textContent = "パート生成が完了しました。通知の「開く」から反映できます";
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "✓ パートの準備ができました";
     SELECTORS.jobCard.hidden = false;
@@ -4894,7 +4923,6 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
       rangeLabel: range.startSec !== null || range.endSec !== null ? ` · ${range.startSec ?? 0}秒–${range.endSec ?? "末尾"}` : "",
       onDone: async data => {
         if (!data) return;
-        showResult(data, data.id);
         SELECTORS.status.className = data.cached ? "status ok" : "status";
         SELECTORS.status.textContent = data.cached ? "✓ 保存済みの解析結果を読み込みました" : "✓ 解析が完了しました";
         await loadHistory();
@@ -4944,9 +4972,9 @@ const doAnalyzeFile = async file => {
     closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
       label: `音声解析 · ${file.name}`,
+      kind: "analysis",
       onDone: async data => {
         if (!data) return;
-        showResult(data, data.id);
         SELECTORS.status.className = "status ok";
         SELECTORS.status.textContent = "✓ 音声ファイルの解析が完了しました";
         await loadHistory();

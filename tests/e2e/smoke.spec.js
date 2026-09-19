@@ -1115,3 +1115,26 @@ test("小節長の異なる曲でも編集画面の境界は生成時刻と一�
   expect(await page.locator('#section-editor-selected-range').evaluate(el => parseFloat(el.style.left))).toBeCloseTo(2);
   expect(await page.locator('#section-editor-selected-range').evaluate(el => parseFloat(el.style.width))).toBeCloseTo(58);
 });
+
+test("再解析完了は曲を切り替えず通知し、開く操作でのみ結果を反映する", async ({ page }) => {
+  const updated = { ...baselineResult, title: "再解析した曲" };
+  let done = false;
+  await page.route("**/reanalyze/e2e-baseline", route => route.fulfill({ json: { jobId: "notify-analysis" } }));
+  await page.route("**/jobs/notify-analysis", route => route.fulfill({ json: {
+    done, stage: done ? "done" : "analyzing", result: done ? updated : null,
+  } }));
+  await page.goto("/");
+  await expect(page.locator("#topbar-song")).toHaveText(baselineSession.title);
+  await page.getByRole("button", { name: "この曲を再解析" }).click();
+  await page.locator("#analyze-btn").click();
+  done = true;
+  const toast = page.locator(".completion-toast");
+  await expect(toast).toContainText("再解析した曲 が完了しました");
+  await expect(page.locator("#topbar-song")).toHaveText(baselineSession.title);
+  await page.waitForTimeout(1500);
+  await expect(toast).toHaveCount(1);
+  await page.route("**/results/e2e-baseline.json", route => route.fulfill({ json: updated }));
+  await toast.getByRole("button", { name: "開く", exact: true }).click();
+  await expect(page.locator("#topbar-song")).toHaveText(updated.title);
+  await expect(toast).toHaveCount(0);
+});

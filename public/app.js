@@ -4577,11 +4577,10 @@ var regenerateScore = async (data = currentScoreResult) => {
       retainDone: true,
       onDone: (result) => {
         saveScoreHistory(result);
-        if (currentScoreResult?.videoId === result.videoId) renderScoreOutputs(result);
       }
     });
     SELECTORS.scoreResultStatus.className = "score-status score-result-status ok";
-    SELECTORS.scoreResultStatus.textContent = "\u518D\u751F\u6210\u3092\u51E6\u7406\u4E00\u89A7\u3078\u8FFD\u52A0\u3057\u307E\u3057\u305F\u3002\u5B8C\u4E86\u5F8C\u306B\u3053\u306E\u697D\u8B5C\u3092\u66F4\u65B0\u3057\u307E\u3059\u3002";
+    SELECTORS.scoreResultStatus.textContent = "\u518D\u751F\u6210\u3092\u51E6\u7406\u4E00\u89A7\u3078\u8FFD\u52A0\u3057\u307E\u3057\u305F\u3002\u5B8C\u4E86\u5F8C\u306F\u51E6\u7406\u4E00\u89A7\u304B\u3089\u7D50\u679C\u3092\u958B\u3051\u307E\u3059\u3002";
   } catch (error) {
     SELECTORS.scoreResultStatus.className = "score-status score-result-status err";
     SELECTORS.scoreResultStatus.textContent = error.message;
@@ -5451,6 +5450,32 @@ var stopQueuePollingIfIdle = () => {
     queuePollTimer = null;
   }
 };
+var notifyJobCompleted = (item, status) => {
+  const toast = document.createElement("div");
+  toast.className = "completion-toast";
+  const message = document.createElement("span");
+  const title = status.result?.title || status.display_title;
+  message.textContent = `${title ? `${queueOperationLabel(item.kind)} \xB7 ${title}` : item.label} \u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F`;
+  toast.append(message);
+  if (status.result?.id && ["analysis", "stems"].includes(item.kind)) {
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "\u958B\u304F";
+    open.onclick = () => {
+      void loadResult(status.result);
+      toast.remove();
+    };
+    toast.append(open);
+  }
+  const close = document.createElement("button");
+  close.type = "button";
+  close.textContent = "\xD7";
+  close.setAttribute("aria-label", "\u901A\u77E5\u3092\u9589\u3058\u308B");
+  close.onclick = () => toast.remove();
+  toast.append(close);
+  document.getElementById("completion-notifications").append(toast);
+  setTimeout(() => toast.remove(), 12e3);
+};
 var pollTrackedJobs = async () => {
   const now = Date.now();
   for (const [jobId, item] of trackedJobs.entries()) {
@@ -5460,12 +5485,16 @@ var pollTrackedJobs = async () => {
     }
     try {
       const status = await fetchJobStatus(jobId);
+      if (item.status?.done) continue;
       item.status = status;
       if (status.done) {
         item.doneAt = now;
         if (status.canceled) {
         } else if (status.error) item.onError?.(new Error(status.error));
-        else item.onDone?.(status.result);
+        else {
+          notifyJobCompleted(item, status);
+          item.onDone?.(status.result);
+        }
       }
     } catch (error) {
       item.status = { stage: "error", message: error.message, done: true, error: error.message };
@@ -7565,9 +7594,9 @@ var queueStemGeneration = async (sessionId, { title = "", silent = false, refres
     const response = await fetch(`/results/${sessionId}/stems`, { method: "POST" });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
-    trackQueuedJob(submitted.jobId, { label: `\u30D1\u30FC\u30C8\u751F\u6210 \xB7 ${title || sessionId}` });
+    trackQueuedJob(submitted.jobId, { label: `\u30D1\u30FC\u30C8\u751F\u6210 \xB7 ${title || sessionId}`, kind: "stems" });
     const data = await waitForJobResult(submitted.jobId);
-    if (refreshCurrent || currentId === data.id) showResult(data, data.id);
+    if (currentId === sessionId) SELECTORS.stemStatus.textContent = "\u30D1\u30FC\u30C8\u751F\u6210\u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F\u3002\u901A\u77E5\u306E\u300C\u958B\u304F\u300D\u304B\u3089\u53CD\u6620\u3067\u304D\u307E\u3059";
     SELECTORS.status.className = "status ok";
     SELECTORS.status.textContent = "\u2713 \u30D1\u30FC\u30C8\u306E\u6E96\u5099\u304C\u3067\u304D\u307E\u3057\u305F";
     SELECTORS.jobCard.hidden = false;
@@ -7625,7 +7654,6 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
       rangeLabel: range.startSec !== null || range.endSec !== null ? ` \xB7 ${range.startSec ?? 0}\u79D2\u2013${range.endSec ?? "\u672B\u5C3E"}` : "",
       onDone: async (data) => {
         if (!data) return;
-        showResult(data, data.id);
         SELECTORS.status.className = data.cached ? "status ok" : "status";
         SELECTORS.status.textContent = data.cached ? "\u2713 \u4FDD\u5B58\u6E08\u307F\u306E\u89E3\u6790\u7D50\u679C\u3092\u8AAD\u307F\u8FBC\u307F\u307E\u3057\u305F" : "\u2713 \u89E3\u6790\u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F";
         await loadHistory();
@@ -7673,9 +7701,9 @@ var doAnalyzeFile = async (file) => {
     closeAnalysisDialog();
     trackQueuedJob(submitted.jobId, {
       label: `\u97F3\u58F0\u89E3\u6790 \xB7 ${file.name}`,
+      kind: "analysis",
       onDone: async (data) => {
         if (!data) return;
-        showResult(data, data.id);
         SELECTORS.status.className = "status ok";
         SELECTORS.status.textContent = "\u2713 \u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u306E\u89E3\u6790\u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F";
         await loadHistory();
