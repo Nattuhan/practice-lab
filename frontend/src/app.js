@@ -911,6 +911,9 @@ const markSessionOpened = id => {
 const createSessionRow = (item, items, containerId = "root") => {
   const row = document.createElement("div");
   row.className = "si";
+  // Rebuilding the list (search, sort, folders, job completion) must retain
+  // the current song independently of multi-selection and playback pause.
+  row.classList.toggle("active", item.id === currentId);
   row.dataset.id = item.id;
   row.dataset.date = item.date || "";
   row.dataset.containerId = containerId;

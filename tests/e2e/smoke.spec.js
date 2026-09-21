@@ -56,6 +56,18 @@ test("主要画面をネットワークCDNなしで開ける", async ({ page }) 
   expect(dependencyRequests).toEqual([]);
 });
 
+test("開いている曲の強調表示が一覧の再描画後も残る", async ({ page }) => {
+  await page.goto("/");
+  const current = page.locator('.si[data-id="e2e-baseline"]');
+  await expect(current).toHaveClass(/active/);
+  const search = page.getByPlaceholder("曲名・タグを検索");
+  await search.fill("一致しない曲名");
+  await expect(current).toHaveCount(0);
+  await search.fill("");
+  await expect(current).toHaveClass(/active/);
+  await expect(page.locator(".si.active")).toHaveCount(1);
+});
+
 test("小さいUI文字と操作値を読みやすくする", async ({ page }) => {
   await page.goto("/");
   for (const selector of [".si-meta", ".stat-lbl", ".sec-time", ".sec-bars"]) {

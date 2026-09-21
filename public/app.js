@@ -3933,6 +3933,7 @@ var markSessionOpened = (id) => {
 var createSessionRow = (item, items, containerId = "root") => {
   const row = document.createElement("div");
   row.className = "si";
+  row.classList.toggle("active", item.id === currentId);
   row.dataset.id = item.id;
   row.dataset.date = item.date || "";
   row.dataset.containerId = containerId;
