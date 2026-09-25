@@ -5256,7 +5256,9 @@ document.addEventListener("keydown", event => {
   if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && event.target.tagName !== "INPUT") {
     if (currentFeature !== "structure" || !ws) return;
     event.preventDefault();
-    seekAudio(ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5));
+    // Keep the seek's wall-clock distance proportional to playback speed.
+    const seekSeconds = 5 * playbackRate;
+    seekAudio(ws.getCurrentTime() + (event.key === "ArrowRight" ? seekSeconds : -seekSeconds));
   }
 });
 document.addEventListener("click", hideContextMenu);
