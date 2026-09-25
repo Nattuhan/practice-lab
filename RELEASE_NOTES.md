@@ -1,3 +1,16 @@
+# PracticeLab v1.4.2
+
+再生速度に合わせてキーボードでの移動量を調整します。
+
+- 左右カーソルキーの移動量を再生速度に連動し、低速再生でも意図した実時間ぶんだけ移動
+
+## ダウンロード
+
+- Windows: `PracticeLab-Setup-1.4.2.exe`
+- macOS（Apple Silicon）: `PracticeLab-1.4.2-arm64.dmg`
+
+署名済みMac版とWindows版はアプリ内の更新機能から更新できます。
+
 # PracticeLab v1.4.1
 
 一定テンポの曲でクリックが半分になったり、曲中だけ拍が抜けたりする問題を改善しました。

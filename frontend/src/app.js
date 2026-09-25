@@ -5364,7 +5364,7 @@ const handleSectionEditorScrubKey = event => {
   const duration = ws?.getDuration?.() || 0;
   const next = event.key === "Home" ? 0
     : event.key === "End" ? duration
-      : (ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5));
+      : (ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5) * playbackRate);
   stopSectionEditorPreview({ pause: false });
   seekAudio(Math.max(0, Math.min(duration, next)), { respectLoopRange: false });
 };

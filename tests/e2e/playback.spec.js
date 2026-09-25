@@ -76,6 +76,20 @@ const start = async page => {
   await page.locator('#btn-play').click();
   await expect.poll(() => page.evaluate(() => Object.keys(window.__media.stems).length)).toBe(4);
 };
+
+test('0.5倍速では左右カーソルキーで2.5秒ずつ移動する', async ({ page }) => {
+  await start(page);
+  await page.locator('#btn-play').click();
+  await page.locator('#playback-rate').fill('0.5');
+  await page.evaluate(() => { window.__media.original.currentTime = 15; });
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(15, 1);
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(12.5, 1);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(15, 1);
+});
+
 const originalVolume = page => page.evaluate(() => window.__media.original?.volume);
 
 for (const rejected of [['vocals'], ['vocals', 'drums', 'bass', 'other']]) {

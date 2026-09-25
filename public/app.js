@@ -8065,7 +8065,7 @@ var handleSectionEditorScrubKey = (event) => {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !canPlayAudio()) return;
   event.preventDefault();
   const duration = ws?.getDuration?.() || 0;
-  const next = event.key === "Home" ? 0 : event.key === "End" ? duration : ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5);
+  const next = event.key === "Home" ? 0 : event.key === "End" ? duration : ws.getCurrentTime() + (event.key === "ArrowRight" ? 5 : -5) * playbackRate;
   stopSectionEditorPreview({ pause: false });
   seekAudio(Math.max(0, Math.min(duration, next)), { respectLoopRange: false });
 };
