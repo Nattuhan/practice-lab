@@ -183,8 +183,19 @@ def yt_dlp_browser_session_args() -> list[str]:
             ("brave", home / ".config/BraveSoftware/Brave-Browser"),
         ]
     for browser, profile_path in candidates:
-        if profile_path.exists():
-            return ["--cookies-from-browser", browser, "--remote-components", "ejs:github"]
+        try:
+            profiles = [profile_path / "Default", *profile_path.glob("Profile *")]
+            cookie_files = (
+                cookie_file
+                for profile in profiles
+                for cookie_file in (profile / "Network/Cookies", profile / "Cookies")
+            )
+            # A browser directory alone is not enough: macOS may deny access to
+            # its contents, and yt-dlp would then hide the original 403 error.
+            if any(cookie_file.is_file() and os.access(cookie_file, os.R_OK) for cookie_file in cookie_files):
+                return ["--cookies-from-browser", browser, "--remote-components", "ejs:github"]
+        except OSError:
+            continue
     return []
 
 
@@ -195,7 +206,7 @@ def yt_dlp_error(stderr: str, fallback: str) -> str:
     ]
     message = "\n".join(lines).strip() or fallback
     if "HTTP Error 403" in message or "Forbidden" in message:
-        return f"{message}\n\nYouTube temporarily rejected the video stream. PracticeLab retried anonymously and with a local browser session when available, but YouTube still returned 403."
+        return f"{message}\n\nYouTube temporarily rejected the video stream."
     return message
 
 
@@ -224,6 +235,7 @@ def download_wav(
     session_args = yt_dlp_browser_session_args()
     attempt_args = [[], session_args] if session_args else [[]]
     last_error = "yt-dlp failed"
+    anonymous_error = ""
     with tempfile.TemporaryDirectory() as temp_dir:
         for index, extra_args in enumerate(attempt_args):
             result = run_yt_dlp(
@@ -251,6 +263,10 @@ def download_wav(
                     shutil.move(str(files[0]), str(destination))
                 return
             last_error = yt_dlp_error(result.stderr, "yt-dlp failed")
+            if not extra_args:
+                anonymous_error = last_error
+            elif "cookies database" in last_error.lower():
+                raise RuntimeError(f"{anonymous_error}\n\nBrowser-cookie retry failed: {last_error}")
             if "403" not in last_error and "Forbidden" not in last_error:
                 raise RuntimeError(last_error)
 
@@ -272,11 +288,13 @@ def download_video(
     start_sec, end_sec = normalize_analysis_range(start_sec, end_sec)
     format_candidates = [FULL_VIDEO_FORMAT, FULL_VIDEO_FALLBACK_FORMAT]
     last_error = "yt-dlp video download failed"
+    anonymous_error = ""
     session_args = yt_dlp_browser_session_args()
     with tempfile.TemporaryDirectory() as temp_dir:
-        for format_index, candidate in enumerate(format_candidates):
-            attempt_args = [[], session_args] if session_args and format_index == 0 else [[]]
-            for attempt, extra_args in enumerate(attempt_args):
+        # Exhaust anonymous formats before trying browser cookies. A failed
+        # cookie read must not prevent the lower-bandwidth format from working.
+        for attempt, extra_args in enumerate([[], session_args] if session_args else [[]]):
+            for format_index, candidate in enumerate(format_candidates):
                 output_base = f"video-{format_index}-{attempt}"
                 result = run_yt_dlp(
                     *extra_args,
@@ -310,8 +328,12 @@ def download_video(
                         shutil.move(str(files[0]), str(destination))
                     return
                 last_error = yt_dlp_error(result.stderr, "yt-dlp video download failed")
+                if not extra_args:
+                    anonymous_error = last_error
+                elif "cookies database" in last_error.lower():
+                    raise RuntimeError(f"{anonymous_error}\n\nBrowser-cookie retry failed: {last_error}")
                 if "403" not in last_error and "Forbidden" not in last_error:
                     raise RuntimeError(last_error)
-                if attempt + 1 < len(attempt_args):
-                    time.sleep(1)
+            if attempt == 0 and session_args:
+                time.sleep(1)
     raise RuntimeError(last_error)

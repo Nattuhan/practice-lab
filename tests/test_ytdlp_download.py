@@ -27,6 +27,17 @@ class YtDlpDownloadTests(unittest.TestCase):
         self.assertNotIn("Deprecated Feature", message)
         self.assertIn("HTTP Error 403", message)
 
+    def test_browser_session_requires_a_readable_cookie_database(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home = Path(temp_dir)
+            chrome = home / "Library/Application Support/Google/Chrome"
+            (chrome / "Default").mkdir(parents=True)
+            with patch.object(source_media.sys, "platform", "darwin"), patch.object(source_media.Path, "home", return_value=home):
+                self.assertEqual(source_media.yt_dlp_browser_session_args(), [])
+                (chrome / "Default/Network").mkdir()
+                (chrome / "Default/Network/Cookies").write_bytes(b"test")
+                self.assertEqual(source_media.yt_dlp_browser_session_args()[1], "chrome")
+
     def test_title_timeout_retries_over_ipv4_and_remembers_the_route(self):
         commands = []
 
@@ -124,7 +135,7 @@ class YtDlpDownloadTests(unittest.TestCase):
 
             def fake_run(command, **_kwargs):
                 commands.append(command)
-                if len(commands) < 3:
+                if len(commands) < 2:
                     return subprocess.CompletedProcess(command, 1, "", "HTTP Error 403: Forbidden")
                 output = Path(command[command.index("-o") + 1].replace("%(ext)s", "mp4"))
                 output.write_bytes(b"fallback")
@@ -133,8 +144,27 @@ class YtDlpDownloadTests(unittest.TestCase):
             with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media.time, "sleep"):
                 source_media.download_video("https://youtu.be/example", destination)
 
-            self.assertEqual(commands[2][commands[2].index("-f") + 1], source_media.FULL_VIDEO_FALLBACK_FORMAT)
+            self.assertEqual(commands[1][commands[1].index("-f") + 1], source_media.FULL_VIDEO_FALLBACK_FORMAT)
+            self.assertNotIn("--cookies-from-browser", commands[1])
             self.assertEqual(destination.read_bytes(), b"fallback")
+
+    def test_cookie_failure_keeps_original_403_visible(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "result.mp4"
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                error = ("ERROR: could not find chrome cookies database" if "--cookies-from-browser" in command
+                         else "HTTP Error 403: Forbidden")
+                return subprocess.CompletedProcess(command, 1, "", error)
+
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media.time, "sleep"):
+                with self.assertRaisesRegex(RuntimeError, "(?s)HTTP Error 403.*Browser-cookie retry failed"):
+                    source_media.download_video("https://youtu.be/example", destination)
+
+            self.assertEqual(len(commands), 3)
+            self.assertEqual(commands[1][commands[1].index("-f") + 1], source_media.FULL_VIDEO_FALLBACK_FORMAT)
 
 
 if __name__ == "__main__":
