@@ -56,6 +56,15 @@ test("主要画面をネットワークCDNなしで開ける", async ({ page }) 
   expect(dependencyRequests).toEqual([]);
 });
 
+test("BPM操作を簡素化し、保存済みの速い再生速度も等速へ戻す", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("practice_lab_v1", JSON.stringify({ playbackRate: 1.25, "clickOffsetHalfBeat:e2e-baseline": true })));
+  await page.goto("/");
+  await expect(page.locator("#btn-bpm-save, #btn-click-offset")).toHaveCount(0);
+  await expect(page.locator("#playback-rate")).toHaveAttribute("max", "1");
+  await expect(page.locator("#playback-rate")).toHaveValue("1");
+  await expect(page.locator("#playback-rate-val")).toHaveText("1.00x");
+});
+
 test("開いている曲の強調表示が一覧の再描画後も残る", async ({ page }) => {
   await page.goto("/");
   const current = page.locator('.si[data-id="e2e-baseline"]');

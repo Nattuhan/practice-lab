@@ -241,7 +241,7 @@ test('モバイルではパート操作まで追加音源を読み込まず、�
   await expect.poll(() => originalVolume(page)).toBeGreaterThan(0);
 });
 
-for (const rate of [0.75, 1.25]) {
+for (const rate of [0.75, 1]) {
   test(`読み上げクリックを${rate}倍速で再生し停止できる`, async ({ page }) => {
     const beats = Array.from({ length: 14 }, (_, i) => .1 + i * .36);
     await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {

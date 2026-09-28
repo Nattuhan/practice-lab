@@ -174,8 +174,6 @@ const SELECTORS = {
   btnBpmHalf: document.getElementById("btn-bpm-half"),
   btnBpmDouble: document.getElementById("btn-bpm-double"),
   btnBpmReset: document.getElementById("btn-bpm-reset"),
-  btnBpmSave: document.getElementById("btn-bpm-save"),
-  btnClickOffset: document.getElementById("btn-click-offset"),
   btnPlay: document.getElementById("btn-play"),
   btnRestart: document.getElementById("btn-restart"),
   sections: document.getElementById("sections"),
@@ -335,7 +333,6 @@ let loopOn = false;
 let metroOn = false;
 let autoNextOn = false;
 let bpmFactor = 1;
-let clickOffsetHalfBeat = false;
 let playingIdx = -1;
 let audioAvailable = true;
 let audioReady = false;
@@ -496,14 +493,12 @@ const saveCfg = (key, value) => {
 window.addEventListener("beforeunload", flushDesktopCfg);
 
 const bpmCorrectionKey = id => `bpmFactor:${id}`;
-const clickOffsetKey = id => `clickOffsetHalfBeat:${id}`;
 const foldersKey = "sidebarFolders";
 const folderCollapsedKey = "sidebarFolderCollapsed";
 const rootOrderKey = "sidebarRootOrder";
 const autoNextKey = "autoNext";
 const lastStructureSessionKey = "lastStructureSessionId";
 const getStoredBpmFactor = id => Number(cfg()[bpmCorrectionKey(id)] ?? 1) || 1;
-const getStoredClickOffset = id => !!cfg()[clickOffsetKey(id)];
 const getDisplayBpm = item => {
   const value = Number(item?.bpm || 0) * getStoredBpmFactor(item?.id);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -1080,7 +1075,7 @@ const openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {})
 };
 
 const MIN_PLAYBACK_RATE = 0.25;
-const MAX_PLAYBACK_RATE = 1.25;
+const MAX_PLAYBACK_RATE = 1;
 const PLAYBACK_RATE_STEP = 0.05;
 const DEFAULT_PLAYBACK_RATE = 1;
 const clampPlaybackRate = value => Math.min(MAX_PLAYBACK_RATE, Math.max(MIN_PLAYBACK_RATE, Number(value) || DEFAULT_PLAYBACK_RATE));
@@ -1251,7 +1246,7 @@ const exportStemMix = async () => {
   const includeClick = SELECTORS.stemExportClick.checked;
   const rangeStart = range?.start ?? 0;
   const rangeEnd = range?.end ?? Infinity;
-  const allCounts = beatCounts(getAdjustedBeats(false), currentData?.downbeats);
+  const allCounts = beatCounts(getAdjustedBeats(), currentData?.downbeats);
   const clickCounts = includeClick ? getAdjustedBeats().flatMap((time, index) => time >= rangeStart && time <= rangeEnd ? [allCounts[index]] : []) : [];
   const clickTimes = includeClick
     ? getAdjustedBeats()
@@ -2126,24 +2121,10 @@ const scheduleWaveformPreviewSeek = time => {
   });
 };
 
-const medianNumber = values => {
-  const sorted = values.filter(value => Number.isFinite(value) && value > 0).sort((left, right) => left - right);
-  if (!sorted.length) return 0;
-  return sorted[Math.floor(sorted.length / 2)];
-};
-
-const applyClickOffset = beats => {
-  if (!clickOffsetHalfBeat || beats.length < 2) return beats;
-  const interval = medianNumber(beats.slice(1).map((beat, index) => beat - beats[index]));
-  if (!(interval > 0)) return beats;
-  const offset = -interval / 2;
-  return beats.map(beat => Math.max(0, beat + offset));
-};
-
-const getAdjustedBeats = (withOffset = true) => {
+const getAdjustedBeats = () => {
   const beats = currentData?.beats ?? [];
   if (!beats.length) return [];
-  if (bpmFactor === 1) return withOffset ? applyClickOffset(beats) : beats;
+  if (bpmFactor === 1) return beats;
 
   let adjusted = [...beats];
   let factor = bpmFactor;
@@ -2165,7 +2146,7 @@ const getAdjustedBeats = (withOffset = true) => {
     factor *= 2;
   }
 
-  return withOffset ? applyClickOffset(adjusted) : adjusted;
+  return adjusted;
 };
 
 const getLoopRange = () => {
@@ -3450,7 +3431,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     }
     await loadClickRenderer(getCtx());
     preparation.signal.throwIfAborted();
-    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
+    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(getAdjustedBeats(), currentData.downbeats), signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
   } catch (error) {
@@ -3847,36 +3828,6 @@ const setupControls = () => {
     applyBpmDisplay();
     void rebuildAlignedClicks();
   };
-  SELECTORS.btnClickOffset.onclick = () => {
-    if (!currentId) return;
-    clickOffsetHalfBeat = !clickOffsetHalfBeat;
-    saveCfg(clickOffsetKey(currentId), clickOffsetHalfBeat);
-    SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
-    void rebuildAlignedClicks();
-  };
-  SELECTORS.btnBpmSave.onclick = async () => {
-    if (!currentId || !hasServer) return;
-    try {
-      SELECTORS.btnBpmSave.disabled = true;
-      const response = await fetch(`/results/${currentId}/bpm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ factor: bpmFactor }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || `サーバーエラー (${response.status})`);
-      saveCfg(bpmCorrectionKey(currentId), 1);
-      showResult(data, data.id);
-      SELECTORS.status.className = "status ok";
-      SELECTORS.status.textContent = "✓ BPM補正を保存しました";
-      await loadHistory();
-    } catch (error) {
-      SELECTORS.status.className = "status err";
-      SELECTORS.status.textContent = error.message;
-    } finally {
-      SELECTORS.btnBpmSave.disabled = false;
-    }
-  };
   SELECTORS.btnYouTube.onclick = () => {
     const sourceVideoId = currentData?.sourceVideoId || currentId;
     if (sourceVideoId) window.open(`https://www.youtube.com/watch?v=${sourceVideoId}`, "_blank");
@@ -3980,7 +3931,6 @@ const showResult = (data, id, { autoplay = false } = {}) => {
   metroOn = cfg().metro ?? false;
   autoNextOn = cfg()[autoNextKey] ?? false;
   bpmFactor = getStoredBpmFactor(id);
-  clickOffsetHalfBeat = getStoredClickOffset(id);
   playbackRate = clampPlaybackRate(cfg().playbackRate ?? 1);
 
   SELECTORS.structureWorkspace.hidden = false;
@@ -4000,8 +3950,6 @@ const showResult = (data, id, { autoplay = false } = {}) => {
   SELECTORS.btnCloudSync.hidden = !hasServer || staticLibraryMode;
   SELECTORS.btnReanalyze.hidden = !hasServer;
   SELECTORS.btnClearRange.hidden = true;
-  SELECTORS.btnBpmSave.hidden = !hasServer;
-  SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
 
   applyPlaybackRate(playbackRate);
   const playerInitialization = initWaveSurfer(assets.audio, assets.video, assets.stems);
@@ -5022,7 +4970,6 @@ const detectServer = async () => {
     SELECTORS.offlineBadge.textContent = "ライブラリ";
     SELECTORS.btnReanalyze.hidden = true;
     SELECTORS.btnCloudSync.hidden = true;
-    SELECTORS.btnBpmSave.hidden = true;
     SELECTORS.btnAddFolder.hidden = true;
     SELECTORS.btnStorage.hidden = true;
     if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = true;

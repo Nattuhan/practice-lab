@@ -3734,7 +3734,6 @@ input:focus-visible {
 }
 .bpm-actions { gap: 5px; }
 .bpm-actions .mini-btn,
-#btn-click-offset,
 #btn-edit-sections { min-height: 30px; padding-inline: 9px; }
 #btn-speed-reset { width: 32px; min-width: 32px; height: 32px; }
 
@@ -4364,9 +4363,6 @@ select:focus,
 .bpm-item .bpm-actions .mini-btn { border: 0; border-radius: 6px; background: transparent; min-width: 30px; padding: 4px 8px; font-size: var(--type-ui); }
 .bpm-item .bpm-actions .mini-btn:hover:not(:disabled) { background: rgba(255,255,255,.08); }
 .bpm-item .bpm-actions .mini-btn svg { width: 13px; height: 13px; }
-.bpm-item .bpm-actions #btn-bpm-save { color: var(--orange); }
-.bpm-item .bpm-actions #btn-click-offset { margin-left: 4px; border-left: 1px solid var(--gray-3); border-radius: 0 6px 6px 0; }
-.bpm-item .bpm-actions #btn-click-offset.active { background: rgba(240,128,72,.14); color: var(--orange); }
 .bpm-item .bpm-actions .mini-btn:disabled { opacity: .3; }
 .bpm-reading .stat-val { min-width: 38px; font-size: var(--type-bpm); font-weight: 650; letter-spacing: -.04em; font-variant-numeric: tabular-nums; text-align: right; }
 .bpm-actions { flex-wrap: nowrap; }

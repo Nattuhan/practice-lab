@@ -3258,8 +3258,6 @@ var SELECTORS = {
   btnBpmHalf: document.getElementById("btn-bpm-half"),
   btnBpmDouble: document.getElementById("btn-bpm-double"),
   btnBpmReset: document.getElementById("btn-bpm-reset"),
-  btnBpmSave: document.getElementById("btn-bpm-save"),
-  btnClickOffset: document.getElementById("btn-click-offset"),
   btnPlay: document.getElementById("btn-play"),
   btnRestart: document.getElementById("btn-restart"),
   sections: document.getElementById("sections"),
@@ -3416,7 +3414,6 @@ var loopOn = false;
 var metroOn = false;
 var autoNextOn = false;
 var bpmFactor = 1;
-var clickOffsetHalfBeat = false;
 var playingIdx = -1;
 var audioAvailable = true;
 var audioReady = false;
@@ -3566,14 +3563,12 @@ var saveCfg = (key, value) => {
 };
 window.addEventListener("beforeunload", flushDesktopCfg);
 var bpmCorrectionKey = (id) => `bpmFactor:${id}`;
-var clickOffsetKey = (id) => `clickOffsetHalfBeat:${id}`;
 var foldersKey = "sidebarFolders";
 var folderCollapsedKey = "sidebarFolderCollapsed";
 var rootOrderKey = "sidebarRootOrder";
 var autoNextKey = "autoNext";
 var lastStructureSessionKey = "lastStructureSessionId";
 var getStoredBpmFactor = (id) => Number(cfg()[bpmCorrectionKey(id)] ?? 1) || 1;
-var getStoredClickOffset = (id) => !!cfg()[clickOffsetKey(id)];
 var getDisplayBpm = (item) => {
   const value = Number(item?.bpm || 0) * getStoredBpmFactor(item?.id);
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -4079,7 +4074,7 @@ var openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) =
   else (reanalyze ? SELECTORS.analyzeBtn : SELECTORS.urlInput).focus({ preventScroll: true });
 };
 var MIN_PLAYBACK_RATE = 0.25;
-var MAX_PLAYBACK_RATE = 1.25;
+var MAX_PLAYBACK_RATE = 1;
 var PLAYBACK_RATE_STEP = 0.05;
 var DEFAULT_PLAYBACK_RATE = 1;
 var clampPlaybackRate = (value) => Math.min(MAX_PLAYBACK_RATE, Math.max(MIN_PLAYBACK_RATE, Number(value) || DEFAULT_PLAYBACK_RATE));
@@ -4240,7 +4235,7 @@ var exportStemMix = async () => {
   const includeClick = SELECTORS.stemExportClick.checked;
   const rangeStart = range?.start ?? 0;
   const rangeEnd = range?.end ?? Infinity;
-  const allCounts = beatCounts(getAdjustedBeats(false), currentData?.downbeats);
+  const allCounts = beatCounts(getAdjustedBeats(), currentData?.downbeats);
   const clickCounts = includeClick ? getAdjustedBeats().flatMap((time, index) => time >= rangeStart && time <= rangeEnd ? [allCounts[index]] : []) : [];
   const clickTimes = includeClick ? getAdjustedBeats().filter((time) => time >= rangeStart && time <= rangeEnd).map((time) => time - rangeStart) : [];
   const downloadName = stemMixFilename(currentData?.title || currentId, stemVolumes, {
@@ -5058,22 +5053,10 @@ var scheduleWaveformPreviewSeek = (time) => {
     if (Number.isFinite(target)) seekAudio(target, { respectLoopRange: false });
   });
 };
-var medianNumber = (values) => {
-  const sorted = values.filter((value) => Number.isFinite(value) && value > 0).sort((left, right) => left - right);
-  if (!sorted.length) return 0;
-  return sorted[Math.floor(sorted.length / 2)];
-};
-var applyClickOffset = (beats) => {
-  if (!clickOffsetHalfBeat || beats.length < 2) return beats;
-  const interval = medianNumber(beats.slice(1).map((beat, index) => beat - beats[index]));
-  if (!(interval > 0)) return beats;
-  const offset = -interval / 2;
-  return beats.map((beat) => Math.max(0, beat + offset));
-};
-var getAdjustedBeats = (withOffset = true) => {
+var getAdjustedBeats = () => {
   const beats = currentData?.beats ?? [];
   if (!beats.length) return [];
-  if (bpmFactor === 1) return withOffset ? applyClickOffset(beats) : beats;
+  if (bpmFactor === 1) return beats;
   let adjusted = [...beats];
   let factor = bpmFactor;
   while (factor > 1) {
@@ -5091,7 +5074,7 @@ var getAdjustedBeats = (withOffset = true) => {
     adjusted = adjusted.filter((_, index) => index % 2 === 0);
     factor *= 2;
   }
-  return withOffset ? applyClickOffset(adjusted) : adjusted;
+  return adjusted;
 };
 var getLoopRange = () => {
   if (customLoopRange) return customLoopRange;
@@ -6249,7 +6232,7 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
     }
     await loadClickRenderer(getCtx());
     preparation.signal.throwIfAborted();
-    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(getAdjustedBeats(false), currentData.downbeats), signal: preparation.signal });
+    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(getAdjustedBeats(), currentData.downbeats), signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob);
     preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
@@ -6639,36 +6622,6 @@ var setupControls = () => {
     applyBpmDisplay();
     void rebuildAlignedClicks();
   };
-  SELECTORS.btnClickOffset.onclick = () => {
-    if (!currentId) return;
-    clickOffsetHalfBeat = !clickOffsetHalfBeat;
-    saveCfg(clickOffsetKey(currentId), clickOffsetHalfBeat);
-    SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
-    void rebuildAlignedClicks();
-  };
-  SELECTORS.btnBpmSave.onclick = async () => {
-    if (!currentId || !hasServer) return;
-    try {
-      SELECTORS.btnBpmSave.disabled = true;
-      const response = await fetch(`/results/${currentId}/bpm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ factor: bpmFactor })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
-      saveCfg(bpmCorrectionKey(currentId), 1);
-      showResult(data, data.id);
-      SELECTORS.status.className = "status ok";
-      SELECTORS.status.textContent = "\u2713 BPM\u88DC\u6B63\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F";
-      await loadHistory();
-    } catch (error) {
-      SELECTORS.status.className = "status err";
-      SELECTORS.status.textContent = error.message;
-    } finally {
-      SELECTORS.btnBpmSave.disabled = false;
-    }
-  };
   SELECTORS.btnYouTube.onclick = () => {
     const sourceVideoId = currentData?.sourceVideoId || currentId;
     if (sourceVideoId) window.open(`https://www.youtube.com/watch?v=${sourceVideoId}`, "_blank");
@@ -6768,7 +6721,6 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   metroOn = cfg().metro ?? false;
   autoNextOn = cfg()[autoNextKey] ?? false;
   bpmFactor = getStoredBpmFactor(id);
-  clickOffsetHalfBeat = getStoredClickOffset(id);
   playbackRate = clampPlaybackRate(cfg().playbackRate ?? 1);
   SELECTORS.structureWorkspace.hidden = false;
   SELECTORS.playerCard.hidden = false;
@@ -6787,8 +6739,6 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   SELECTORS.btnCloudSync.hidden = !hasServer || staticLibraryMode;
   SELECTORS.btnReanalyze.hidden = !hasServer;
   SELECTORS.btnClearRange.hidden = true;
-  SELECTORS.btnBpmSave.hidden = !hasServer;
-  SELECTORS.btnClickOffset.classList.toggle("active", clickOffsetHalfBeat);
   applyPlaybackRate(playbackRate);
   const playerInitialization = initWaveSurfer(assets.audio, assets.video, assets.stems);
   renderStemPanel(assets);
@@ -7747,7 +7697,6 @@ var detectServer = async () => {
     SELECTORS.offlineBadge.textContent = "\u30E9\u30A4\u30D6\u30E9\u30EA";
     SELECTORS.btnReanalyze.hidden = true;
     SELECTORS.btnCloudSync.hidden = true;
-    SELECTORS.btnBpmSave.hidden = true;
     SELECTORS.btnAddFolder.hidden = true;
     SELECTORS.btnStorage.hidden = true;
     if (SELECTORS.btnJobHistory) SELECTORS.btnJobHistory.hidden = true;
