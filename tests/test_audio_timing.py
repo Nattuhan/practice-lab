@@ -284,6 +284,37 @@ def test_stops_click_when_established_pulse_gives_way_to_unmetered_ending(tmp_pa
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13), (.7, .37)])
+def test_stops_near_regular_tracker_when_terminal_attacks_lose_its_pulse(tmp_path, period, offset):
+    regular = offset + np.arange(320) * period
+    # A tracker may keep returning plausible quarter notes during a free
+    # ending; a few irregular intervals expose the loss of its old clock.
+    tail_gaps = np.resize(np.asarray([.84, .86, .9, 1.02, 1.11, 1.08, .94, .86]) * period, 40)
+    detected_tail = regular[-1] + np.cumsum(tail_gaps)
+    beats = np.round(np.r_[regular, detected_tail], 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4],
+                duration=float(beats[-1] + 2 * period))
+    audio = tmp_path / 'free-ending.wav'
+    unrelated = regular[-1] + np.arange(1, 100) * period * .73
+    write_attacks(audio, np.r_[regular, unrelated], data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert result['beats'][-1] <= beats[325]
+    assert result['audioTimingRepair']['unmeteredTail']['detectedAttackFit'] < .4
+
+
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13), (.7, .37)])
+def test_keeps_irregular_ending_when_source_attacks_follow_detected_beats(tmp_path, period, offset):
+    regular = offset + np.arange(320) * period
+    tail_gaps = np.resize(np.asarray([.84, .86, .9, 1.02, 1.11, 1.08, .94, .86]) * period, 40)
+    detected_tail = regular[-1] + np.cumsum(tail_gaps)
+    beats = np.round(np.r_[regular, detected_tail], 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4],
+                duration=float(beats[-1] + 2 * period))
+    audio = tmp_path / 'tracked-rubato.wav'
+    write_attacks(audio, beats, data['duration'])
+    assert refine_timing_from_audio(data, audio).get('audioTimingRepair', {}).get('unmeteredTail') is None
+
+
 def test_keeps_new_stable_tempo_at_ending(tmp_path):
     first = .17 + np.arange(320) * .33
     changed = first[-1] + np.arange(1, 40) * .48

@@ -641,34 +641,15 @@ def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
     tail = gaps[right:]
     if len(tail) < 12 or np.std(tail) / np.mean(tail) < .08:
         return None
-    period, phase = np.polyfit(np.arange(left, right), beats[left:right], 1)
+    period, _ = np.polyfit(np.arange(left, right), beats[left:right], 1)
     if abs(period / float(np.median(gaps[left:right])) - 1) > .02:
         return None
-    # Compare the established beat phase with the intervening half-beat
-    # phase in bounded windows. The middle frequency bands carry drum body
-    # and instrument attacks without relying on cymbal noise or loudness.
+    # The detector has lost its long, stable clock. Check whether attacks in
+    # the source still support the *newly detected* beats. A real ritardando
+    # can be irregular yet accurately tracked; a free ending need not have
+    # strong old-phase accents just before it (half-time drums are common).
     window = 12 * period
-    def contrast(start: float) -> float:
-        end = start + window
-        times, features = _accent_features(audio, start - period, end + period)
-        if not len(times):
-            return 0.0
-        indexes = np.arange(int(np.ceil((start - phase) / period)),
-                            int(np.floor((end - phase) / period)) + 1)
-        grid = phase + indexes * period
-        def score(points: np.ndarray) -> float:
-            return float(np.mean([np.max(features[1:, abs(times - point) <= .12 * period])
-                                  for point in points]))
-        on, off = score(grid), score(grid + period / 2)
-        return (on - off) / (on + off + 1e-12)
     anchor = float(beats[right - 1])
-    before = [contrast(anchor - (index + 1) * window) for index in range(3)]
-    after = [contrast(anchor + index * window) for index in range(3)
-             if anchor + (index + 1) * window <= beats[-1]]
-    if len(after) < 2 or np.median(before) < .15 or max(after) > .15:
-        return None
-    # A genuine free tempo can lose the old phase while remaining accurately
-    # tracked by the model. Check whether its own detected beats fit attacks.
     fits = []
     for start in (anchor + window, (anchor + beats[-1] - window) / 2,
                   beats[-1] - window):
@@ -680,11 +661,14 @@ def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
         times, strengths = np.asarray(attacks).T
         distance = np.min(abs(times[:, None] - detected[None, :]), axis=1) / period
         fits.append(float(np.average(distance < .12, weights=strengths)))
-    if np.median(fits) >= .45:
+    # One short window can coincide with a fill by chance. Require weak
+    # support across most of the ending, while retaining a tail that has even
+    # one clearly supported passage (a real ritardando or return to meter).
+    if np.median(fits) >= .55 or max(fits) >= .85:
         return None
     return {"start": round(anchor, 3), "lastBeat": round(anchor, 3),
-            "phaseContrastBefore": round(float(np.median(before)), 3),
-            "phaseContrastAfter": round(float(np.median(after)), 3)}
+            "detectedAttackFit": round(float(np.median(fits)), 3),
+            "strongestWindowFit": round(float(max(fits)), 3)}
 
 
 def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
