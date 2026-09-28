@@ -11,6 +11,7 @@ import numpy as np
 import soundfile as sf
 from scipy.signal import find_peaks
 
+from .metrical_tempo import _accent_features
 from .timing import bars_from_sections
 
 
@@ -558,6 +559,75 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
     return verified
 
 
+def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
+    """Stop a drifting terminal tracker after an established clock loses audio support."""
+    beats = np.asarray(data.get("beats") or [], dtype=float)
+    if len(beats) < 96:
+        return None
+    gaps = np.diff(beats)
+    period = float(np.median(gaps))
+    if period <= 0 or np.any(gaps <= 0):
+        return None
+    regular = abs(gaps / period - 1) < .1
+    cuts = np.r_[0, np.flatnonzero(~regular) + 1, len(gaps)]
+    runs = [(int(left), int(right)) for left, right in zip(cuts[:-1], cuts[1:])
+            if right - left >= 64]
+    if not runs:
+        return None
+    left, right = runs[-1]
+    # A new stable tempo, or a tracker that still follows audible rubato,
+    # must not be mistaken for an unmetered ending.
+    if right >= len(gaps) - 16 or beats[-1] - beats[right] < 16 * period:
+        return None
+    tail = gaps[right:]
+    if len(tail) < 12 or np.std(tail) / np.mean(tail) < .08:
+        return None
+    period, phase = np.polyfit(np.arange(left, right), beats[left:right], 1)
+    if abs(period / float(np.median(gaps[left:right])) - 1) > .02:
+        return None
+    # Compare the established beat phase with the intervening half-beat
+    # phase in bounded windows. The middle frequency bands carry drum body
+    # and instrument attacks without relying on cymbal noise or loudness.
+    window = 12 * period
+    def contrast(start: float) -> float:
+        end = start + window
+        times, features = _accent_features(audio, start - period, end + period)
+        if not len(times):
+            return 0.0
+        indexes = np.arange(int(np.ceil((start - phase) / period)),
+                            int(np.floor((end - phase) / period)) + 1)
+        grid = phase + indexes * period
+        def score(points: np.ndarray) -> float:
+            return float(np.mean([np.max(features[1:, abs(times - point) <= .12 * period])
+                                  for point in points]))
+        on, off = score(grid), score(grid + period / 2)
+        return (on - off) / (on + off + 1e-12)
+    anchor = float(beats[right - 1])
+    before = [contrast(anchor - (index + 1) * window) for index in range(3)]
+    after = [contrast(anchor + index * window) for index in range(3)
+             if anchor + (index + 1) * window <= beats[-1]]
+    if len(after) < 2 or np.median(before) < .15 or max(after) > .15:
+        return None
+    # A genuine free tempo can lose the old phase while remaining accurately
+    # tracked by the model. Check whether its own detected beats fit attacks.
+    fits = []
+    for start in (anchor + window, (anchor + beats[-1] - window) / 2,
+                  beats[-1] - window):
+        end = min(start + window, beats[-1])
+        detected = beats[(beats >= start) & (beats <= end)]
+        attacks = _attacks(audio, start, end, .1, period)
+        if len(detected) < 4 or len(attacks) < 4:
+            return None
+        times, strengths = np.asarray(attacks).T
+        distance = np.min(abs(times[:, None] - detected[None, :]), axis=1) / period
+        fits.append(float(np.average(distance < .12, weights=strengths)))
+    if np.median(fits) >= .45:
+        return None
+    return {"start": round(anchor, 3), "lastBeat": round(anchor, 3),
+            "phaseContrastBefore": round(float(np.median(before)), 3),
+            "phaseContrastAfter": round(float(np.median(after)), 3)}
+
+
 def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
     """Repair source-supported drift or short ambiguous aliases of a stable pulse."""
     with sf.SoundFile(audio_path) as audio:
@@ -569,13 +639,23 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
         spans = list(dominant_spans)
         for start, end, period in _candidate_spans(data):
             spans.extend(_audio_supported_spans(audio, start, end, period))
-    if not intro and not outro and not spans:
+        correction = {"spans": spans}
+        if intro:
+            correction["intro"] = intro
+        if outro:
+            correction["outro"] = outro
+        adjusted = _apply_verified_grid(data, correction) if correction != {"spans": []} else data
+        unmetered = _unmetered_tail(audio, adjusted)
+    if not intro and not outro and not spans and not unmetered:
         return data
-    correction = {"spans": spans}
-    if intro:
-        correction["intro"] = intro
-    if outro:
-        correction["outro"] = outro
-    adjusted = _apply_verified_grid(data, correction)
-    adjusted["audioTimingRepair"] = {"version": 4, **correction}
+    if unmetered:
+        correction["unmeteredTail"] = unmetered
+        anchor = unmetered["lastBeat"]
+        heads = [beat for beat in adjusted["downbeats"] if beat <= anchor]
+        adjusted = {**adjusted, "beats": [beat for beat in adjusted["beats"] if beat <= anchor],
+                    "downbeats": heads, "total_bars": len(heads)}
+        for key in ("sections", "automaticSections"):
+            if key in adjusted:
+                adjusted[key] = bars_from_sections(adjusted[key], heads)
+    adjusted["audioTimingRepair"] = {"version": 5, **correction}
     return adjusted

@@ -211,6 +211,39 @@ def test_repairs_supported_half_time_tracking_before_unrelated_variable_tail(tmp
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13)])
+def test_stops_click_when_established_pulse_gives_way_to_unmetered_ending(tmp_path, period, offset):
+    regular = offset + np.arange(320) * period
+    tail_gaps = np.resize(np.asarray([1.8, 2.1, 2.4, 2.0, 2.3]) * period, 32)
+    detected_tail = regular[-1] + np.cumsum(tail_gaps)
+    beats = np.round(np.r_[regular, detected_tail], 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4],
+                duration=float(beats[-1] + 2 * period))
+    audio = tmp_path / 'unmetered-ending.wav'
+    # The free ending remains loud and has many unrelated attacks, so neither
+    # silence detection nor overall loudness can establish a metronome pulse.
+    free_attacks = regular[-1] + np.arange(1, 100) * period * .73
+    write_attacks(audio, np.r_[regular, free_attacks], data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert result['beats'][-1] == beats[319]
+    assert result['audioTimingRepair']['unmeteredTail']['start'] == beats[319]
+    assert result['bpm'] == data['bpm']
+    assert refine_timing_from_audio(result, audio) == result
+
+
+def test_keeps_new_stable_tempo_at_ending(tmp_path):
+    first = .17 + np.arange(320) * .33
+    changed = first[-1] + np.arange(1, 40) * .48
+    beats = np.round(np.r_[first, changed], 3).tolist()
+    data = dict(bpm=60 / .33, beats=beats, downbeats=beats[::4],
+                duration=float(beats[-1] + .48))
+    audio = tmp_path / 'tempo-change.wav'
+    write_attacks(audio, np.r_[first, changed], data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    assert result['beats'][-1] == beats[-1]
+    assert result.get('audioTimingRepair', {}).get('unmeteredTail') is None
+
+
 def test_keeps_genuine_half_time_passages_in_octave_mixed_detection(tmp_path):
     period, offset = .5, .17
     actual = offset + np.arange(480) * period
