@@ -259,7 +259,16 @@ def _missing_outro(audio: sf.SoundFile, data: dict) -> dict | None:
                      / max(float(np.median(active_rms[tail_active[:stop]])), 1e-7))
     sustained_tail = active_fraction >= .8 and smooth_change < .12
     required_attacks = max(3, min(8, intervals // 2))
-    if len(attacks) >= required_attacks and not sustained_tail:
+    if sustained_tail:
+        # A held sine or pad can create weak envelope peaks from frame
+        # boundaries. Compare prominence with the tail's own sound level;
+        # genuine drum hits in a continuously loud mix remain salient.
+        salient = float(np.median(active_rms[tail_active[:stop]])) * .1
+        attacks = [attack for attack in attacks if attack[1] >= salient]
+    # Continuous, compressed music can have smooth RMS too. Audible attacks
+    # take precedence over the held-note heuristic: otherwise a conflicting
+    # rhythm is silently extrapolated as a constant click all the way to EOF.
+    if len(attacks) >= required_attacks:
         times, strengths = np.asarray(attacks).T
         positions = (times - anchor) / period
         quarter_distance = abs(positions - np.rint(positions))

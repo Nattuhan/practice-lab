@@ -256,6 +256,25 @@ def test_extends_constant_clock_through_held_fading_outro(tmp_path):
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13)])
+def test_continuous_loud_outro_with_conflicting_attacks_is_not_extrapolated(tmp_path, period, offset):
+    actual = offset + np.arange(320) * period
+    detected = actual[:-32]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4],
+                duration=actual[-1] + period)
+    audio = tmp_path / 'continuous-outro.wav'
+    # A compressed/live recording stays loud even after its detected pulse
+    # ends. The later attacks have a different phase, so a smooth RMS envelope
+    # must not authorize beats that the recording contradicts.
+    write_attacks(audio, np.r_[detected, actual[-32:] + .25 * period], data['duration'])
+    samples, rate = sf.read(audio, dtype='float32')
+    tail = np.arange(len(samples) - round(detected[-1] * rate)) / rate
+    samples[-len(tail):] += .15 * np.sin(2 * np.pi * 220 * tail)
+    sf.write(audio, samples, rate, subtype='FLOAT')
+    assert refine_timing_from_audio(data, audio) is data
+
+
 @pytest.mark.parametrize('case', ['silence', 'different_phase', 'different_tempo'])
 def test_does_not_extend_outro_without_matching_source_clock(tmp_path, case):
     period, offset = .47, .17
