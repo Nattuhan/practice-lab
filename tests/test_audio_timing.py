@@ -211,6 +211,33 @@ def test_repairs_supported_half_time_tracking_before_unrelated_variable_tail(tmp
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.49, 1.13), (.68, .37)])
+@pytest.mark.parametrize('changed_pulse', [False, True])
+@pytest.mark.parametrize('jitter', [0, .045])
+def test_preserves_established_tempo_through_three_against_two_tracking_only_when_audio_supports_it(
+        tmp_path, period, offset, changed_pulse, jitter):
+    actual = offset + np.arange(400) * period
+    # Four detected beats at the original rate enclose twenty at 3:2. The
+    # measured bar heads remain credible on both sides of this long passage.
+    detector_gaps = np.r_[1, 1, np.repeat(1.5, 20), 1, 1]
+    middle = actual[200] + np.r_[0, np.cumsum(detector_gaps)] * period
+    middle[3:-3] += (np.arange(len(middle[3:-3])) % 2 * 2 - 1) * jitter * period
+    detected = np.r_[actual[:200], middle, actual[235:]]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4],
+                duration=float(actual[-1] + period))
+    audio = tmp_path / 'long-rhythmic-alias.wav'
+    write_attacks(audio, detected if changed_pulse else actual, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    if changed_pulse:
+        assert result is data
+    else:
+        assert len(result['beats']) == len(actual)
+        assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+        assert result['bpm'] == data['bpm']
+        assert refine_timing_from_audio(result, audio) == result
+
+
 @pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13)])
 def test_stops_click_when_established_pulse_gives_way_to_unmetered_ending(tmp_path, period, offset):
     regular = offset + np.arange(320) * period

@@ -407,11 +407,9 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
     candidates = []
     for start, end in zip(anchors[:-1], anchors[1:]):
         count = int(round((end - start) / period))
-        # A long gap between trustworthy bar heads may cross a genuine tempo
-        # change or an unmetered passage. Do not merge it with an earlier,
-        # locally verifiable half-time tracking error and reject both together.
-        if count > 32:
-            continue
+        # Keep a long gap separate from an earlier repair, but still test it
+        # against the source in bounded windows. A length cutoff here hid a
+        # sustained 3:2 tracking alias even though both flanks were stable.
         inner = beats[(beats >= start - .001) & (beats <= end + .001)]
         expected = np.linspace(start, end, count + 1)
         if (len(inner) == len(expected)
@@ -520,7 +518,7 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             # weak even though the proposed clock beats the detector's drift.
             # Only use this continuity prior with a near-unanimous track clock,
             # stable phase on BOTH sides, and no decisive contrary audio evidence.
-            if np.mean(consistent) < .95 or not 4 <= count <= 32:
+            if np.mean(consistent) < .9 or not 4 <= count <= 48:
                 continue
             before = beats[(beats < start) & (beats >= start - 8 * period)]
             after = beats[(beats > end) & (beats <= end + 8 * period)]
@@ -542,8 +540,12 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             # still win over the continuity prior. Do not fill unsupported silence.
             ratios = np.diff(original) / fitted
             drift = ratios[abs(ratios - 1) > .12]
+            aliases = np.asarray([2/3, 3/4, 4/3, 3/2])
+            # Measure jitter as a fraction of each rhythmic ratio. A fixed
+            # absolute tolerance rejects the same audible 3:2 pattern when
+            # model times move by only a few milliseconds on reanalysis.
             rhythmic_alias = (len(drift) >= 4 and np.mean(np.min(
-                abs(drift[:, None] - np.asarray([2/3, 3/4, 4/3, 3/2])[None, :]), axis=1) < .07) >= .8)
+                abs(drift[:, None] / aliases[None, :] - 1), axis=1) < .08) >= .8)
             old_fit = float(np.average(old_error, weights=strengths))
             new_fit = float(np.average(new_error, weights=strengths))
             # Around an eighth-note lattice, uninformative onset phase has
@@ -552,8 +554,12 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             # A clearly audible changed pulse fits the old grid much better and
             # is excluded even when its tempo ratio happens to be rational.
             ambiguous_alias = rhythmic_alias and old_fit > .08 and new_fit < .13 and gain > -.04
-            if ((gain > .02 and np.average(new_error < .12, weights=strengths) > .4)
-                    or ambiguous_alias):
+            # The alias itself lowers the global on-grid vote. Permit that
+            # lower vote only when both flanks keep the old clock and source
+            # attacks favor its subdivisions over the drifting detections.
+            if ((np.mean(consistent) >= .95 and count <= 32
+                 and gain > .02 and np.average(new_error < .12, weights=strengths) > .4)
+                    or (ambiguous_alias and gain > .02)):
                 verified.append({"start": float(start), "end": float(end), "intervals": count,
                                  "preserve_end_downbeat": True})
     return verified
