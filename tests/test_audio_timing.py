@@ -190,6 +190,27 @@ def test_restores_long_leading_and_trailing_half_rate_detections(tmp_path, perio
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13)])
+def test_repairs_supported_half_time_tracking_before_unrelated_variable_tail(tmp_path, period, offset):
+    actual = offset + np.arange(480) * period
+    variable = actual[400] + np.cumsum(np.linspace(1.7, 2.3, 16)) * period
+    detected = np.sort(np.unique(np.round(np.r_[actual[:320], actual[320:400:2],
+                                              variable, actual[435:455]], 3)))
+    data = dict(bpm=60 / period, beats=detected.tolist(), downbeats=detected[::4].tolist(),
+                duration=float(detected[-1] + period))
+    audio = tmp_path / 'mixed-ending.wav'
+    write_attacks(audio, np.r_[actual[:400], detected[detected >= actual[400]]], data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    # The later variable passage cannot veto an earlier, independently
+    # supported full-rate clock; neither may a short rest delete its beats.
+    repaired = np.asarray([beat for beat in result['beats']
+                           if actual[320] - .001 <= beat <= actual[392] + .001])
+    assert np.max(abs(repaired - actual[320:393])) < .002
+    assert result['beats'][-1] == data['beats'][-1]
+    assert result['audioTimingRepair'].get('outro') is None
+    assert refine_timing_from_audio(result, audio) == result
+
+
 def test_keeps_genuine_half_time_passages_in_octave_mixed_detection(tmp_path):
     period, offset = .5, .17
     actual = offset + np.arange(480) * period

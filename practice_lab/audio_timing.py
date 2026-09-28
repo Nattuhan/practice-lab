@@ -251,6 +251,10 @@ def _missing_outro(audio: sf.SoundFile, data: dict) -> dict | None:
     if intervals < 4:
         return None
     end = anchor + intervals * period
+    # This path may replace drifting terminal detections. A brief rest inside
+    # a later passage must not make the replacement truncate valid detections.
+    if end < beats[-1] - period:
+        return None
     attacks = [attack for attack in _attacks(audio, anchor, duration, .1, period)
                if attack[0] <= audible_end + period / 2]
     active_rms = rms[tail_mask][:stop]
@@ -402,13 +406,21 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
     candidates = []
     for start, end in zip(anchors[:-1], anchors[1:]):
         count = int(round((end - start) / period))
+        # A long gap between trustworthy bar heads may cross a genuine tempo
+        # change or an unmetered passage. Do not merge it with an earlier,
+        # locally verifiable half-time tracking error and reject both together.
+        if count > 32:
+            continue
         inner = beats[(beats >= start - .001) & (beats <= end + .001)]
         expected = np.linspace(start, end, count + 1)
         if (len(inner) == len(expected)
                 and np.max(abs(inner - expected)) < .12 * period
                 and np.max(abs(np.diff(inner) / period - 1)) < .1):
             continue
-        if candidates and abs(candidates[-1][1] - start) < .001:
+        # Verify bounded groups independently. A later unsupported passage
+        # must not veto many earlier bars whose audio clearly supports repair.
+        if (candidates and abs(candidates[-1][1] - start) < .001
+                and end - candidates[-1][0] <= 48 * period):
             candidates[-1] = (candidates[-1][0], end)
         else:
             candidates.append((start, end))
