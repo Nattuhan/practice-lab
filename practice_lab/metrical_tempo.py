@@ -8,7 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import stft
+from scipy.ndimage import median_filter
+from scipy.signal import resample_poly, stft
 
 from .timing import bars_from_sections
 
@@ -46,6 +47,55 @@ def _alternation(accents: np.ndarray) -> tuple[float, int]:
     return float(scores[parity]), parity
 
 
+def _harmonic_subdivision_ratio(audio: sf.SoundFile, beats: np.ndarray) -> float:
+    """Compare pitched attacks at detected beats and their intervening pulse.
+
+    A half-time drum groove may lack kick/snare alternation at the faster
+    quarter note. Separate sustained harmonic content from drum transients so
+    repeated guitar or keyboard attacks can support that pulse independently.
+    """
+    period = float(np.median(np.diff(beats)))
+    rate = audio.samplerate
+    first = max(0, int((beats[0] - period) * rate))
+    audio.seek(first)
+    samples = audio.read(max(0, int((beats[-1] + period) * rate) - first),
+                         always_2d=True, dtype="float32")
+    if len(samples) < 2048:
+        return 0.0
+    factor = max(1, round(rate / 11025))
+    # Retain a real channel when an opposite-phase stereo mix would cancel.
+    mono = samples.mean(axis=1)
+    if np.mean(mono ** 2) < .25 * np.mean(samples ** 2):
+        mono = samples[:, 0]
+    mono = resample_poly(mono, 1, factor)
+    sample_rate = rate / factor
+    size = min(2048, 2 ** int(np.floor(np.log2(len(mono)))))
+    hop = max(1, round(sample_rate * .0116))
+    frequencies, times, spectrum = stft(mono, fs=sample_rate, nperseg=size,
+                                        noverlap=size - min(hop, size - 1))
+    magnitude = abs(spectrum)
+    harmonic = median_filter(magnitude, size=(1, 31))
+    percussive = median_filter(magnitude, size=(31, 1))
+    harmonic_magnitude = magnitude * harmonic ** 2 / (harmonic ** 2 + percussive ** 2 + 1e-12)
+    band = harmonic_magnitude[(frequencies >= 130) & (frequencies < min(2500, sample_rate / 2))]
+    if not len(band):
+        return 0.0
+    onset = np.r_[0, np.maximum(0, np.diff(band, axis=1)).sum(axis=0)]
+    times += first / rate
+
+    def strengths(positions: np.ndarray) -> np.ndarray:
+        values = []
+        for position in positions:
+            nearby = (times >= position - .025) & (times <= position + .05)
+            values.append(float(onset[nearby].max()) if nearby.any() else 0.0)
+        return np.asarray(values)
+
+    onbeat = strengths(beats[:-1])
+    between = strengths((beats[:-1] + beats[1:]) / 2)
+    baseline = float(np.median(onbeat))
+    return float(np.median(between) / baseline) if baseline > 1e-7 else 0.0
+
+
 def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
     """Promote only when several independent passages support the faster beat."""
     beats = np.asarray(data.get("beats") or [], dtype=float)
@@ -62,6 +112,7 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
         return data
     votes = []
     eligible = 0
+    subdivision_candidates = []
     with sf.SoundFile(audio_path) as audio:
         # Each vote covers four detected bars; process bounded windows instead
         # of retaining a full-song multichannel spectrogram in memory.
@@ -80,6 +131,11 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
                 nearby = (times >= beat - .035 * period) & (times <= beat + .05 * period)
                 accents.append(features[:, nearby].max(axis=1) if nearby.any() else np.zeros(3))
             accents = np.asarray(accents)
+            # Require a pitched bass pulse as well as the harmonic evidence
+            # checked below; dense hats or guitar eighths alone are ambiguous.
+            low_onbeat = float(np.median(accents[::2, 0]))
+            if low_onbeat > 1e-7 and np.median(accents[1::2, 0]) >= .65 * low_onbeat:
+                subdivision_candidates.append((index, window.copy()))
             scale = np.percentile(accents, 90, axis=0)
             if np.min(scale) < 1e-7:
                 continue
@@ -99,20 +155,38 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
     # Real songs can keep the same quarter-note tempo while several breakdowns
     # use a half-time backbeat. A two-thirds majority still requires broad,
     # repeated evidence while allowing those slower-feel passages to coexist.
-    if (len(faster) < 4 or len(faster) < eligible / 3 or len(faster) < (2 / 3) * len(votes)
-            or faster[-1][0] - faster[0][0] < len(beats) / 2):
-        return data
-    parity_counts = np.bincount([vote[2] for vote in faster], minlength=2)
-    kick_parity = int(np.argmax(parity_counts))
-    if parity_counts[kick_parity] < .8 * len(faster):
-        return data
+    alternating_support = (len(faster) >= 4 and len(faster) >= eligible / 3
+                           and len(faster) >= (2 / 3) * len(votes)
+                           and faster[-1][0] - faster[0][0] >= len(beats) / 2)
+    kick_parity = None
+    if alternating_support:
+        parity_counts = np.bincount([vote[2] for vote in faster], minlength=2)
+        kick_parity = int(np.argmax(parity_counts))
+        alternating_support = parity_counts[kick_parity] >= .8 * len(faster)
+        if not alternating_support:
+            kick_parity = None
+    if not alternating_support:
+        # Two-thirds of independent four-bar windows must carry both pitched
+        # and bass attacks on the faster grid, with no dominant slow backbeat.
+        # This is a musical-pulse choice, not a way to fill missing onsets.
+        slow_votes = sum(vote[1] == 1 for vote in votes)
+        if (eligible < 4 or bpm * 2 > 240
+                or len(subdivision_candidates) < (2 / 3) * eligible
+                or slow_votes >= eligible / 2):
+            return data
+        with sf.SoundFile(audio_path) as audio:
+            supported = [index for index, window in subdivision_candidates
+                         if _harmonic_subdivision_ratio(audio, window) >= .75]
+        if (len(supported) < (2 / 3) * eligible
+                or supported[-1] - supported[0] < len(beats) / 2):
+            return data
     expanded = np.sort(np.r_[beats, (beats[:-1] + beats[1:]) / 2])
     first_bar = int(np.argmin(abs(expanded - downbeats[0])))
     # Retain the detector's bar anchor; if it followed the snare, use the
     # preceding bass-beat position supported by the consistent accent phase.
-    if first_bar % 2 != kick_parity:
+    if kick_parity is not None and first_bar % 2 != kick_parity:
         first_bar -= 1
-    first_bar = max(first_bar, kick_parity)
+    first_bar = max(first_bar, kick_parity or 0)
     new_beats = np.round(expanded, 3).tolist()
     # A repaired half-time span can contain an odd number of slow beats:
     # after promotion its remainder is a two-beat bar, not a tempo change.
@@ -137,7 +211,9 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
         if key in data:
             adjusted[key] = bars_from_sections(data[key], new_downbeats)
     adjusted["tempoOctaveResolution"] = {
-        "version": 3, "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
+        "version": 3 if alternating_support else 4,
+        "method": "alternating_backbeat" if alternating_support else "bass_and_harmonic_subdivision",
+        "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
         "eligibleWindows": eligible, "fasterVotes": len(faster),
         "originalVotes": len(votes) - len(faster), "kickParity": kick_parity,
         "preservedBarAnchors": [new_beats[index] for index in sorted(anchors) if index != first_bar],

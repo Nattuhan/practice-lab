@@ -57,6 +57,20 @@ def detected_grid(period, offset, count=96):
                 duration=beats[-1] + period, sections=sections, automaticSections=sections)
 
 
+def add_pitched_pulses(path, period, offset, count, *, bass_on_every_pulse=True):
+    samples, rate = sf.read(path, dtype='float32')
+    t = np.arange(round(.35 * rate)) / rate
+    bass = np.sin(2 * np.pi * 82 * t) * np.exp(-t * 10)
+    chords = (.4 * np.sin(2 * np.pi * 660 * t)
+              + .2 * np.sin(2 * np.pi * 990 * t)) * np.exp(-t * 10)
+    for index in range(count):
+        first = round((offset + index * period) * rate)
+        last = min(len(samples), first + len(t))
+        pulse = chords + (bass if bass_on_every_pulse or index % 2 == 0 else 0)
+        samples[first:last] += pulse[:last - first]
+    sf.write(path, samples, rate, subtype='FLOAT')
+
+
 @pytest.mark.parametrize('period,offset', [(.55, .13), (.375, 1.27), (.29, 2.13)])
 @pytest.mark.parametrize('inverted', [False, True])
 def test_recognizes_half_time_from_alternating_drum_accents(tmp_path, period, offset, inverted):
@@ -90,6 +104,29 @@ def test_keeps_uncertain_tempo_when_passages_disagree(tmp_path):
     audio = tmp_path / 'mixed-feel.wav'
     write_drums(audio, .32, .17, count=192, change_at=64)
     original = detected_grid(.64, .17)
+    assert resolve_tempo_octave(original, audio) is original
+
+
+@pytest.mark.parametrize('period,offset,slow_windows', [
+    (.375, .17, {2, 4, 6, 8}), (.32, 1.13, {2, 6}),
+])
+def test_promotes_pitched_fast_pulse_despite_half_time_drums(tmp_path, period, offset, slow_windows):
+    audio = tmp_path / 'pitched-fast-pulse.wav'
+    write_drums(audio, period, offset, count=320, slow_windows=slow_windows,
+                ambiguous_windows=set(range(10)) - slow_windows)
+    add_pitched_pulses(audio, period, offset, 320)
+    original = detected_grid(period * 2, offset, count=160)
+    result = resolve_tempo_octave(original, audio)
+    assert result['bpm'] == round(60 / period, 1)
+    assert result['tempoOctaveResolution']['method'] == 'bass_and_harmonic_subdivision'
+    assert len(result['beats']) == 319
+
+
+def test_keeps_slow_pulse_with_guitar_eighths_and_slow_bass(tmp_path):
+    audio = tmp_path / 'slow-pulse-with-guitar-eighths.wav'
+    write_drums(audio, .75, .29, count=160)
+    add_pitched_pulses(audio, .375, .29, 320, bass_on_every_pulse=False)
+    original = detected_grid(.75, .29, count=160)
     assert resolve_tempo_octave(original, audio) is original
 
 
