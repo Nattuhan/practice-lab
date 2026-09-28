@@ -393,7 +393,10 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
         if np.count_nonzero(consistent) < 32:
             return []
         period, phase = np.polyfit(indexes[consistent], beats[consistent], 1)
-    if np.mean(consistent) < .8:
+    # A long bad passage can lower this global vote even when the clock was
+    # measured over hundreds of uninterrupted beats. Let local audio checks
+    # decide its bounded repairs instead of discarding them all here.
+    if np.mean(consistent) < .7:
         return []
     # Verify the meter from adjacent measured bar heads. An absolute phase
     # vote would reject a missing-beat failure halfway through a track because
@@ -423,6 +426,23 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             candidates[-1] = (candidates[-1][0], end)
         else:
             candidates.append((start, end))
+    # Downbeat labels can themselves jump to a half-beat phase during a fill.
+    # Also bracket failures using runs of *beats* that stay on the long clock;
+    # otherwise a bad downbeat phase hides a source-verifiable gap entirely.
+    beat_indexes = np.rint((beats - phase) / period)
+    beat_on_grid = abs(beats - (phase + beat_indexes * period)) < .08 * period
+    trusted_links = (beat_on_grid[:-1] & beat_on_grid[1:]
+                     & (abs(gaps / period - 1) < .1))
+    changes = np.diff(np.r_[False, trusted_links, False].astype(int))
+    stable_runs = [(int(left), int(right)) for left, right in zip(
+        np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)) if right - left >= 6]
+    for (_, before_end), (after_start, _) in zip(stable_runs[:-1], stable_runs[1:]):
+        start, end = float(beats[before_end]), float(beats[after_start])
+        count = int(round((end - start) / period))
+        if not 4 <= count <= 48 or any(start < old_end and end > old_start
+                                        for old_start, old_end in candidates):
+            continue
+        candidates.append((start, end))
     verified = []
     for start, end in candidates:
         count = int(round((end - start) / period))
@@ -518,7 +538,7 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             # weak even though the proposed clock beats the detector's drift.
             # Only use this continuity prior with a near-unanimous track clock,
             # stable phase on BOTH sides, and no decisive contrary audio evidence.
-            if np.mean(consistent) < .9 or not 4 <= count <= 48:
+            if not 4 <= count <= 48:
                 continue
             before = beats[(beats < start) & (beats >= start - 8 * period)]
             after = beats[(beats > end) & (beats <= end + 8 * period)]
@@ -557,9 +577,42 @@ def _dominant_grid_spans(audio: sf.SoundFile, data: dict) -> list[dict]:
             # The alias itself lowers the global on-grid vote. Permit that
             # lower vote only when both flanks keep the old clock and source
             # attacks favor its subdivisions over the drifting detections.
+            phase_supported_alias = False
+            if rhythmic_alias:
+                # Dense eighth-note attacks can fit both the detector's
+                # subdivisions and the established clock. In that case,
+                # compare bounded windows with the *measured* clock instead
+                # of requiring an improvement over an already dense grid.
+                phase_supported_alias = True
+                window_starts = np.arange(start, max(start, end - 16 * fitted),
+                                          16 * fitted).tolist()
+                window_starts.append(max(start, end - 16 * fitted))
+                for window_start in window_starts:
+                    window_end = min(end, window_start + 16 * fitted)
+                    window_attacks = _attacks(audio, window_start, window_end, .1, fitted)
+                    if len(window_attacks) < 6:
+                        phase_supported_alias = False
+                        break
+                    window_times, window_strengths = np.asarray(window_attacks).T
+                    window_positions = (window_times - start) / fitted
+                    eighth_distance = abs(window_positions * 2 - np.rint(window_positions * 2)) / 2
+                    quarter_distance = abs(window_positions - np.rint(window_positions))
+                    detected_window = beats[(beats >= window_start - fitted)
+                                            & (beats <= window_end + fitted)]
+                    detected_distance = np.min(
+                        abs(window_times[:, None] - detected_window[None, :]), axis=1) / fitted
+                    # A real faster pulse can also land on the old eighth
+                    # lattice. If its detected beats already explain most
+                    # salient attacks, retain that tempo change.
+                    if (np.average(eighth_distance < .12, weights=window_strengths) < .8
+                            or np.average(quarter_distance < .12, weights=window_strengths) < .2
+                            or np.average(detected_distance < .12, weights=window_strengths) >= .7):
+                        phase_supported_alias = False
+                        break
             if ((np.mean(consistent) >= .95 and count <= 32
                  and gain > .02 and np.average(new_error < .12, weights=strengths) > .4)
-                    or (ambiguous_alias and gain > .02)):
+                    or (np.mean(consistent) >= .9 and ambiguous_alias and gain > .02)
+                    or phase_supported_alias):
                 verified.append({"start": float(start), "end": float(end), "intervals": count,
                                  "preserve_end_downbeat": True})
     return verified

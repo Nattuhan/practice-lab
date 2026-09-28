@@ -238,6 +238,32 @@ def test_preserves_established_tempo_through_three_against_two_tracking_only_whe
         assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.32, .17), (.48, 1.07), (.67, .39)])
+@pytest.mark.parametrize('changed_pulse', [False, True])
+def test_distinguishes_dense_eighth_note_pulse_from_three_quarter_rate_tracking(
+        tmp_path, period, offset, changed_pulse):
+    actual = offset + np.arange(420) * period
+    # The tracker first drifts by half a beat, then follows three events for
+    # every four established beats. Both measured flanks remain at one tempo.
+    detector_gaps = np.r_[np.repeat(1.125, 4), np.ones(12), np.repeat(.78125, 16)]
+    middle = actual[200] + np.r_[0, np.cumsum(detector_gaps)] * period
+    detected = np.r_[actual[:200], middle, actual[230:]]
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4],
+                duration=float(actual[-1] + period))
+    audio = tmp_path / 'dense-eighths-or-real-change.wav'
+    attacks = detected if changed_pulse else offset + np.arange(840) * period / 2
+    write_attacks(audio, attacks, data['duration'])
+    result = refine_timing_from_audio(data, audio)
+    if changed_pulse:
+        assert result is data
+    else:
+        assert len(result['beats']) == len(actual)
+        assert np.max(abs(np.asarray(result['beats']) - actual)) < .002
+        assert result['bpm'] == data['bpm']
+        assert refine_timing_from_audio(result, audio) == result
+
+
 @pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13)])
 def test_stops_click_when_established_pulse_gives_way_to_unmetered_ending(tmp_path, period, offset):
     regular = offset + np.arange(320) * period
