@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,10 @@ class VerifyTimingResultTests(unittest.TestCase):
             marker.touch()
             beats = [index * .375 for index in range(200)]
             result.write_text(json.dumps({"bpm": 160, "beats": beats}))
+            # Windows can assign equal mtimes to consecutive writes. Make the
+            # fixture's ordering explicit instead of depending on clock precision.
+            result_time = result.stat().st_mtime_ns
+            os.utime(marker, ns=(result_time - 2_000_000_000, result_time - 2_000_000_000))
             actual = verify_result(result, bpm=160, window=(10, 60),
                                    last_beat_between=(74, 75), fresh_after=marker)
             self.assertEqual(actual["bpm"], 160)
@@ -39,6 +44,8 @@ class VerifyTimingResultTests(unittest.TestCase):
             beats = [index * .375 for index in range(200)]
             result.write_text(json.dumps({"bpm": 80, "beats": beats}))
             marker.touch()
+            result_time = result.stat().st_mtime_ns
+            os.utime(marker, ns=(result_time + 2_000_000_000, result_time + 2_000_000_000))
             with self.assertRaisesRegex(AssertionError, "not regenerated"):
                 verify_result(result, bpm=160, window=(10, 60),
                               last_beat_between=(74, 75), fresh_after=marker)
