@@ -236,17 +236,15 @@ jobs:
           unzip -q "desktop/dist/installer/PracticeLab-Score-macOS-arm64-$version.zip" -d "$feature_dir"
           PRACTICE_LAB_HOME="$feature_home" PRACTICE_LAB_VERSION="$version" \
             desktop/dist/backend/practice-lab-backend/practice-lab-backend --check-runtime score
-      - name: Build tagged ad-hoc signed DMG
-        if: startsWith(github.ref, 'refs/tags/')
-        run: npm run desktop:dist:mac -- --publish=never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Tagged releases validate the staged notarized bundle below. Building
+      # another ad-hoc app here does not validate the actual distributed app.
       - name: Build ad-hoc signed test DMG
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: npm run desktop:dist:mac -- --publish=never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Verify packaged Mac backend startup
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
           app="desktop/dist/installer/mac-arm64/PracticeLab.app"
           backend="$app/Contents/Resources/backend/practice-lab-backend"
@@ -284,11 +282,13 @@ jobs:
           cat "$log_file" >&2
           exit 1
       - name: Verify Electron provides the JavaScript runtime
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
           app="desktop/dist/installer/mac-arm64/PracticeLab.app"
           node_version="$(ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/PracticeLab" -p 'process.versions.node')"
           test -n "$node_version"
       - name: Verify the Mac application bundle integrity
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: |
           dmg="$(find desktop/dist/installer -maxdepth 1 -name 'PracticeLab-*-arm64.dmg' -print -quit)"
           test -n "$dmg"
@@ -378,4 +378,4 @@ jobs:
             release-artifacts/PracticeLab-Score-*.zip \
             release-artifacts/PracticeLab-SHA256SUMS.txt \
             --clobber
-          gh release edit "$GITHUB_REF_NAME" --title "PracticeLab $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --draft=false --latest
+          gh release edit "$GITHUB_REF_NAME" --target "$GITHUB_SHA" --title "PracticeLab $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --draft=false --latest

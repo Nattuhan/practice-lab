@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       from_staged_dmg:
-        description: Recover update ZIP from the verified DMG already on the draft release
+        description: Build update ZIP from the verified DMG already on the draft release
         type: boolean
         default: false
 
@@ -62,8 +62,8 @@ jobs:
           hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "release/PracticeLab-$VERSION-arm64.dmg"
           trap 'hdiutil detach "$mount_dir"' EXIT
           ditto "$mount_dir/PracticeLab.app" source/PracticeLab.app
-          # Repackage the already signed bundle on GitHub when large local uploads
-          # fail. No rebuild or resigning may change the approved application.
+          # Build the update ZIP beside the release to avoid uploading the same
+          # signed app twice from the developer's connection. Do not rebuild or resign.
           ditto -c -k --sequesterRsrc --keepParent source/PracticeLab.app "release/PracticeLab-$VERSION-arm64.zip"
       - name: Verify and package the signed app
         env:

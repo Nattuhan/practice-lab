@@ -68,6 +68,8 @@ CIはZIPの署名・公証と更新情報のハッシュ・サイズも検証し
 
 ## GitHub側で配布物を準備する場合
 
-ローカルでMornNotaryの署名済みZIPを受け取る標準手順を使えない場合に限り、`stage-notarized-mac.yml`を使用できます。成功したMornNotary runのArtifactに対する短時間だけ有効なダウンロードURLを、`MORNNOTARY_ARTIFACT_URL`という一時的なActions Secretに保存し、署名済みバージョンを指定して実行します。実行が終わったら一時Secretを削除します。
+標準は、ローカルで署名済みアプリから作った検証済みDMGとSHA-256台帳をdraftへ送信し、`stage-notarized-mac.yml`を`version=X.Y.Z`・`from_staged_dmg=true`で実行して更新用ZIPをGitHub上で作る方法です。署名済みアプリをローカルから二重にアップロードせずに済みます。stageの成功と4点の配布物を確認してからタグをpushします。
+
+ローカルでMornNotaryの署名済みZIPを受け取れない場合は、同ワークフローの`from_staged_dmg=false`経路を使えます。成功したMornNotary runのArtifactに対する短時間だけ有効なダウンロードURLを、`MORNNOTARY_ARTIFACT_URL`という一時的なActions Secretに保存し、署名済みバージョンを指定して実行します。実行が終わったら一時Secretを削除します。
 
 この処理は署名・公証・起動を再検証し、DMGと更新情報を作って既存draftへ添付するだけです。一般公開は通常のタグ付きリリースワークフローで行います。
