@@ -270,6 +270,26 @@ def _missing_outro(audio: sf.SoundFile, data: dict) -> dict | None:
         # genuine drum hits in a continuously loud mix remain salient.
         salient = float(np.median(active_rms[tail_active[:stop]])) * .1
         attacks = [attack for attack in attacks if attack[1] >= salient]
+    if len(tail_bad) and len(attacks) >= 3:
+        # A few real final beats can change tempo before a long held fade.
+        # Their evidence must not disappear just because the fade makes the
+        # required onset count larger. Keep source-supported detections unless
+        # the established clock improves their fit, using the same margin as
+        # the dense-onset path below. Weak envelope peaks cannot veto a repair.
+        observed = np.asarray([attack for attack in attacks
+                               if attack[0] <= beats[-1] + .12 * period])
+        if len(observed) >= 3:
+            times, strengths = observed.T
+            original = beats[anchor_index:]
+            nearest = np.argmin(abs(times[:, None] - original[None, :]), axis=1)
+            old_distance = abs(times - original[nearest]) / period
+            positions = (times - anchor) / period
+            quarter_distance = abs(positions - np.rint(positions))
+            supported = old_distance < .12
+            if (len(np.unique(nearest[supported])) >= 3
+                    and np.average(supported, weights=strengths) >= .7
+                    and np.average(old_distance - quarter_distance, weights=strengths) < .08):
+                return None
     # Continuous, compressed music can have smooth RMS too. Audible attacks
     # take precedence over the held-note heuristic: otherwise a conflicting
     # rhythm is silently extrapolated as a constant click all the way to EOF.

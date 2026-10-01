@@ -190,6 +190,35 @@ def test_restores_long_leading_and_trailing_half_rate_detections(tmp_path, perio
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+@pytest.mark.parametrize('ratio', [.8, 1.25])
+@pytest.mark.parametrize('genuine_change', [True, False])
+def test_sparse_final_tempo_evidence_precedes_long_held_fade(tmp_path, period, offset, ratio, genuine_change):
+    stable = offset + np.arange(320) * period
+    detected = np.r_[stable, stable[-1] + np.arange(1, 5) * ratio * period]
+    source = detected if genuine_change else offset + np.arange(324) * period
+    duration = max(source[-1], detected[-1]) + 20 * period
+    audio = tmp_path / 'sparse-final-beats.wav'
+    write_attacks(audio, source, duration)
+    samples, rate = sf.read(audio, dtype='float32')
+    first = round(stable[-1] * rate)
+    time = np.arange(len(samples) - first) / rate
+    fade = np.maximum(0, 1 - time / (duration - stable[-1]))
+    samples[first:] += .2 * np.sin(2 * np.pi * 220 * time) * fade
+    sf.write(audio, samples, rate, subtype='FLOAT')
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4], duration=duration)
+    result = refine_timing_from_audio(data, audio)
+    if genuine_change:
+        assert result['beats'] == beats
+        assert result.get('audioTimingRepair', {}).get('outro') is None
+    else:
+        # The same sparse/held envelope must still repair actual detector
+        # drift when the source supports the established constant clock.
+        assert len(result['beats']) > len(beats) + 10
+        assert np.max(abs(np.diff(result['beats']) - period)) < .002
+
+
 @pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13)])
 def test_repairs_supported_half_time_tracking_before_unrelated_variable_tail(tmp_path, period, offset):
     actual = offset + np.arange(480) * period
