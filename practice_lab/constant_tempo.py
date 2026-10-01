@@ -4,9 +4,11 @@ from math import ceil, floor
 import numpy as np
 
 from .timing import bars_from_sections
+from .constant_meter import decode_bar_heads
 
 
-def enforce_constant_tempo(data: dict) -> dict:
+def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None = None,
+                           activations: dict | None = None, activation_fps: float = 100) -> dict:
     beats = np.asarray(data.get("beats") or [], dtype=float)
     bpm = float(data.get("bpm") or 0)
     if bpm <= 0 or len(beats) < 4 or np.any(~np.isfinite(beats)) or np.any(np.diff(beats) <= 0):
@@ -40,16 +42,32 @@ def enforce_constant_tempo(data: dict) -> dict:
     last = min(floor((duration - phase + .0000005) / period), round((beats[-1] - phase) / period))
     grid = np.round(phase + np.arange(first, last + 1) * period, 6)
 
-    # Bar heads follow the SAME clock. Snap measured heads individually rather
-    # than regenerating every fourth beat, so a 3/4 bar remains three beats.
-    head_indexes = np.unique(np.rint((np.asarray(data.get("downbeats") or []) - phase) / period).astype(int))
-    head_indexes = head_indexes[(head_indexes >= first) & (head_indexes <= last)]
-    heads = np.round(phase + head_indexes * period, 6).tolist()
+    # Keep source-backed timing repairs: they can recover entire missing bars,
+    # not just beats. But a four-beat subdivision of a five-pulse span must not
+    # manufacture a one-pulse final bar. Discard only such INTERIOR added heads;
+    # measured short bars, recovered pickups, and resolved octaves survive.
+    measured_heads = sorted(set(data.get("downbeats") or []))
+    discarded = 0
+    if detected_downbeats and not data.get("tempoOctaveResolution"):
+        source_positions = set(np.rint((np.asarray(detected_downbeats) - phase) / period).astype(int))
+        positions = np.rint((np.asarray(measured_heads) - phase) / period).astype(int)
+        eligible = []
+        for index, (head, position) in enumerate(zip(measured_heads, positions)):
+            interior = 0 < index < len(positions) - 1
+            added = position not in source_positions
+            tiny_bar = interior and min(position - positions[index - 1], positions[index + 1] - position) <= 1
+            if interior and added and tiny_bar and min(detected_downbeats) < head < max(detected_downbeats):
+                discarded += 1
+            else:
+                eligible.append(head)
+        measured_heads = eligible
+    heads, meter_diagnostics = decode_bar_heads(grid, measured_heads, activations, activation_fps)
+    meter_diagnostics["discardedRepairHeads"] = discarded
     adjusted = {**data, "bpm": round(60 / period, 1), "beats": grid.tolist(),
                 "downbeats": heads, "total_bars": len(heads), "tempoMode": "constant",
-                "constantTempo": {"version": 1, "period": float(period), "phase": float(phase),
+                "constantTempo": {"version": 2, "period": float(period), "phase": float(phase),
                                   "supportedBeats": int(np.count_nonzero(consistent)),
-                                  "detectedBeats": len(beats)}}
+                                  "detectedBeats": len(beats)}, "constantMeter": meter_diagnostics}
     for key in ("sections", "automaticSections"):
         if key in data:
             adjusted[key] = bars_from_sections(data[key], heads)

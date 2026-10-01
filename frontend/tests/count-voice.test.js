@@ -11,6 +11,13 @@ test('4拍・2拍・4拍で小節頭から読み上げ直す', () => {
   assert.deepEqual(counts.slice(3, 9), [4,1,2,1,2,3]);
 });
 
+test('一定BPMの4拍・3拍・4拍を、途中からのループでも拍番号どおりに読む', () => {
+  const beats = Array.from({ length: 15 }, (_, i) => .23 + i * .49177);
+  const counts = beatCounts(beats, [beats[0], beats[4], beats[7], beats[11]]);
+  assert.deepEqual(counts, [1,2,3,4,1,2,3,1,2,3,4,1,2,3,4]);
+  assert.deepEqual(counts.slice(5, 11), [2,3,1,2,3,4]);
+});
+
 test('最初の小節頭より前のボーカルピックアップも確定した拍子で逆算する', () => {
   const beats = Array.from({ length: 14 }, (_, i) => .11 + i * .33);
   assert.deepEqual(
