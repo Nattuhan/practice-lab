@@ -1,5 +1,8 @@
 import unittest
 
+import numpy as np
+import pytest
+
 from practice_lab.timing import normalize_section_bar_ranges, normalize_tempo_grid
 
 
@@ -129,6 +132,25 @@ class TempoGridNormalizationTests(unittest.TestCase):
         }
 
         self.assertIs(normalize_tempo_grid(data), data)
+
+
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+@pytest.mark.parametrize('terminal_jitter', [-.08, -.02, .02, .08, -.3])
+def test_sparse_intro_repair_preserves_a_measured_terminal_pulse_with_small_jitter(period, offset, terminal_jitter):
+    source = offset + np.arange(129) * period
+    detected = np.r_[source[:16:2], source[16:]]
+    detected[-1] += terminal_jitter * period
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, beats=beats, downbeats=beats[::4], sections=[])
+    result = normalize_tempo_grid(data)
+    assert result is not data
+    if abs(terminal_jitter) < .12:
+        assert abs(result['beats'][-1] - source[-1]) < .008 * period
+        # This source ends at a bar head. Losing its last beat must not also
+        # silently lose the last bar when the intro is filled.
+        assert abs(result['downbeats'][-1] - source[-1]) < .008 * period
+    else:
+        assert result['beats'][-1] <= beats[-1]
 
 
 if __name__ == "__main__":

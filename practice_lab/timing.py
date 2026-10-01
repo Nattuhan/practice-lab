@@ -112,7 +112,16 @@ def _constant_grid(intercept: float, period: float, end_time: float) -> list[flo
     phase = intercept - floor(intercept / period) * period
     if phase >= period - 0.0005:
         phase = 0.0
-    count = floor((end_time - phase) / period) + 1
+    position = (end_time - phase) / period
+    last = floor(position)
+    nearest = round(position)
+    # The boundary is a measured beat, not the end of the audio. Small early
+    # detector jitter must not delete its entire pulse (and possibly a final
+    # bar head). Keep a nearby terminal pulse; a genuinely off-grid endpoint
+    # still uses the conservative boundary rather than extending the clock.
+    if abs(position - nearest) <= .12:
+        last = nearest
+    count = last + 1
     return [round(phase + period * index, 3) for index in range(max(0, count))]
 
 
