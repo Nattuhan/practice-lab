@@ -3227,6 +3227,7 @@ var SELECTORS = {
   audioFileInput: document.getElementById("audio-file-input"),
   audioDropHint: document.getElementById("audio-drop-hint"),
   analysisTimeMode: document.getElementById("analysis-time-mode"),
+  analysisTempoMode: document.getElementById("analysis-tempo-mode"),
   analysisTimeRange: document.getElementById("analysis-time-range"),
   analysisStartTime: document.getElementById("analysis-start-time"),
   analysisEndTime: document.getElementById("analysis-end-time"),
@@ -4043,9 +4044,15 @@ var updateReanalysisInputs = () => {
   SELECTORS.analysisDialogDescription.textContent = saved ? "\u4FDD\u5B58\u6E08\u307F\u306E\u97F3\u58F0\u3067BPM\u30FB\u62CD\u30FB\u66F2\u69CB\u6210\u3092\u66F4\u65B0\u3057\u307E\u3059\u3002\u624B\u52D5\u3067\u7DE8\u96C6\u3057\u305FBPM\u3084\u66F2\u69CB\u6210\u3082\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059\u3002\u52D5\u753B\u30FB\u30D1\u30FC\u30C8\u5225\u97F3\u6E90\u306F\u4F5C\u308A\u76F4\u3057\u307E\u305B\u3093\u3002" : analysisForce ? "\u5143\u52D5\u753B\u3092\u518D\u53D6\u5F97\u3057\u3001\u6307\u5B9A\u3057\u305F\u7BC4\u56F2\u3092\u89E3\u6790\u3057\u307E\u3059\u3002" : "YouTube\u306EURL\u3001\u307E\u305F\u306F\u624B\u5143\u306E\u97F3\u58F0\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u89E3\u6790\u3092\u59CB\u3081\u307E\u3059\u3002";
 };
 document.getElementById("reanalyze-mode").addEventListener("change", updateReanalysisInputs);
+var updateAnalysisTempoHint = () => {
+  document.getElementById("analysis-tempo-hint").textContent = SELECTORS.analysisTempoMode.value === "variable" ? "\u66F2\u306E\u9014\u4E2D\u3067BPM\u304C\u5909\u308F\u308B\u66F2\u3084\u3001\u30C6\u30F3\u30DD\u304C\u63FA\u308C\u308B\u6F14\u594F\u306B\u4F7F\u3044\u307E\u3059\u3002" : "\u66F2\u5168\u4F53\u3067BPM\u304C\u4E00\u5B9A\u306E\u66F2\u306B\u4F7F\u3044\u307E\u3059\u30023/4\u306A\u3069\u306E\u62CD\u5B50\u5909\u66F4\u306F\u30C6\u30F3\u30DD\u3092\u5909\u3048\u305A\u306B\u6271\u3044\u307E\u3059\u3002";
+};
+SELECTORS.analysisTempoMode.addEventListener("change", updateAnalysisTempoHint);
 var openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
   if (!hasServer || !SELECTORS.analysisDialog) return;
   analysisForce = reanalyze;
+  SELECTORS.analysisTempoMode.value = reanalyze && currentData?.tempoMode === "variable" ? "variable" : "constant";
+  updateAnalysisTempoHint();
   document.getElementById("reanalyze-options").hidden = !reanalyze;
   document.getElementById("reanalyze-mode").value = "saved";
   document.querySelector('#reanalyze-mode option[value="download"]').disabled = currentData?.sourceType === "local_audio";
@@ -6585,7 +6592,6 @@ var setupControls = () => {
   };
   SELECTORS.btnFsMetro.onclick = SELECTORS.btnMetro.onclick;
   SELECTORS.btnReanalyze.onclick = () => openAnalysisDialog({ reanalyze: true });
-  SELECTORS.btnNewUrl.onclick = () => openAnalysisDialog();
   SELECTORS.btnAutoNext.onclick = () => {
     autoNextOn = !autoNextOn;
     saveCfg(autoNextKey, autoNextOn);
@@ -6724,7 +6730,7 @@ var showResult = (data, id, { autoplay = false } = {}) => {
   playbackRate = clampPlaybackRate(cfg().playbackRate ?? 1);
   SELECTORS.structureWorkspace.hidden = false;
   SELECTORS.playerCard.hidden = false;
-  SELECTORS.inputCard.hidden = true;
+  SELECTORS.inputCard.hidden = !SELECTORS.analysisDialog.open;
   SELECTORS.topbarSong.hidden = false;
   SELECTORS.topbarActions.hidden = false;
   SELECTORS.topbarSong.textContent = data.title || "";
@@ -7592,7 +7598,7 @@ var doAnalyze = async (url, force = false, rangeOverride = null) => {
     const response = await fetch(saved ? `/reanalyze/${encodeURIComponent(currentId)}` : "/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: saved ? void 0 : JSON.stringify({ url, force, ...range })
+      body: JSON.stringify(saved ? { tempoMode: SELECTORS.analysisTempoMode.value } : { url, force, ...range, tempoMode: SELECTORS.analysisTempoMode.value })
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
@@ -7644,6 +7650,7 @@ var doAnalyzeFile = async (file) => {
   try {
     const body = new FormData();
     body.append("file", file, file.name);
+    body.append("tempoMode", SELECTORS.analysisTempoMode.value);
     const response = await fetch("/analyze-file", { method: "POST", body });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `\u30B5\u30FC\u30D0\u30FC\u30A8\u30E9\u30FC (${response.status})`);
@@ -7916,6 +7923,7 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("click", hideContextMenu);
 SELECTORS.contextMenu?.addEventListener("click", (event) => event.stopPropagation());
+SELECTORS.btnNewUrl.addEventListener("click", () => openAnalysisDialog());
 SELECTORS.analyzeBtn.addEventListener("click", () => doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce));
 SELECTORS.analysisDialogClose?.addEventListener("click", closeAnalysisDialog);
 SELECTORS.analysisTimeMode.addEventListener("change", () => {

@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_ROOT))
 # in the installed runtime. Otherwise app updates silently run old beat repair.
 import practice_lab
 practice_lab.__path__.insert(0, str(REPO_ROOT / "practice_lab"))
-for module_name in ("compute_device", "jpop_sections", "timing", "audio_timing", "metrical_tempo"):
+for module_name in ("compute_device", "jpop_sections", "timing", "audio_timing", "metrical_tempo", "constant_tempo"):
     sys.modules.pop(f"practice_lab.{module_name}", None)
 
 import numpy as np
@@ -40,6 +40,7 @@ from practice_lab.jpop_sections import refine_jpop_section_labels
 from practice_lab.timing import normalize_tempo_grid
 from practice_lab.audio_timing import refine_timing_from_audio
 from practice_lab.metrical_tempo import resolve_tempo_octave
+from practice_lab.constant_tempo import enforce_constant_tempo
 
 
 def fmt(seconds: float) -> str:
@@ -50,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PracticeLab music structure analyzer")
     parser.add_argument("audio_path")
     parser.add_argument("--device", choices=("auto", "cuda", "mps", "cpu"), default="auto")
+    parser.add_argument("--tempo-mode", choices=("constant", "variable"), default="constant")
     args = parser.parse_args(argv)
 
     mp3_path = Path(args.audio_path).resolve()
@@ -125,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     data = normalize_tempo_grid(data)
     data = refine_timing_from_audio(data, mp3_path)
     data = resolve_tempo_octave(data, mp3_path)
+    data["tempoMode"] = args.tempo_mode
+    if args.tempo_mode == "constant":
+        data = enforce_constant_tempo(data)
     print(json.dumps(data, ensure_ascii=False))
     return 0
 

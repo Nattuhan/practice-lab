@@ -31,10 +31,12 @@ class LocalAudioUploadApiTests(unittest.TestCase):
                 response = client.post(
                     "/analyze-file",
                     files={"file": ("demo song.m4a", b"audio-content", "audio/mp4")},
+                    data={'tempoMode': 'variable'},
                 )
 
             self.assertEqual(response.status_code, 200)
             self.assertTrue(response.json()["jobId"].startswith("local-"))
+            self.assertEqual(captured['metadata']['spec']['tempoMode'], 'variable')
             source = next((work_dir / "uploads").glob("*.m4a"))
             self.assertEqual(source.read_bytes(), b"audio-content")
             captured["cleanup"]()

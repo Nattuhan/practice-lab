@@ -3,7 +3,15 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-class AnalyzeRequest(BaseModel):
+class TempoAnalysisRequest(BaseModel):
+    tempoMode: Literal["constant", "variable"] = "constant"
+
+
+class ReanalyzeRequest(BaseModel):
+    tempoMode: Literal["constant", "variable"] | None = None
+
+
+class AnalyzeRequest(TempoAnalysisRequest):
     url: str
     force: bool = False
     startSec: float | None = Field(default=None, ge=0)
@@ -160,6 +168,7 @@ class AnalyzeResponse(BaseModel):
     analysisEndSec: float | None = None
     assets: SessionAssets | None = None
     bpm: float
+    tempoMode: Literal["constant", "variable"] | None = None
     total_bars: int
     duration: float
     sections: list[SectionEntry]

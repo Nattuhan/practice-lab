@@ -3350,6 +3350,15 @@ input[type="range"] { accent-color: var(--orange); }
 }
 .analysis-dialog .input-card-heading { align-items: flex-start; }
 .analysis-dialog .input-card-heading-copy { min-width: 0; flex: 1; }
+.analysis-tempo-settings {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+  color: var(--gray-6);
+  font-size: var(--type-ui);
+}
+.analysis-tempo-settings select { width: 100%; min-height: var(--control-md); }
+.analysis-tempo-settings small { color: var(--gray-5); line-height: 1.5; }
 .analysis-dialog-close {
   width: 34px;
   height: 34px;

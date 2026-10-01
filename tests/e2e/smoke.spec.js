@@ -632,6 +632,7 @@ test("新しい解析と再解析をプレイヤーを押し下げないモー�
   const result = {
     ...session,
     sourceVideoId: "D8AZyKMBVVY",
+    tempoMode: "variable",
     total_bars: 1,
     duration: 4,
     sections: [{ label: "verse", start_bar: 1, end_bar: 1, bar_count: 1, start_time: 0, end_time: 4, start_time_str: "00:00" }],
@@ -650,6 +651,8 @@ test("新しい解析と再解析をプレイヤーを押し下げないモー�
   const dialog = page.getByRole("dialog", { name: "練習したい曲を追加" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "解析画面を閉じる" })).toBeVisible();
+  await expect(page.locator("#analysis-tempo-mode")).toHaveValue("constant");
+  await expect(page.locator("#analysis-tempo-hint")).toContainText("3/4");
   const playerWhileOpen = await page.locator("#player-card").boundingBox();
   expect(playerWhileOpen.y).toBe(playerBefore.y);
   await dialog.getByRole("button", { name: "解析画面を閉じる" }).click();
@@ -659,19 +662,68 @@ test("新しい解析と再解析をプレイヤーを押し下げないモー�
   await expect(page.locator("#url-input")).toHaveValue("https://www.youtube.com/watch?v=D8AZyKMBVVY");
   await expect(page.locator("#analyze-btn")).toHaveText("再解析を開始");
   await expect(page.locator("#reanalyze-mode")).toHaveValue("saved");
+  await expect(page.locator("#analysis-tempo-mode")).toHaveValue("variable");
+  await expect(page.locator("#analysis-tempo-hint")).toContainText("テンポが揺れる演奏");
   await expect(page.locator("#url-input")).toBeHidden();
   await expect(page.locator(".analysis-time-settings")).toBeHidden();
   await page.locator("#reanalyze-mode").selectOption("download");
   await expect(page.locator("#url-input")).toBeVisible();
   await page.locator("#reanalyze-mode").selectOption("saved");
-  let savedRequest = false;
+  await page.locator("#analysis-tempo-mode").selectOption("constant");
+  let savedRequest;
   await page.route("**/reanalyze/analysis-modal", route => {
-    savedRequest = true;
+    savedRequest = route.request().postDataJSON();
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jobId: "analysis-modal", stage: "queued" }) });
   });
   await page.locator("#analyze-btn").click();
   await expect(page.locator("#analysis-dialog")).not.toBeVisible();
-  expect(savedRequest).toBe(true);
+  expect(savedRequest).toEqual({ tempoMode: "constant" });
+});
+
+test("新規解析は一定テンポが標準で、音声ファイルにも選んだ設定を送る", async ({ page }) => {
+  // The first analysis must be configurable before a song initializes player controls.
+  await page.route("**/results/manifest.json", route => route.fulfill({ json: [] }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "新しい解析", exact: true }).click();
+  await expect(page.locator("#analysis-tempo-mode")).toHaveValue("constant");
+  let urlRequest;
+  await page.route("**/analyze", route => {
+    urlRequest = route.request().postDataJSON();
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jobId: "tempo-url", stage: "queued" }) });
+  });
+  await page.locator("#url-input").fill("https://www.youtube.com/watch?v=D8AZyKMBVVY");
+  await page.locator("#analyze-btn").click();
+  await expect(page.locator("#analysis-dialog")).not.toBeVisible();
+  expect(urlRequest.tempoMode).toBe("constant");
+
+  await page.getByRole("button", { name: "新しい解析", exact: true }).click();
+  await page.locator("#analysis-tempo-mode").selectOption("variable");
+  let fileRequest;
+  await page.route("**/analyze-file", route => {
+    fileRequest = route.request().postDataBuffer().toString();
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ jobId: "tempo-file", stage: "queued" }) });
+  });
+  await page.locator("#audio-file-input").setInputFiles({ name: "tempo.wav", mimeType: "audio/wav", buffer: silentWav() });
+  await expect(page.locator("#analysis-dialog")).not.toBeVisible();
+  expect(fileRequest).toMatch(/name="tempoMode"\r\n\r\nvariable\r\n/);
+});
+
+test("起動時の曲読み込みが終わっても開いた解析画面の設定を保つ", async ({ page }) => {
+  let releaseResult;
+  const pendingResult = new Promise(resolve => { releaseResult = resolve; });
+  await page.route("**/results/e2e-baseline.json", async route => {
+    await pendingResult;
+    await route.fulfill({ json: baselineResult });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "新しい解析", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "練習したい曲を追加" });
+  await expect(dialog).toBeVisible();
+  await page.locator("#analysis-tempo-mode").selectOption("variable");
+  releaseResult();
+  await expect(page.locator("#player-card")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "解析画面を閉じる" })).toBeVisible();
+  await expect(page.locator("#analysis-tempo-mode")).toHaveValue("variable");
 });
 
 test("再起動で中断したジョブを利用者が再開できる", async ({ page }) => {

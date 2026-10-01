@@ -44,8 +44,21 @@ class AnalyzerBackendTests(unittest.TestCase):
             work_dir=Path("work"),
             wsl_python=Path("unused"),
         )
-        self.assertEqual(command[-2:], ["--device", "mps"])
+        self.assertEqual(command[-4:], ["--device", "mps", "--tempo-mode", "constant"])
         self.assertEqual(cwd, Path("work"))
+
+    def test_variable_tempo_is_passed_to_native_and_wsl(self):
+        from practice_lab.analyzer_backend import AnalyzerBackend
+        for executor in ('native', 'wsl'):
+            with self.subTest(executor=executor):
+                command, _ = analyzer_command(
+                    AnalyzerBackend(executor, 'cpu', 'CPU'), script=Path('scripts/analyze_audio.py'),
+                    audio_path=Path('song.wav'), work_dir=Path('work'), wsl_python=Path('python'),
+                    tempo_mode='variable')
+                if executor == 'native':
+                    self.assertEqual(command[-2:], ['--tempo-mode', 'variable'])
+                else:
+                    self.assertIn('--tempo-mode variable', command[-1])
 
 
 if __name__ == "__main__":

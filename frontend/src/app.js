@@ -143,6 +143,7 @@ const SELECTORS = {
   audioFileInput: document.getElementById("audio-file-input"),
   audioDropHint: document.getElementById("audio-drop-hint"),
   analysisTimeMode: document.getElementById("analysis-time-mode"),
+  analysisTempoMode: document.getElementById("analysis-tempo-mode"),
   analysisTimeRange: document.getElementById("analysis-time-range"),
   analysisStartTime: document.getElementById("analysis-start-time"),
   analysisEndTime: document.getElementById("analysis-end-time"),
@@ -1040,10 +1041,18 @@ const updateReanalysisInputs = () => {
     : analysisForce ? "元動画を再取得し、指定した範囲を解析します。" : "YouTubeのURL、または手元の音声ファイルから解析を始めます。";
 };
 document.getElementById("reanalyze-mode").addEventListener("change", updateReanalysisInputs);
+const updateAnalysisTempoHint = () => {
+  document.getElementById("analysis-tempo-hint").textContent = SELECTORS.analysisTempoMode.value === "variable"
+    ? "曲の途中でBPMが変わる曲や、テンポが揺れる演奏に使います。"
+    : "曲全体でBPMが一定の曲に使います。3/4などの拍子変更はテンポを変えずに扱います。";
+};
+SELECTORS.analysisTempoMode.addEventListener("change", updateAnalysisTempoHint);
 
 const openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
   if (!hasServer || !SELECTORS.analysisDialog) return;
   analysisForce = reanalyze;
+  SELECTORS.analysisTempoMode.value = reanalyze && currentData?.tempoMode === "variable" ? "variable" : "constant";
+  updateAnalysisTempoHint();
   document.getElementById("reanalyze-options").hidden = !reanalyze;
   document.getElementById("reanalyze-mode").value = "saved";
   document.querySelector('#reanalyze-mode option[value="download"]').disabled = currentData?.sourceType === "local_audio";
@@ -3791,7 +3800,6 @@ const setupControls = () => {
   };
   SELECTORS.btnFsMetro.onclick = SELECTORS.btnMetro.onclick;
   SELECTORS.btnReanalyze.onclick = () => openAnalysisDialog({ reanalyze: true });
-  SELECTORS.btnNewUrl.onclick = () => openAnalysisDialog();
   SELECTORS.btnAutoNext.onclick = () => {
     autoNextOn = !autoNextOn;
     saveCfg(autoNextKey, autoNextOn);
@@ -3935,7 +3943,9 @@ const showResult = (data, id, { autoplay = false } = {}) => {
 
   SELECTORS.structureWorkspace.hidden = false;
   SELECTORS.playerCard.hidden = false;
-  SELECTORS.inputCard.hidden = true;
+  // The library can finish restoring its song after the user opened Add.
+  // Keep that dialog usable instead of hiding its form during restoration.
+  SELECTORS.inputCard.hidden = !SELECTORS.analysisDialog.open;
   SELECTORS.topbarSong.hidden = false;
   SELECTORS.topbarActions.hidden = false;
   SELECTORS.topbarSong.textContent = data.title || "";
@@ -4861,7 +4871,8 @@ const doAnalyze = async (url, force = false, rangeOverride = null) => {
     const response = await fetch(saved ? `/reanalyze/${encodeURIComponent(currentId)}` : "/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: saved ? undefined : JSON.stringify({ url, force, ...range }),
+      body: JSON.stringify(saved ? { tempoMode: SELECTORS.analysisTempoMode.value }
+        : { url, force, ...range, tempoMode: SELECTORS.analysisTempoMode.value }),
     });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `サーバーエラー (${response.status})`);
@@ -4915,6 +4926,7 @@ const doAnalyzeFile = async file => {
   try {
     const body = new FormData();
     body.append("file", file, file.name);
+    body.append("tempoMode", SELECTORS.analysisTempoMode.value);
     const response = await fetch("/analyze-file", { method: "POST", body });
     const submitted = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(submitted.detail || `サーバーエラー (${response.status})`);
@@ -5211,6 +5223,8 @@ document.addEventListener("keydown", event => {
 document.addEventListener("click", hideContextMenu);
 SELECTORS.contextMenu?.addEventListener("click", event => event.stopPropagation());
 
+// Adding the first song must work before any song has installed its controls.
+SELECTORS.btnNewUrl.addEventListener("click", () => openAnalysisDialog());
 SELECTORS.analyzeBtn.addEventListener("click", () => doAnalyze(SELECTORS.urlInput.value.trim(), analysisForce));
 SELECTORS.analysisDialogClose?.addEventListener("click", closeAnalysisDialog);
 SELECTORS.analysisTimeMode.addEventListener("change", () => {

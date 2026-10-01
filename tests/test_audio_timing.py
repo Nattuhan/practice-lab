@@ -125,7 +125,7 @@ def test_fresh_analyzer_output_is_repaired_without_session_identity_or_saved_cor
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     for _ in range(2):
-        assert module.main([str(audio), '--device', 'cpu']) == 0
+        assert module.main([str(audio), '--device', 'cpu', '--tempo-mode', 'variable']) == 0
         output = json.loads(capsys.readouterr().out)
         assert len([b for b in output['beats'] if start <= b <= end]) == 33
         assert 'audioTimingRepair' in output

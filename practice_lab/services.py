@@ -892,7 +892,14 @@ def cleanup_canceled_stems(video_id: str) -> None:
     export_static_assets()
 
 
-def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> dict:
+def validate_tempo_mode(tempo_mode: str) -> str:
+    if tempo_mode not in {"constant", "variable"}:
+        raise ValueError("テンポの解析方法が不正です")
+    return tempo_mode
+
+
+def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None, *, tempo_mode: str = "constant") -> dict:
+    validate_tempo_mode(tempo_mode)
     job_id = job_id or video_id
     work_dir = DATA_WORK_DIR / video_id
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -912,6 +919,7 @@ def run_analyzer(audio_path: Path, video_id: str, job_id: str | None = None) -> 
         work_dir=work_dir,
         wsl_python=WSL_PYTHON,
         native_executable=native_executable,
+        tempo_mode=tempo_mode,
     )
     process = start_process(
         command,
@@ -1261,14 +1269,19 @@ def validate_saved_analysis(video_id: str) -> None:
         raise ValueError("保存済みの元音声がありません。元動画を再取得するか、音声ファイルを追加してください")
 
 
-def reanalyze_saved_audio(video_id: str, job_id: str | None = None) -> dict:
+def reanalyze_saved_audio(video_id: str, job_id: str | None = None, *, tempo_mode: str | None = None) -> dict:
     """Recompute analysis only; keep media and the old result until inference succeeds."""
     validate_saved_analysis(video_id)
     job_id = job_id or video_id
     result_file = DATA_RESULTS_DIR / f"{video_id}.json"
+    previous = json.loads(result_file.read_text(encoding="utf-8"))
+    # Only the user's analysis preference is reused, never previous beat edits.
+    tempo_mode = validate_tempo_mode(tempo_mode or previous.get("tempoMode") or "constant")
     raise_if_job_canceled(job_id)
-    analysis = normalize_tempo_grid(run_analyzer(DATA_AUDIO_DIR / f"{video_id}.wav", video_id, job_id=job_id))
+    analysis = normalize_tempo_grid(run_analyzer(DATA_AUDIO_DIR / f"{video_id}.wav", video_id,
+                                               job_id=job_id, tempo_mode=tempo_mode))
     analysis.pop("device", None)
+    analysis["tempoMode"] = tempo_mode
     raise_if_job_canceled(job_id)
     # Keep library/source metadata, never feed previous beat edits or diagnostics
     # back into inference. Reload here to retain edits made while it was running.
@@ -1292,7 +1305,9 @@ def analyze_url(
     *,
     start_sec: float | None = None,
     end_sec: float | None = None,
+    tempo_mode: str = "constant",
 ) -> dict:
+    validate_tempo_mode(tempo_mode)
     source_video_id = extract_video_id(url)
     if not source_video_id:
         raise ValueError("動画IDを取得できませんでした")
@@ -1313,9 +1328,12 @@ def analyze_url(
 
     if not force and result_file.exists() and audio_file.exists() and public_audio_file.exists() and public_video_file.exists():
         data = attach_session_assets(json.loads(result_file.read_text(encoding="utf-8")))
-        data["cached"] = True
-        set_job_status(job_id, "done", "Loaded from cache", done=True)
-        return data
+        # An old unconstrained analysis cannot satisfy a constant-tempo request.
+        # Reuse media, but recompute when the user's tempo assumption changes.
+        if data.get("tempoMode", "variable") == tempo_mode:
+            data["cached"] = True
+            set_job_status(job_id, "done", "Loaded from cache", done=True)
+            return data
 
     raise_if_job_canceled(job_id)
     if force:
@@ -1374,8 +1392,9 @@ def analyze_url(
         publish_video(video_file, public_video_file)
 
     raise_if_job_canceled(job_id)
-    analysis = normalize_tempo_grid(run_analyzer(audio_file, video_id, job_id=job_id))
+    analysis = normalize_tempo_grid(run_analyzer(audio_file, video_id, job_id=job_id, tempo_mode=tempo_mode))
     analysis.pop("device", None)
+    analysis["tempoMode"] = tempo_mode
     raise_if_job_canceled(job_id)
     set_job_status(job_id, "saving", "Saving results")
     if start_sec is not None or end_sec is not None:
@@ -1407,7 +1426,9 @@ def analyze_local_audio(
     *,
     original_filename: str,
     job_id: str | None = None,
+    tempo_mode: str = "constant",
 ) -> dict:
+    validate_tempo_mode(tempo_mode)
     job_id = job_id or session_id
     result_file = DATA_RESULTS_DIR / f"{session_id}.json"
     audio_file = DATA_AUDIO_DIR / f"{session_id}.wav"
@@ -1420,8 +1441,9 @@ def analyze_local_audio(
         set_job_status(job_id, "downloading", "Preparing playback mp3")
         convert_wav_to_mp3(audio_file, public_audio_file)
         raise_if_job_canceled(job_id)
-        analysis = normalize_tempo_grid(run_analyzer(audio_file, session_id, job_id=job_id))
+        analysis = normalize_tempo_grid(run_analyzer(audio_file, session_id, job_id=job_id, tempo_mode=tempo_mode))
         analysis.pop("device", None)
+        analysis["tempoMode"] = tempo_mode
         raise_if_job_canceled(job_id)
         set_job_status(job_id, "saving", "Saving results")
         data = attach_session_assets(

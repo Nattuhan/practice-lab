@@ -65,6 +65,7 @@ class AnalysisRangeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["jobId"], "abc123-clip-30500-95000")
         self.assertEqual(captured["job_id"], "abc123-clip-30500-95000")
+        self.assertEqual(captured['metadata']['spec']['tempoMode'], 'constant')
 
     def test_range_analysis_caches_full_source_and_trims_locally(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -106,7 +107,7 @@ class AnalysisRangeTests(unittest.TestCase):
                 patch.object(services, "trim_video_range", side_effect=fake_trim) as trim_video,
                 patch.object(services, "convert_wav_to_mp3", side_effect=lambda _src, dst: dst.write_bytes(b"mp3")),
                 patch.object(services, "publish_video", side_effect=fake_publish),
-                patch.object(services, "run_analyzer", return_value=analysis),
+                patch.object(services, "run_analyzer", return_value=analysis) as analyzer,
                 patch.object(services, "update_manifest"),
                 patch.object(services, "export_static_assets"),
                 patch.object(services, "publish_session_to_cloud"),
@@ -117,6 +118,16 @@ class AnalysisRangeTests(unittest.TestCase):
                     start_sec=30.5,
                     end_sec=95,
                 )
+                cached = services.analyze_url('https://www.youtube.com/watch?v=abc123', start_sec=30.5, end_sec=95)
+                self.assertTrue(cached['cached'])
+                self.assertEqual(analyzer.call_count, 1)
+                changed = services.analyze_url('https://www.youtube.com/watch?v=abc123', start_sec=30.5, end_sec=95,
+                                              tempo_mode='variable')
+                self.assertEqual(changed['tempoMode'], 'variable')
+                self.assertNotIn('cached', changed)
+                self.assertEqual(analyzer.call_count, 2)
+                self.assertEqual(analyzer.call_args.kwargs['tempo_mode'], 'variable')
+                self.assertEqual(download_video.call_count, 1)
 
             self.assertEqual(result["id"], "abc123-clip-30500-95000")
             self.assertEqual(result["sourceVideoId"], "abc123")

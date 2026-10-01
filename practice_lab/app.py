@@ -3,8 +3,9 @@ import re
 import secrets
 import uuid
 from pathlib import Path
+from typing import Literal
 
-from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -13,6 +14,7 @@ from .config import DATA_WORK_DIR, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_
 from .models import (
     AnalyzeRequest,
     AnalyzeResponse,
+    ReanalyzeRequest,
     ApplyBpmCorrectionRequest,
     DeleteSessionsRequest,
     DesktopCloudConfigRequest,
@@ -55,7 +57,7 @@ def submit_job_spec(spec: dict) -> dict:
         return submit_queued_job(
             job_id,
             "Queued analysis from saved audio",
-            lambda: reanalyze_saved_audio(job_id),
+            lambda: reanalyze_saved_audio(job_id, tempo_mode=spec.get("tempoMode")),
             cleanup=lambda: cleanup_canceled_analysis(job_id),
             spec=spec,
             kind="analysis",
@@ -70,6 +72,7 @@ def submit_job_spec(spec: dict) -> dict:
                 job_id=job_id,
                 start_sec=spec.get("startSec"),
                 end_sec=spec.get("endSec"),
+                tempo_mode=spec.get("tempoMode", "constant"),
             ),
             cleanup=lambda: cleanup_canceled_analysis(job_id),
             spec=spec,
@@ -88,6 +91,7 @@ def submit_job_spec(spec: dict) -> dict:
                 spec["title"],
                 original_filename=spec.get("originalFilename"),
                 job_id=job_id,
+                tempo_mode=spec.get("tempoMode", "constant"),
             ),
             cleanup=lambda: cleanup_uploaded_analysis(job_id, source_path),
             spec=spec,
@@ -380,9 +384,10 @@ def create_app() -> FastAPI:
         return JobStatusResponse(**job)
 
     @app.post("/reanalyze/{video_id}", response_model=JobSubmissionResponse)
-    async def reanalyze(video_id: str):
+    async def reanalyze(video_id: str, request: ReanalyzeRequest | None = Body(default=None)):
         try:
-            return JobSubmissionResponse(**submit_job_spec({"type": "reanalyze_saved", "jobId": video_id}))
+            return JobSubmissionResponse(**submit_job_spec({"type": "reanalyze_saved", "jobId": video_id,
+                                                           "tempoMode": request.tempoMode if request else None}))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -405,10 +410,11 @@ def create_app() -> FastAPI:
             "force": request.force,
             "startSec": start_sec,
             "endSec": end_sec,
+            "tempoMode": request.tempoMode,
         }))
 
     @app.post("/analyze-file", response_model=JobSubmissionResponse)
-    async def analyze_file(file: UploadFile = File(...)):
+    async def analyze_file(file: UploadFile = File(...), tempoMode: Literal["constant", "variable"] = Form("constant")):
         filename = Path(file.filename or "").name
         suffix = Path(filename).suffix.lower()
         if suffix not in {".wav", ".m4a", ".mp3", ".flac", ".aac", ".ogg"}:
@@ -433,6 +439,7 @@ def create_app() -> FastAPI:
             "sourceName": source_path.name,
             "title": title,
             "originalFilename": filename,
+            "tempoMode": tempoMode,
         }))
 
     @app.delete("/results/{video_id}")

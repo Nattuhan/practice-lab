@@ -66,17 +66,22 @@ def analyzer_command(
     work_dir: Path,
     wsl_python: Path,
     native_executable: Path | None = None,
+    tempo_mode: str = "constant",
 ) -> tuple[list[str], Path | None]:
+    if tempo_mode not in {"constant", "variable"}:
+        raise ValueError("テンポの解析方法が不正です")
     if backend.executor == "native":
         return (
-            [str(native_executable or sys.executable), str(script), str(audio_path), "--device", backend.device],
+            [str(native_executable or sys.executable), str(script), str(audio_path),
+             "--device", backend.device, "--tempo-mode", tempo_mode],
             work_dir,
         )
     shell_command = (
         f"export PYTHONPATH={shlex.quote(to_wsl_path(script.parent.parent))}:$PYTHONPATH && "
         f"cd {shlex.quote(to_wsl_path(work_dir))} && "
         f"{shlex.quote(to_wsl_path(wsl_python))} {shlex.quote(to_wsl_path(script))} "
-        f"{shlex.quote(to_wsl_path(audio_path))} --device {shlex.quote(backend.device)}"
+        f"{shlex.quote(to_wsl_path(audio_path))} --device {shlex.quote(backend.device)} "
+        f"--tempo-mode {shlex.quote(tempo_mode)}"
     )
     return (["wsl.exe", "bash", "-lc", shell_command], None)
 

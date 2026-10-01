@@ -37,7 +37,8 @@ class SavedReanalysisTests(unittest.TestCase):
                 self.assertEqual(updated['analysisStartSec'], 30)
                 self.assertNotIn('audioTimingRepair', updated)
                 self.assertEqual(audio.read_bytes(), b'original audio')
-                analyzer.assert_called_once_with(audio, 'sample', job_id='sample')
+                analyzer.assert_called_once_with(audio, 'sample', job_id='sample', tempo_mode='constant')
+                self.assertEqual(updated['tempoMode'], 'constant')
                 for mock in forbidden:
                     mock.assert_not_called()
                 # A failed analysis must leave the prior successful result available.
@@ -56,7 +57,7 @@ class SavedReanalysisTests(unittest.TestCase):
             spec = {'type': 'reanalyze_saved', 'jobId': 'sample'}
             app_module.submit_job_spec(spec)
             submit.call_args.args[2]()
-            analyze.assert_called_once_with('sample')
+            analyze.assert_called_once_with('sample', tempo_mode=None)
             self.assertEqual(submit.call_args.kwargs['spec'], spec)
 
     def test_http_route_queues_saved_analysis_and_reports_missing_audio(self):
@@ -66,6 +67,11 @@ class SavedReanalysisTests(unittest.TestCase):
             response = client.post('/reanalyze/sample')
             self.assertEqual(response.status_code, 200)
             self.assertEqual(submit.call_args.kwargs['spec']['type'], 'reanalyze_saved')
+            response = client.post('/reanalyze/sample', json={'tempoMode': 'variable'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(submit.call_args.kwargs['spec']['tempoMode'], 'variable')
+            response = client.post('/reanalyze/sample', json={'tempoMode': 'unsupported'})
+            self.assertEqual(response.status_code, 422)
         with patch.object(app_module, 'validate_saved_analysis', side_effect=ValueError('保存済みの元音声がありません')):
             response = client.post('/reanalyze/sample')
             self.assertEqual(response.status_code, 400)
@@ -74,3 +80,23 @@ class SavedReanalysisTests(unittest.TestCase):
     def test_rejects_path_traversal(self):
         with self.assertRaisesRegex(ValueError, '曲ID'):
             services.validate_saved_analysis('../outside')
+
+    def test_reanalysis_remembers_mode_and_an_explicit_choice_overrides_it(self):
+        with tempfile.TemporaryDirectory() as tmp, ExitStack() as stack:
+            root = Path(tmp)
+            for name in ('DATA_RESULTS_DIR', 'DATA_AUDIO_DIR', 'DATA_WORK_DIR'):
+                path = root / name
+                path.mkdir()
+                stack.enter_context(patch.object(services, name, path))
+            result = services.DATA_RESULTS_DIR / 'sample.json'
+            result.write_text(json.dumps(dict(id='sample', title='song', tempoMode='variable')))
+            (services.DATA_AUDIO_DIR / 'sample.wav').write_bytes(b'original')
+            fresh = dict(bpm=120, beats=[0, .5, 1, 1.5], downbeats=[0], total_bars=1, sections=[])
+            analyzer = stack.enter_context(patch.object(services, 'run_analyzer', return_value=fresh))
+            for name in ('set_job_status', 'update_manifest', 'export_static_assets'):
+                stack.enter_context(patch.object(services, name))
+            self.assertEqual(services.reanalyze_saved_audio('sample')['tempoMode'], 'variable')
+            self.assertEqual(analyzer.call_args.kwargs['tempo_mode'], 'variable')
+            self.assertEqual(services.reanalyze_saved_audio('sample', tempo_mode='constant')['tempoMode'], 'constant')
+            self.assertEqual(analyzer.call_args.kwargs['tempo_mode'], 'constant')
+            self.assertEqual(json.loads(result.read_text())['tempoMode'], 'constant')

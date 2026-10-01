@@ -94,6 +94,14 @@
               <option value="download">元動画を再取得して再解析</option>
             </select>
           </label>
+          <label class="analysis-tempo-settings">
+            <span>テンポの解析</span>
+            <select id="analysis-tempo-mode" aria-describedby="analysis-tempo-hint">
+              <option value="constant" selected>一定テンポ（標準）</option>
+              <option value="variable">テンポ変化あり</option>
+            </select>
+            <small id="analysis-tempo-hint">曲全体でBPMが一定の曲に使います。3/4などの拍子変更はテンポを変えずに扱います。</small>
+          </label>
           <div class="input-bar">
             <input type="text" id="url-input" placeholder="YouTubeのURLを貼り付けて解析">
             <button class="btn-analyze" id="analyze-btn">解析を開始</button>
