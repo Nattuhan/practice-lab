@@ -334,7 +334,18 @@ def _apply_verified_grid(data: dict, correction: dict) -> dict:
         # A missed beat changes subsequent bar numbering too. Keep the first
         # measured bar head and count the repaired beats, not the old detections.
         first = min(range(len(beats)), key=lambda i: abs(beats[i] - data["downbeats"][0]))
-        downbeats = beats[first::4]
+        # A separately verified short-bar anchor can coexist with a real
+        # missed-beat repair elsewhere. Recount between those anchors instead
+        # of letting the other repair erase the preserved boundary again.
+        anchors = {first}
+        for span in correction["spans"]:
+            if span.get("preserve_end_downbeat"):
+                index = min(range(len(beats)), key=lambda i: abs(beats[i] - span["end"]))
+                if index > first:
+                    anchors.add(index)
+        boundaries = sorted(anchors) + [len(beats)]
+        downbeats = [beats[index] for left, right in zip(boundaries[:-1], boundaries[1:])
+                     for index in range(left, right, 4)]
     if correction.get("intro"):
         anchor = correction["intro"]["start"]
         period = correction["intro"]["period"]

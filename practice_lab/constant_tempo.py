@@ -4,7 +4,7 @@ from math import ceil, floor
 import numpy as np
 
 from .timing import bars_from_sections
-from .constant_meter import decode_bar_heads
+from .constant_meter import decode_bar_heads, restore_recounted_bar_heads
 
 
 def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None = None,
@@ -41,12 +41,14 @@ def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None
     duration = float(data.get("duration") or beats[-1])
     last = min(floor((duration - phase + .0000005) / period), round((beats[-1] - phase) / period))
     grid = np.round(phase + np.arange(first, last + 1) * period, 6)
+    meter_data, restored_anchors = restore_recounted_bar_heads(
+        grid, data, detected_downbeats or [], activations, activation_fps)
 
     # Keep source-backed timing repairs: they can recover entire missing bars,
     # not just beats. But a four-beat subdivision of a five-pulse span must not
     # manufacture a one-pulse final bar. Discard only such INTERIOR added heads;
     # measured short bars, recovered pickups, and resolved octaves survive.
-    measured_heads = sorted(set(data.get("downbeats") or []))
+    measured_heads = sorted(set(meter_data.get("downbeats") or []))
     discarded = 0
     if detected_downbeats and not data.get("tempoOctaveResolution"):
         source_positions = set(np.rint((np.asarray(detected_downbeats) - phase) / period).astype(int))
@@ -63,9 +65,10 @@ def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None
         measured_heads = eligible
     heads, meter_diagnostics = decode_bar_heads(grid, measured_heads, activations, activation_fps)
     meter_diagnostics["discardedRepairHeads"] = discarded
-    adjusted = {**data, "bpm": round(60 / period, 1), "beats": grid.tolist(),
+    meter_diagnostics["restoredRepairAnchors"] = restored_anchors
+    adjusted = {**meter_data, "bpm": round(60 / period, 1), "beats": grid.tolist(),
                 "downbeats": heads, "total_bars": len(heads), "tempoMode": "constant",
-                "constantTempo": {"version": 2, "period": float(period), "phase": float(phase),
+                "constantTempo": {"version": 3, "period": float(period), "phase": float(phase),
                                   "supportedBeats": int(np.count_nonzero(consistent)),
                                   "detectedBeats": len(beats)}, "constantMeter": meter_diagnostics}
     for key in ("sections", "automaticSections"):

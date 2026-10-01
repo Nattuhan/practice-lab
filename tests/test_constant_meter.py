@@ -119,6 +119,76 @@ def test_a_measured_one_pulse_bar_is_preserved():
     assert result['constantMeter']['discardedRepairHeads'] == 0
 
 
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+@pytest.mark.parametrize('short_bar', [True, False])
+@pytest.mark.parametrize('missing_outro', [False, True])
+def test_source_head_evidence_distinguishes_a_hidden_short_bar_from_missed_beats(tmp_path, period, offset, short_bar, missing_outro):
+    from test_audio_timing import write_attacks
+    from practice_lab.audio_timing import refine_timing_from_audio
+    actual = offset + np.arange(320) * period
+    if short_bar:
+        # Four detections compress six real pulses. The inner short-bar head
+        # is unplayed; its measured right anchor and later bars are reliable.
+        detected = np.r_[actual[:160], np.linspace(actual[160], actual[166], 5), actual[167:]]
+        head_indexes = np.r_[np.arange(0, 164, 4), np.arange(164, 166, 2), np.arange(166, 320, 4)]
+    else:
+        # Actual missing detections shift the model's later bar labels. Here
+        # the source classifier supports the reconstructed four-beat phase.
+        detected = np.delete(actual, [160, 161])
+        head_indexes = np.arange(0, 320, 4)
+    if missing_outro:
+        detected = detected[detected <= actual[-13] + 1e-8]
+    raw_beats = np.round(detected, 3).tolist()
+    raw = dict(bpm=60 / period, beats=raw_beats, downbeats=raw_beats[::4], duration=actual[-1] + period)
+    audio = tmp_path / 'independent-bar-phase.wav'
+    write_attacks(audio, actual, raw['duration'])
+    repaired = refine_timing_from_audio(raw, audio)
+    assert any(span.get('rebuild_downbeats') for span in repaired['audioTimingRepair']['spans'])
+    frames = int(raw['duration'] * 100) + 1
+    pulse, head = np.zeros(frames), np.zeros(frames)
+    for position in actual:
+        pulse[round(position * 100)] = .8
+        head[round(position * 100)] = .008
+    for index in head_indexes:
+        if short_bar and index == 164:
+            continue
+        head[round(actual[index] * 100)] = .72
+    result = enforce_constant_tempo(repaired, detected_downbeats=raw['downbeats'],
+                                   activations={'beat': pulse, 'downbeat': head})
+    assert np.max(abs(np.asarray(result['downbeats']) - actual[head_indexes])) < .003
+    if missing_outro:
+        assert result['audioTimingRepair']['outro']['intervals'] == 12
+    if short_bar:
+        assert result['constantMeter']['meters'][40:43] == [4, 2, 4]
+        assert len(result['constantMeter']['restoredRepairAnchors']) == 1
+        assert result['audioTimingRepair']['spans'][0]['preserve_end_downbeat']
+    else:
+        assert result['constantMeter']['restoredRepairAnchors'] == []
+        assert set(result['constantMeter']['meters']) == {4}
+
+
+def test_a_measured_six_beat_bar_without_tracking_failure_is_not_split():
+    meters = [4] * 12 + [6] + [4] * 12
+    beats = .17 + np.arange(sum(meters) + 1) * .5
+    heads = beats[np.r_[0, np.cumsum(meters)]].tolist()
+    result = enforce_constant_tempo(dict(bpm=120, beats=beats.tolist(), downbeats=heads, duration=beats[-1]),
+                                    detected_downbeats=heads)
+    assert result['constantMeter']['meters'] == meters
+
+
+def test_another_missed_beat_repair_cannot_erase_a_preserved_short_bar():
+    from practice_lab.audio_timing import _apply_verified_grid
+    beats = .17 + np.arange(240) * .5
+    raw = dict(beats=beats.tolist(), downbeats=beats[::4].tolist())
+    correction = {'spans': [
+        {'start': beats[40], 'end': beats[45], 'intervals': 5, 'rebuild_downbeats': True},
+        {'start': beats[160], 'end': beats[166], 'intervals': 6, 'preserve_end_downbeat': True},
+    ]}
+    result = _apply_verified_grid(raw, correction)
+    expected = beats[np.r_[np.arange(0, 166, 4), np.arange(166, len(beats), 4)]]
+    assert np.max(abs(np.asarray(result['downbeats']) - expected)) < .001
+
+
 def test_invalid_probabilities_and_unresolvable_heads_fail_visibly():
     beats = np.arange(20) * .5
     with pytest.raises(ValueError, match='推論確率'):
