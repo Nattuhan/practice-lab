@@ -3098,6 +3098,16 @@ var videoClickAction = ({ pendingSingleClick = false, coarsePointer = false } = 
   return coarsePointer ? "seek" : "fullscreen";
 };
 
+// frontend/src/playback-shortcuts.js
+var CONTROL_TAGS = /* @__PURE__ */ new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A", "AUDIO", "VIDEO"]);
+var acceptsPlaybackShortcuts = (target, { dialogOpen = false } = {}) => {
+  if (dialogOpen) return false;
+  for (let node = target; node; node = node.parentElement) {
+    if (CONTROL_TAGS.has(node.tagName) || node.isContentEditable || node.getAttribute?.("role") === "textbox") return false;
+  }
+  return true;
+};
+
 // frontend/src/app.js
 var lucide = { createIcons: renderIcons };
 var COLORS = {
@@ -7899,22 +7909,25 @@ document.addEventListener("keydown", (event) => {
     clearCustomLoopRange();
     return;
   }
-  if (event.code === "Space" && event.target.tagName !== "INPUT") {
+  if (event.defaultPrevented || !acceptsPlaybackShortcuts(event.target, {
+    dialogOpen: !!document.querySelector("dialog[open]")
+  })) return;
+  if (event.code === "Space") {
     event.preventDefault();
     if (currentFeature !== "structure") return;
     togglePlayback();
   }
-  if (event.shiftKey && event.target.tagName !== "INPUT" && (event.key === ">" || event.code === "Period")) {
+  if (event.shiftKey && (event.key === ">" || event.code === "Period")) {
     event.preventDefault();
     nudgePlaybackRate(PLAYBACK_RATE_STEP);
     return;
   }
-  if (event.shiftKey && event.target.tagName !== "INPUT" && (event.key === "<" || event.code === "Comma")) {
+  if (event.shiftKey && (event.key === "<" || event.code === "Comma")) {
     event.preventDefault();
     nudgePlaybackRate(-PLAYBACK_RATE_STEP);
     return;
   }
-  if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && event.target.tagName !== "INPUT") {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     if (currentFeature !== "structure" || !ws) return;
     event.preventDefault();
     const seekSeconds = 5 * playbackRate;

@@ -12,6 +12,7 @@ import { createStemTransport } from "./stem-transport.js";
 import { alignedWav, connectAlignedOutput, loadClickRenderer } from "./aligned-click.js";
 import { normalizeClickPitch, normalizeClickSound } from "./click-renderer-worklet-source.js";
 import { videoClickAction } from "./video-gestures.js";
+import { acceptsPlaybackShortcuts } from "./playback-shortcuts.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -5197,22 +5198,25 @@ document.addEventListener("keydown", event => {
     clearCustomLoopRange();
     return;
   }
-  if (event.code === "Space" && event.target.tagName !== "INPUT") {
+  if (event.defaultPrevented || !acceptsPlaybackShortcuts(event.target, {
+    dialogOpen: !!document.querySelector('dialog[open]'),
+  })) return;
+  if (event.code === "Space") {
     event.preventDefault();
     if (currentFeature !== "structure") return;
     togglePlayback();
   }
-  if (event.shiftKey && event.target.tagName !== "INPUT" && (event.key === ">" || event.code === "Period")) {
+  if (event.shiftKey && (event.key === ">" || event.code === "Period")) {
     event.preventDefault();
     nudgePlaybackRate(PLAYBACK_RATE_STEP);
     return;
   }
-  if (event.shiftKey && event.target.tagName !== "INPUT" && (event.key === "<" || event.code === "Comma")) {
+  if (event.shiftKey && (event.key === "<" || event.code === "Comma")) {
     event.preventDefault();
     nudgePlaybackRate(-PLAYBACK_RATE_STEP);
     return;
   }
-  if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && event.target.tagName !== "INPUT") {
+  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
     if (currentFeature !== "structure" || !ws) return;
     event.preventDefault();
     // Keep the seek's wall-clock distance proportional to playback speed.
