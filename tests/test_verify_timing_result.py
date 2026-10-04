@@ -57,6 +57,38 @@ class VerifyTimingResultTests(unittest.TestCase):
                 verify_result(result, bpm=160, window=(10, 60),
                               last_beat_between=(70, 73))
 
+    def test_missing_head_after_the_checked_window_fails_the_whole_song(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.json"
+            beats = [index * .375 for index in range(200)]
+            # The pulse and the early repaired passage are perfect. The late
+            # missing bar head still produces spoken 5, 6, 7, 8.
+            heads = [beats[index] for index in range(0, 200, 4) if index != 164]
+            result.write_text(json.dumps({"bpm": 160, "beats": beats, "downbeats": heads}))
+            with self.assertRaisesRegex(AssertionError, "bar with 8 beats at 60.000s"):
+                verify_result(result, bpm=160, window=(10, 50),
+                              last_beat_between=(74, 75), maximum_bar_beats=4)
+            # The limit is an investigator's expectation, not a universal
+            # runtime rule that rejects real eight-beat music.
+            actual = verify_result(result, bpm=160, window=(10, 50),
+                                   last_beat_between=(74, 75), maximum_bar_beats=8)
+            self.assertEqual(actual["maximumBarBeats"], 8)
+
+    def test_short_bars_survive_but_an_unbounded_last_count_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = Path(directory) / "result.json"
+            beats = [index * .375 for index in range(200)]
+            indexes = list(range(0, 196, 4)) + [195, 198]
+            heads = [beats[index] for index in indexes]
+            result.write_text(json.dumps({"bpm": 160, "beats": beats, "downbeats": heads}))
+            actual = verify_result(result, bpm=160, window=(10, 50),
+                                   last_beat_between=(74, 75), maximum_bar_beats=4)
+            self.assertEqual(actual["maximumBarBeats"], 4)
+            result.write_text(json.dumps({"bpm": 160, "beats": beats, "downbeats": heads[:-3]}))
+            with self.assertRaisesRegex(AssertionError, "bar with 12 beats"):
+                verify_result(result, bpm=160, window=(10, 50),
+                              last_beat_between=(74, 75), maximum_bar_beats=4)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -220,6 +220,64 @@ def test_a_real_long_bar_or_unsupported_subdivision_is_not_split(supported):
     assert result['constantMeter']['meters'] == meters
 
 
+@pytest.mark.parametrize('meter', [3, 4])
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+def test_half_density_tracking_can_drift_through_a_quiet_phrase(meter, period, offset):
+    actual = offset + np.arange(meter * 30 + 1) * period
+    heads = actual[::meter]
+    start, end = meter * 10, meter * 18
+    half = actual[start:end:2].copy()
+    # The source pulses keep their phase, but the half-time tracker wanders
+    # by half a pulse through a quieter phrase before regaining it. Rejecting
+    # every off-grid detection hides the tracking failure itself.
+    half += np.maximum(0, .5 * (1 - np.arange(len(half)) / (len(half) * .6))) * period
+    tracked = np.r_[actual[:start], half, actual[end:]]
+    detected = np.delete(heads, np.arange(11, 18, 2))
+    activations = probabilities(actual, detected)
+    for index in range(start, end):
+        value = .2 if index % 2 else .6
+        if start + meter * 2 <= index < start + meter * 4:
+            value *= .12
+        activations['beat'][round(actual[index] * 100)] = value
+    aligned, diagnostics = decode_bar_heads(actual, detected.tolist(), activations,
+                                           tracked_beats=tracked)
+    assert aligned == heads.tolist()
+    assert diagnostics['meters'] == [meter] * 30
+
+
+def test_subdivision_evidence_is_compared_locally_across_volume_changes():
+    actual = .17 + np.arange(121) * .49
+    heads = actual[::4]
+    start, end = 40, 80
+    tracked = np.delete(actual, np.arange(start + 1, end, 2))
+    detected = np.delete(heads, np.arange(11, 20, 2))
+    activations = probabilities(actual, detected)
+    # Loud weak subdivisions and quieter strong subdivisions must not be
+    # pooled into unrelated global medians. Most adjacent pulse pairs support
+    # subdivision even though median(weak) < median(strong) / 4.
+    for pair, index in enumerate(range(start, end, 2)):
+        strong, weak = (.8, .25) if pair < 4 else ((.8, .15) if pair < 12 else (.1, .08))
+        activations['beat'][round(actual[index] * 100)] = strong
+        activations['beat'][round(actual[index + 1] * 100)] = weak
+    result = enforce_constant_tempo(dict(bpm=60/.49, beats=tracked.tolist(),
+                                   downbeats=detected.tolist(), duration=actual[-1]),
+                                   detected_downbeats=detected.tolist(), activations=activations)
+    assert np.max(abs(np.asarray(result['downbeats']) - heads)) < .001
+    assert result['constantMeter']['meters'] == [4] * 30
+
+
+def test_a_full_pulse_track_with_a_brief_half_time_patch_keeps_real_long_bars():
+    meters = [4] * 10 + [8] * 5 + [4] * 10
+    actual = .17 + np.arange(sum(meters) + 1) * .49
+    heads = actual[np.r_[0, np.cumsum(meters)]]
+    tracked = np.delete(actual, np.arange(49, 56, 2))
+    result = enforce_constant_tempo(dict(bpm=60/.49, beats=tracked.tolist(),
+                                   downbeats=heads.tolist(), duration=actual[-1]),
+                                   detected_downbeats=heads.tolist(),
+                                   activations=probabilities(actual, heads))
+    assert result['constantMeter']['meters'] == meters
+
+
 def test_another_missed_beat_repair_cannot_erase_a_preserved_short_bar():
     from practice_lab.audio_timing import _apply_verified_grid
     beats = .17 + np.arange(240) * .5

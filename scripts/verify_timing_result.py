@@ -5,6 +5,7 @@ supplied by the investigator and never influence the analyzer's output.
 """
 
 import argparse
+from bisect import bisect_left
 import json
 import math
 from pathlib import Path
@@ -21,11 +22,14 @@ def verify_result(
     bpm_tolerance: float = 1.0,
     interval_tolerance: float = 0.05,
     minimum_grid_coverage: float = 0.95,
+    maximum_bar_beats: int | None = None,
 ) -> dict:
     if bpm <= 0 or bpm_tolerance < 0 or not 0 < interval_tolerance < 1:
         raise ValueError("BPM and tolerances must be valid positive values")
     if not 0 <= minimum_grid_coverage <= 1:
         raise ValueError("grid coverage must be between 0 and 1")
+    if maximum_bar_beats is not None and maximum_bar_beats < 1:
+        raise ValueError("maximum bar beats must be positive")
     start, end = window
     first_allowed, last_allowed = last_beat_between
     if start < 0 or end <= start or first_allowed < 0 or last_allowed < first_allowed:
@@ -60,9 +64,35 @@ def verify_result(
         raise AssertionError(
             f"last beat {beats[-1]:.3f}s is outside {first_allowed:g}–{last_allowed:g}s"
         )
-    return {"bpm": actual_bpm, "intervals": len(gaps),
-            "medianInterval": round(median(gaps), 4),
-            "gridCoverage": round(coverage, 4), "lastBeat": beats[-1]}
+    summary = {"bpm": actual_bpm, "intervals": len(gaps),
+               "medianInterval": round(median(gaps), 4),
+               "gridCoverage": round(coverage, 4), "lastBeat": beats[-1]}
+    if maximum_bar_beats is not None:
+        heads = [float(value) for value in data.get("downbeats", [])]
+        if (not heads or any(not math.isfinite(head) for head in heads)
+                or any(right <= left for left, right in zip(heads, heads[1:]))):
+            raise AssertionError("bar heads must be finite and strictly increasing")
+        indexes = []
+        for head in heads:
+            insertion = bisect_left(beats, head)
+            candidates = [index for index in (insertion - 1, insertion) if 0 <= index < len(beats)]
+            index = min(candidates, key=lambda candidate: abs(beats[candidate] - head))
+            if abs(beats[index] - head) > .12 * expected_period:
+                raise AssertionError(f"bar head {head:.3f}s is outside the beat grid")
+            if indexes and index <= indexes[-1]:
+                raise AssertionError("bar heads must identify different beats")
+            indexes.append(index)
+        # Check the WHOLE count sequence, including its final open bar. A
+        # repaired passage must not hide the same missing-head failure later
+        # in the song merely because pulse coverage uses a selected window.
+        lengths = [right - left for left, right in zip(indexes, indexes[1:] + [len(beats)])]
+        for head, length in zip(heads, lengths):
+            if length > maximum_bar_beats:
+                raise AssertionError(
+                    f"bar with {length} beats at {head:.3f}s exceeds {maximum_bar_beats}"
+                )
+        summary["maximumBarBeats"] = max(lengths)
+    return summary
 
 
 def main() -> int:
@@ -79,9 +109,12 @@ def main() -> int:
     parser.add_argument("--bpm-tolerance", type=float, default=1.0)
     parser.add_argument("--interval-tolerance", type=float, default=0.05)
     parser.add_argument("--minimum-grid-coverage", type=float, default=0.95)
+    parser.add_argument("--maximum-bar-beats", type=int,
+                        help="check every bar in the whole song against the observed count limit")
     args = parser.parse_args()
     if args.mark_start:
-        if any((args.result, args.fresh_after, args.bpm, args.window, args.last_beat_between)):
+        if any((args.result, args.fresh_after, args.bpm, args.window, args.last_beat_between,
+                args.maximum_bar_beats)):
             parser.error("--mark-start must be used alone")
         args.mark_start.parent.mkdir(parents=True, exist_ok=True)
         args.mark_start.touch()
@@ -98,6 +131,7 @@ def main() -> int:
             fresh_after=args.fresh_after, bpm_tolerance=args.bpm_tolerance,
             interval_tolerance=args.interval_tolerance,
             minimum_grid_coverage=args.minimum_grid_coverage,
+            maximum_bar_beats=args.maximum_bar_beats,
         )
     except (AssertionError, KeyError, ValueError, OSError, json.JSONDecodeError) as exc:
         parser.exit(1, f"Timing regression FAILED: {exc}\n")

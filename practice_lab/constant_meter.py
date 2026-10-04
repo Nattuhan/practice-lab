@@ -133,12 +133,6 @@ def _recover_alias_heads(beats: np.ndarray, selected: np.ndarray,
     ends = np.flatnonzero(doubled & ~np.r_[doubled[1:], False]) + 1
     period = float(np.median(np.diff(beats)))
     tracked = np.asarray(tracked_beats, dtype=float)
-    positions = np.rint((tracked - beats[0]) / period).astype(int)
-    valid = (positions >= 0) & (positions < len(beats))
-    positions, tracked = positions[valid], tracked[valid]
-    # Transition detections can drift off the fitted pulse. They cannot be
-    # evidence for a subdivision; the stable neighboring bars anchor it.
-    positions = np.unique(positions[abs(tracked - beats[positions]) < .12 * period])
     recovered = []
     for start, end in zip(starts, ends):
         if (start < 2 or end + 2 > len(lengths)
@@ -146,16 +140,29 @@ def _recover_alias_heads(beats: np.ndarray, selected: np.ndarray,
                 or np.any(lengths[end:end + 2] != meter)):
             continue
         left, right = selected[start], selected[end]
-        observed = positions[(positions >= left) & (positions <= right)]
-        if (len(observed) < meter or observed[0] > left + 1 or observed[-1] < right - 2
-                or np.mean(np.diff(observed) == 2) < .9):
+        observed = tracked[(tracked >= beats[left] - .25 * period)
+                           & (tracked <= beats[right] + .25 * period)]
+        if (len(observed) < meter + 1 or observed[0] > beats[left] + period
+                or observed[-1] < beats[right] - period):
             continue
-        omitted = np.setdiff1d(np.arange(left, right + 1), observed)
-        # Weak subdividing pulses need not win the upstream tempo tracker.
-        # But at least half must reach a quarter of its measured-pulse support;
-        # uniformly low model noise never supplies new bar boundaries.
-        threshold = max(.05, .25 * float(np.median(pulse[observed])))
-        if not len(omitted) or np.median(pulse[omitted]) < threshold:
+        # A half-time tracker can drift in phase through a quiet transition.
+        # Throwing away off-grid detections makes that failure invisible. Its
+        # middle half of intervals and overall density must both still support
+        # half the fitted pulse; a brief sparse patch in a full track cannot.
+        lower, upper = np.quantile(np.diff(observed) / period, [.25, .75])
+        density = 2 * (len(observed) - 1) / (right - left)
+        if lower < 1.75 or upper > 2.25 or abs(density - 1) > .2:
+            continue
+        # Compare neighboring pulses at the SAME local volume. Pooling the
+        # median of quiet subdivisions with unrelated loud tracked pulses
+        # rejects real subdivisions when the arrangement changes. Silence is
+        # uninformative, and a lone strong pulse cannot establish subdivision.
+        pairs = pulse[left:right].reshape(-1, 2)
+        stronger, weaker = pairs.max(axis=1), pairs.min(axis=1)
+        informative = stronger >= .05
+        supported = weaker >= np.maximum(.05, .25 * stronger)
+        if (np.count_nonzero(informative) < max(meter, len(pairs) / 2)
+                or np.count_nonzero(supported) < np.count_nonzero(informative) / 2):
             continue
         recovered.extend((selected[start:end] + meter).tolist())
     if not recovered:
@@ -171,7 +178,7 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
     positions = np.unique(positions[np.isfinite(positions)])
     positions = positions[(positions >= -.5) & (positions <= len(beats) - .5)]
     if not len(positions):
-        return [], {"version": 2, "detectedBars": 0, "alignedBars": 0, "changedHeads": 0,
+        return [], {"version": 3, "detectedBars": 0, "alignedBars": 0, "changedHeads": 0,
                     "meters": [], "recoveredHeads": []}
 
     # Conditional head evidence is bounded: a rest is not negative infinity
@@ -224,6 +231,6 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
     changed = int(np.count_nonzero(selected != np.rint(positions).astype(int)))
     selected, recovered = _recover_alias_heads(beats, selected, tracked_beats, pulse_evidence)
     return beats[selected].tolist(), {
-        "version": 2, "detectedBars": len(positions), "alignedBars": len(selected),
+        "version": 3, "detectedBars": len(positions), "alignedBars": len(selected),
         "changedHeads": changed, "meters": np.diff(selected).tolist(), "recoveredHeads": recovered,
     }
