@@ -665,12 +665,14 @@ def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
     if not runs:
         return None
     left, right = runs[-1]
-    # A new stable tempo, or a tracker that still follows audible rubato,
-    # must not be mistaken for an unmetered ending.
-    if right >= len(gaps) - 16 or beats[-1] - beats[right] < 16 * period:
-        return None
     tail = gaps[right:]
-    if len(tail) < 12 or np.std(tail) / np.mean(tail) < .08:
+    # A short terminal half-time tracker can remain regular while following
+    # an unrelated ringing chord. Count elapsed pulses, not just detections:
+    # eight half-time detections already cover sixteen old-clock pulses.
+    half_alias = len(tail) >= 6 and np.all(abs(tail / period - 2) < .25)
+    if not half_alias and (right >= len(gaps) - 16
+                           or beats[-1] - beats[right] < 16 * period
+                           or len(tail) < 12 or np.std(tail) / np.mean(tail) < .08):
         return None
     period, _ = np.polyfit(np.arange(left, right), beats[left:right], 1)
     if abs(period / float(np.median(gaps[left:right])) - 1) > .02:
@@ -681,8 +683,14 @@ def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
     # strong old-phase accents just before it (half-time drums are common).
     window = 12 * period
     anchor = float(beats[right - 1])
+    if half_alias:
+        if beats[-1] - anchor < 12 * period:
+            return None
+        window = min(window, (beats[-1] - anchor) / 2)
     fits = []
-    for start in (anchor + window, (anchor + beats[-1] - window) / 2,
+    old_clock_fits = []
+    for start in (anchor if half_alias else anchor + window,
+                  (anchor + beats[-1] - window) / 2,
                   beats[-1] - window):
         end = min(start + window, beats[-1])
         detected = beats[(beats >= start) & (beats <= end)]
@@ -692,14 +700,25 @@ def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
         times, strengths = np.asarray(attacks).T
         distance = np.min(abs(times[:, None] - detected[None, :]), axis=1) / period
         fits.append(float(np.average(distance < .12, weights=strengths)))
+        positions = (times - anchor) / period
+        old_clock_fits.append(float(np.average(abs(positions - np.rint(positions)) < .12,
+                                              weights=strengths)))
     # One short window can coincide with a fill by chance. Require weak
     # support across most of the ending, while retaining a tail that has even
     # one clearly supported passage (a real ritardando or return to meter).
     if np.median(fits) >= .55 or max(fits) >= .85:
         return None
-    return {"start": round(anchor, 3), "lastBeat": round(anchor, 3),
-            "detectedAttackFit": round(float(np.median(fits)), 3),
-            "strongestWindowFit": round(float(max(fits)), 3)}
+    # Actual quarter-note music can also make a half-time tracker score only
+    # 50%. Its strong old-phase attacks authorize recovery, not truncation.
+    if half_alias and max(old_clock_fits) >= .85:
+        return None
+    diagnostic = {"start": round(anchor, 3), "lastBeat": round(anchor, 3),
+                  "detectedAttackFit": round(float(np.median(fits)), 3),
+                  "strongestWindowFit": round(float(max(fits)), 3)}
+    if half_alias:
+        diagnostic.update(trackingAlias=True,
+                          oldClockAttackFit=round(float(np.median(old_clock_fits)), 3))
+    return diagnostic
 
 
 def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
@@ -731,5 +750,7 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
         for key in ("sections", "automaticSections"):
             if key in adjusted:
                 adjusted[key] = bars_from_sections(adjusted[key], heads)
-    adjusted["audioTimingRepair"] = {"version": 5, **correction}
+    adjusted["audioTimingRepair"] = {
+        "version": 7 if unmetered and unmetered.get("trackingAlias") else 5, **correction,
+    }
     return adjusted

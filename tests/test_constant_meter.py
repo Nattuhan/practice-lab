@@ -340,3 +340,4 @@ def test_fresh_entry_requests_evidence_only_for_constant_and_keeps_the_short_bar
             assert max(np.diff(result['beats'])) - min(np.diff(result['beats'])) > .05
     assert len(calls) == 2
     assert all(call['include_activations'] is (mode == 'constant') for call in calls)
+    assert all(call['multiprocess'] is False for call in calls)

@@ -357,6 +357,36 @@ def test_keeps_new_stable_tempo_at_ending(tmp_path):
     assert result.get('audioTimingRepair', {}).get('unmeteredTail') is None
 
 
+@pytest.mark.parametrize('period,offset', [(.33, .19), (.51, 1.13), (.7, .37)])
+@pytest.mark.parametrize('source_tail', ['unrelated', 'half_time', 'old_clock'])
+def test_short_regular_half_time_tail_needs_source_phase_support(tmp_path, period, offset, source_tail):
+    from practice_lab.audio_timing import _unmetered_tail
+    regular = offset + np.arange(320) * period
+    detected_tail = regular[-1] + np.arange(1, 9) * 2 * period
+    beats = np.round(np.r_[regular, detected_tail], 3).tolist()
+    data = dict(bpm=60/period, beats=beats, downbeats=beats[::4],
+                duration=detected_tail[-1]+period)
+    if source_tail == 'unrelated':
+        # A short ghost tracker can be regular, even while the ending has no
+        # rhythmic support for either that tracker or the preceding clock.
+        attacks = regular[-1] + np.arange(1, 24) * .73 * period
+    elif source_tail == 'half_time':
+        attacks = detected_tail
+    else:
+        attacks = regular[-1] + np.arange(1, 17) * period
+    audio = tmp_path / 'terminal-half-tracker.wav'
+    write_attacks(audio, np.r_[regular, attacks], data['duration'])
+    with sf.SoundFile(audio) as source:
+        result = _unmetered_tail(source, data)
+    if source_tail == 'unrelated':
+        assert result['lastBeat'] == beats[319]
+        assert result['detectedAttackFit'] < .55
+    else:
+        # Retain a real half-time ending AND real quarter pulses missed by
+        # the terminal tracker. Neither is a reason to stop the music early.
+        assert result is None
+
+
 def test_keeps_genuine_half_time_passages_in_octave_mixed_detection(tmp_path):
     period, offset = .5, .17
     actual = offset + np.arange(480) * period

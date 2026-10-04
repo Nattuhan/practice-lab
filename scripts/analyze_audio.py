@@ -59,8 +59,13 @@ def main(argv: list[str] | None = None) -> int:
 
     def analyze(selected_device: str):
         print(f"[INFO] Starting all-in-one-fix analysis on {selected_device}.", file=sys.stderr, flush=True)
+        # This entry analyzes exactly one track. A spectrogram worker pool
+        # cannot parallelize that input, and each frozen macOS worker imports
+        # plotting/font discovery before doing useful work. Keep preparation
+        # in this process; the model's inference and outputs are unchanged.
         return allin1fix.analyze(str(mp3_path), device=selected_device,
-                                include_activations=args.tempo_mode == "constant")
+                                include_activations=args.tempo_mode == "constant",
+                                multiprocess=False)
 
     with contextlib.redirect_stdout(sys.stderr):
         try:
