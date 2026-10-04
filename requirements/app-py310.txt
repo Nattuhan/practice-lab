@@ -1,6 +1,11 @@
 fastapi==0.128.0
 uvicorn==0.40.0
-yt-dlp==2026.7.4
+# yt-dlp must follow YouTube's changes, so it is not pinned here: 2026.7.4
+# defaulted to the android_vr player client, which YouTube answers with
+# HTTP 403 on the stream URL. 2026.8.19 dropped that client from its defaults.
+# Pinning it leaves packaged Windows builds unable to download at all, because
+# the frozen backend cannot update yt-dlp by itself. Requires Python >= 3.10.
+yt-dlp>=2026.8.19
 librosa==0.11.0
 numpy<2
 python-multipart==0.0.21
