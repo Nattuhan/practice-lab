@@ -226,10 +226,19 @@ def _recount_tracking_spans(beats: np.ndarray, selected: np.ndarray,
             deviations = int(np.count_nonzero(abs(np.diff(observed) / period - 1) > .12))
             if deviations < meter or not len(candidate):
                 break
-            comparison = original if len(original) else selected[[start, end]]
-            nearby = comparison[np.argmin(abs(comparison[:, None] - candidate[None, :]), axis=0)]
-            confidence = pulse[candidate] / (pulse[candidate] + .05)
-            gain = float(np.sum(confidence * np.log((head[candidate] + prior) / (head[nearby] + prior))))
+            # Compare each distinct boundary once against the same evidence
+            # floor. A stretched pair of bars can contain three real bars;
+            # pairing both new heads with the same old head counts that old
+            # evidence twice and lets an unplayed new head veto the played
+            # one. Evidence below the floor is uninformative, so adding many
+            # unplayed boundaries cannot accumulate a positive vote either.
+            # An unplayed boundary contributes no information,
+            # while an original head with real support still opposes removal.
+            def score(indexes: np.ndarray) -> float:
+                confidence = pulse[indexes] / (pulse[indexes] + .05)
+                return float(np.sum(confidence * np.log(np.maximum(head[indexes], prior) / prior)))
+
+            gain = score(candidate) - score(original)
             if gain > log(4):
                 replacements.append((start, end, candidate))
                 consumed = end
@@ -258,7 +267,7 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
     positions = np.unique(positions[np.isfinite(positions)])
     positions = positions[(positions >= -.5) & (positions <= len(beats) - .5)]
     if not len(positions):
-        return [], {"version": 4, "detectedBars": 0, "alignedBars": 0, "changedHeads": 0,
+        return [], {"version": 5, "detectedBars": 0, "alignedBars": 0, "changedHeads": 0,
                     "meters": [], "recoveredHeads": [], "recountedSpans": []}
 
     # Conditional head evidence is bounded: a rest is not negative infinity
@@ -312,7 +321,7 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
     selected, recovered = _recover_alias_heads(beats, selected, tracked_beats, pulse_evidence)
     selected, recounted = _recount_tracking_spans(beats, selected, tracked_beats, pulse_evidence, evidence)
     return beats[selected].tolist(), {
-        "version": 4, "detectedBars": len(positions), "alignedBars": len(selected),
+        "version": 5, "detectedBars": len(positions), "alignedBars": len(selected),
         "changedHeads": changed, "meters": np.diff(selected).tolist(), "recoveredHeads": recovered,
         "recountedSpans": recounted,
     }

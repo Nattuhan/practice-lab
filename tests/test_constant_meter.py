@@ -357,6 +357,27 @@ def test_a_real_six_beat_bar_with_distorted_tracking_or_no_source_evidence_is_pr
     assert diagnostics['meters'] == meters
 
 
+@pytest.mark.parametrize('meter', [4, 6])
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+def test_one_unplayed_head_cannot_count_the_same_displaced_head_against_both_new_bars(meter, period, offset):
+    actual = offset + np.arange(meter * 24 + 1) * period
+    expected = actual[::meter]
+    left, right = meter * 10, meter * 13
+    middle = (left + right) // 2
+    detected = np.r_[expected[:11], actual[middle], expected[13:]]
+    tracked = np.r_[actual[:left], np.linspace(actual[left], actual[right], meter * 2 + 1), actual[right + 1:]]
+    activations = probabilities(actual, expected)
+    # The displaced boundary still has some classifier support, while one
+    # correct boundary is unplayed. Counting the old boundary twice rejects
+    # the three regular bars despite the earlier new head's strong support.
+    activations['downbeat'][round(actual[middle] * 100)] = .10
+    activations['downbeat'][round(actual[left + meter * 2] * 100)] = .001
+    aligned, diagnostics = decode_bar_heads(actual, detected.tolist(), activations,
+                                           tracked_beats=tracked)
+    assert aligned == expected.tolist()
+    assert set(diagnostics['meters']) == {meter}
+
+
 @pytest.mark.parametrize('mode', ['constant', 'variable'])
 def test_fresh_entry_requests_evidence_only_for_constant_and_keeps_the_short_bar(tmp_path, monkeypatch, capsys, mode):
     from test_audio_timing import write_attacks
