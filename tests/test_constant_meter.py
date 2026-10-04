@@ -299,6 +299,64 @@ def test_invalid_probabilities_and_unresolvable_heads_fail_visibly():
         decode_bar_heads(beats, [2, 2.01, 2.02])
 
 
+@pytest.mark.parametrize('meter', [3, 4])
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+def test_tracking_phase_excursion_does_not_manufacture_short_and_long_bars(meter, period, offset):
+    # A compressed bar moves all later bar labels one pulse early. A later
+    # slower rhythmic alias finally returns to the original bar phase. The
+    # recording's classifier still supports the same meter throughout.
+    wrong = [meter - 1] + [meter] * 8 + [meter + 1, meter + (meter + 1) // 2, meter + meter // 2]
+    meters = [meter] * 10 + wrong + [meter] * 10
+    actual = offset + np.arange(sum(meters) + 1) * period
+    indexes = np.r_[0, np.cumsum(meters)]
+    detected = actual[indexes]
+    tracked = np.concatenate([np.linspace(left, right, meter + 1)[:-1]
+                              for left, right in zip(detected[:-1], detected[1:])])
+    tracked = np.r_[tracked, detected[-1]]
+    expected = actual[::meter]
+    aligned, diagnostics = decode_bar_heads(actual, detected.tolist(), probabilities(actual, expected),
+                                           tracked_beats=tracked)
+    assert aligned == expected.tolist()
+    assert set(diagnostics['meters']) == {meter}
+
+
+@pytest.mark.parametrize('meter,short', [(3, 2), (4, 2), (5, 3)])
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+def test_two_stretched_detection_bars_recover_regular_bars_then_a_short_bar(meter, short, period, offset):
+    meters = [meter] * 10 + [meter, meter, short] + [meter] * 10
+    actual = offset + np.arange(sum(meters) + 1) * period
+    expected = actual[np.r_[0, np.cumsum(meters)]]
+    left, right = meter * 10, meter * 12 + short
+    # The fixed-meter detector fits two bars into a passage that actually
+    # contains two regular bars and a short bar (e.g. 4 + 4 + 2).
+    detected = np.r_[expected[:11], (actual[left] + actual[right]) / 2, expected[13:]]
+    middle = np.linspace(actual[left], actual[right], meter * 2 + 1)
+    tracked = np.r_[actual[:left], middle, actual[right + 1:]]
+    activations = probabilities(actual, expected)
+    # An unplayed short-bar head must survive. The new earlier head and the
+    # measured right-hand anchor establish its position without a loud click.
+    activations['downbeat'][round(actual[left + meter * 2] * 100)] = .001
+    aligned, diagnostics = decode_bar_heads(actual, detected.tolist(), activations,
+                                           tracked_beats=tracked)
+    assert aligned == expected.tolist()
+    assert diagnostics['meters'] == meters
+
+
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+@pytest.mark.parametrize('supported', [True, False])
+def test_a_real_six_beat_bar_with_distorted_tracking_or_no_source_evidence_is_preserved(period, offset, supported):
+    meters = [4] * 10 + [6] + [4] * 10
+    actual = offset + np.arange(sum(meters) + 1) * period
+    heads = actual[np.r_[0, np.cumsum(meters)]]
+    distorted = np.linspace(actual[40], actual[46], 5)
+    tracked = np.r_[actual[:40], distorted, actual[47:]]
+    activations = probabilities(actual, heads) if supported else None
+    aligned, diagnostics = decode_bar_heads(actual, heads.tolist(), activations,
+                                           tracked_beats=tracked)
+    assert aligned == heads.tolist()
+    assert diagnostics['meters'] == meters
+
+
 @pytest.mark.parametrize('mode', ['constant', 'variable'])
 def test_fresh_entry_requests_evidence_only_for_constant_and_keeps_the_short_bar(tmp_path, monkeypatch, capsys, mode):
     from test_audio_timing import write_attacks

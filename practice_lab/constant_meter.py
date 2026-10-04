@@ -170,6 +170,86 @@ def _recover_alias_heads(beats: np.ndarray, selected: np.ndarray,
     return np.unique(np.r_[selected, recovered]), beats[recovered].tolist()
 
 
+def _recount_tracking_spans(beats: np.ndarray, selected: np.ndarray,
+                            tracked_beats: np.ndarray | None, pulse: np.ndarray,
+                            evidence: np.ndarray) -> tuple[np.ndarray, list[dict]]:
+    """Restore bar phase lost to a distorted pulse track, keeping short bars.
+
+    A tracker can squeeze a real passage into its fixed number of detections.
+    Snapping those bar labels onto a recovered clock leaves spurious 3/5/6
+    bars, or an entire phrase one pulse out of phase. Recount only between an
+    established meter and a source-supported return to that meter. Its right
+    anchor is musical evidence: any remaining short bar must end there.
+    """
+    if tracked_beats is None or len(selected) < 7:
+        return selected, []
+    lengths = np.diff(selected)
+    values, counts = np.unique(lengths, return_counts=True)
+    meter = int(values[np.argmax(counts)])
+    if meter < 2 or counts.max() <= len(lengths) / 2:
+        return selected, []
+    tracked = np.asarray(tracked_beats, dtype=float)
+    period = float(np.median(np.diff(beats)))
+    # Recover the joint head probability. Conditional odds alone make a
+    # ghost head with almost no pulse look comparable to a played boundary.
+    # The product of the existing probability floors regularizes the ratio;
+    # silence cannot produce an arbitrarily large likelihood improvement.
+    head = evidence * np.maximum(pulse, .05)
+    prior = .05 * .05
+    replacements = []
+    consumed = 0
+    for start in np.flatnonzero(lengths != meter):
+        if (start < max(2, consumed) or np.any(lengths[start - 2:start] != meter)):
+            continue
+        for end in range(start + 1, len(selected) - 3):
+            anchors = selected[end:end + 4]
+            if np.any(np.diff(anchors) != meter):
+                continue
+            # Four measured boundaries distinguish a real new bar phase from
+            # a run of regular but wrongly labelled beats. Two must have both
+            # an informative pulse and plausible conditional head evidence.
+            informative = (pulse[anchors] >= .05) & (evidence[anchors] >= .1)
+            if np.count_nonzero(informative) < 2:
+                continue
+            left, right = selected[start], selected[end]
+            candidate = np.arange(left + meter, right, meter)
+            original = selected[start + 1:end]
+            if np.array_equal(candidate, original) or (right - left) % meter == 1:
+                break
+            observed = tracked[(tracked >= beats[left] - .25 * period)
+                               & (tracked <= beats[right] + .25 * period)]
+            if (len(observed) < meter + 1 or observed[0] > beats[left] + period
+                    or observed[-1] < beats[right] - period):
+                break
+            # Require at least a whole bar's worth of bad tracking links.
+            # A genuine mixed meter with a full pulse track is untouched.
+            deviations = int(np.count_nonzero(abs(np.diff(observed) / period - 1) > .12))
+            if deviations < meter or not len(candidate):
+                break
+            comparison = original if len(original) else selected[[start, end]]
+            nearby = comparison[np.argmin(abs(comparison[:, None] - candidate[None, :]), axis=0)]
+            confidence = pulse[candidate] / (pulse[candidate] + .05)
+            gain = float(np.sum(confidence * np.log((head[candidate] + prior) / (head[nearby] + prior))))
+            if gain > log(4):
+                replacements.append((start, end, candidate))
+                consumed = end
+            # Do not search past a source-supported return just to accumulate
+            # enough votes from another, unrelated tracking failure later.
+            break
+    if not replacements:
+        return selected, []
+    keep = np.ones(len(selected), dtype=bool)
+    additions, diagnostics = [], []
+    for start, end, candidate in replacements:
+        keep[start + 1:end] = False
+        additions.extend(candidate.tolist())
+        indexes = np.r_[selected[start], candidate, selected[end]]
+        diagnostics.append({"start": float(beats[indexes[0]]), "end": float(beats[indexes[-1]]),
+                            "originalHeads": beats[selected[start:end + 1]].tolist(),
+                            "heads": beats[indexes].tolist(), "meters": np.diff(indexes).tolist()})
+    return np.unique(np.r_[selected[keep], additions]), diagnostics
+
+
 def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
                      activations: dict | None = None, fps: float = 100, *,
                      tracked_beats: np.ndarray | None = None) -> tuple[list[float], dict]:
@@ -178,8 +258,8 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
     positions = np.unique(positions[np.isfinite(positions)])
     positions = positions[(positions >= -.5) & (positions <= len(beats) - .5)]
     if not len(positions):
-        return [], {"version": 3, "detectedBars": 0, "alignedBars": 0, "changedHeads": 0,
-                    "meters": [], "recoveredHeads": []}
+        return [], {"version": 4, "detectedBars": 0, "alignedBars": 0, "changedHeads": 0,
+                    "meters": [], "recoveredHeads": [], "recountedSpans": []}
 
     # Conditional head evidence is bounded: a rest is not negative infinity
     # and a loud last beat cannot win on its own.
@@ -230,7 +310,9 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
     selected = np.asarray(selected[::-1], dtype=int)
     changed = int(np.count_nonzero(selected != np.rint(positions).astype(int)))
     selected, recovered = _recover_alias_heads(beats, selected, tracked_beats, pulse_evidence)
+    selected, recounted = _recount_tracking_spans(beats, selected, tracked_beats, pulse_evidence, evidence)
     return beats[selected].tolist(), {
-        "version": 3, "detectedBars": len(positions), "alignedBars": len(selected),
+        "version": 4, "detectedBars": len(positions), "alignedBars": len(selected),
         "changedHeads": changed, "meters": np.diff(selected).tolist(), "recoveredHeads": recovered,
+        "recountedSpans": recounted,
     }
