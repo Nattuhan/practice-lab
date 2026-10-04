@@ -13,14 +13,13 @@ const barHeadIndexes = (beats, downbeats) => {
   return [...heads].sort((a, b) => a - b);
 };
 
-// Complete only the bar containing the first detected beat. Silence can hold
-// its count-in, but is not evidence for adding earlier bars to the analysis.
-export const completeOpeningClickBar = (beats, downbeats) => {
+// Playback counts can precede detected music without manufacturing analysis
+// bars. In constant-tempo mode the source's audible start also covers pickups
+// that the model omitted entirely before its first detected bar.
+export const completeOpeningClickBar = (beats, downbeats, { audibleStart = null, tempoMode } = {}) => {
   const [firstHead, secondHead] = barHeadIndexes(beats, downbeats);
   const barLength = secondHead - firstHead;
   if (!(barLength >= 2 && barLength <= 12)) return beats;
-  const missing = (barLength - firstHead % barLength) % barLength;
-  if (!missing) return beats;
   const period = (beats[secondHead] - beats[firstHead]) / barLength;
   if (!(period > 0 && Number.isFinite(period))) return beats;
   // A pickup must share the opening bar's pulse. Do not extrapolate a free-time
@@ -31,6 +30,15 @@ export const completeOpeningClickBar = (beats, downbeats) => {
     const gap = (beats[i] - beats[i - 1]) / period;
     if (!Number.isFinite(gap) || Math.abs(gap - 1) > .1) return beats;
   }
+  const sourceStartKnown = tempoMode === 'constant' && Number.isFinite(audibleStart) && audibleStart >= 0;
+  const firstSoundIndex = sourceStartKnown
+    ? Math.ceil((audibleStart - beats[0]) / period - .000001) : 0;
+  const soundBeatOffset = ((firstSoundIndex - firstHead) % barLength + barLength) % barLength;
+  // If music enters on 1, a preceding bar supplies the cue. A pickup on 3 or
+  // 4 needs only that bar's preceding counts, as long as they fit in the file.
+  const startIndex = firstSoundIndex - (soundBeatOffset || (sourceStartKnown ? barLength : 0));
+  const missing = Math.max(0, -startIndex);
+  if (!missing) return beats;
   const prefix = Array.from({ length: missing }, (_, i) => beats[0] - (missing - i) * period)
     .filter(time => time >= -.0000005)
     .map(time => Math.max(0, Math.round(time * 1e6) / 1e6));

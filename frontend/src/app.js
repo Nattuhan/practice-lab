@@ -1,5 +1,6 @@
 import { PresentationClock, correctionSeconds, normalizeSyncSettings, outputDelaySeconds, renderPresentationProgress } from "./presentation-clock.js";
 import { beatCounts, completeOpeningClickBar, normalizeVoicePitch } from './count-voice.js';
+import { audibleOpeningStart } from './opening-audio.js';
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "./library.js";
@@ -345,6 +346,7 @@ let clickPitch = "standard";
 let voicePitch = "standard";
 let audioCtx = null;
 let audioPreparation = null;
+let openingAudioStart = null;
 let alignedAssetUrls = [];
 const alignedOutputs = new Map();
 let playbackRawAssets = null;
@@ -1220,6 +1222,13 @@ const updateStemExportScopeAvailability = () => {
   }
 };
 
+const openingClickPending = () => SELECTORS.stemExportClick.checked && currentData?.tempoMode === 'constant' && !audioReady;
+const updateStemExportButton = () => {
+  // Click export needs the decoded source's opening too; a quick export while
+  // loading must not omit the count-in that playback is still preparing.
+  SELECTORS.btnExportStemMix.disabled = SELECTORS.stemExportActions.hidden || stemExportInProgress || openingClickPending();
+};
+
 const safeDownloadName = value => String(value || "practice")
   .replace(/[\\/:*?"<>|]+/g, " ")
   .replace(/\s+/g, " ")
@@ -1240,7 +1249,7 @@ const stemMixFilename = (title, stemVolumes, { selection = false, click = false 
 };
 
 const exportStemMix = async () => {
-  if (!currentId || !hasServer || stemExportInProgress) return;
+  if (!currentId || !hasServer || stemExportInProgress || openingClickPending()) return;
   const stemVolumes = getStemMix();
   if (!STEM_NAMES.some(stem => Number(stemVolumes[stem]) > 0)) {
     SELECTORS.stemStatus.className = "stem-status err";
@@ -1308,7 +1317,7 @@ const exportStemMix = async () => {
     SELECTORS.stemStatus.textContent = error.message;
   } finally {
     stemExportInProgress = false;
-    SELECTORS.btnExportStemMix.disabled = false;
+    updateStemExportButton();
   }
 };
 
@@ -2135,7 +2144,8 @@ const scheduleWaveformPreviewSeek = time => {
 const getAdjustedBeats = () => {
   const beats = currentData?.beats ?? [];
   if (!beats.length) return [];
-  if (bpmFactor === 1) return completeOpeningClickBar(beats, currentData?.downbeats);
+  const opening = { audibleStart: openingAudioStart, tempoMode: currentData?.tempoMode };
+  if (bpmFactor === 1) return completeOpeningClickBar(beats, currentData?.downbeats, opening);
 
   let adjusted = [...beats];
   let factor = bpmFactor;
@@ -2157,7 +2167,7 @@ const getAdjustedBeats = () => {
     factor *= 2;
   }
 
-  return completeOpeningClickBar(adjusted, currentData?.downbeats);
+  return completeOpeningClickBar(adjusted, currentData?.downbeats, opening);
 };
 
 const getLoopRange = () => {
@@ -3355,7 +3365,7 @@ const renderStemPanel = assets => {
   SELECTORS.stemExportActions.hidden = !available || !hasServer;
   SELECTORS.stemExportClick.disabled = !currentData?.beats?.length;
   if (SELECTORS.stemExportClick.disabled) SELECTORS.stemExportClick.checked = false;
-  SELECTORS.btnExportStemMix.disabled = !available || stemExportInProgress;
+  updateStemExportButton();
   SELECTORS.stemStatus.className = available ? "stem-status ok" : "stem-status";
   SELECTORS.stemStatus.textContent = available
     ? (isMobileViewport() && !mobileStemMixActivated ? "軽量再生 · 元音源を使用（パート操作で切替）" : "パート再生 · 自動同期")
@@ -3404,6 +3414,8 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   const preparation = new AbortController();
   audioPreparation = preparation;
   audioReady = false;
+  openingAudioStart = null;
+  updateStemExportButton();
   cancelAnimationFrame(presentationFrame);
   presentationClock.reset(performance.now(), 0);
   presentationTime = 0;
@@ -3424,11 +3436,13 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
   for (const url of alignedAssetUrls) URL.revokeObjectURL(url);
   alignedAssetUrls = [];
   const preparedUrls = [];
-  const beats = getAdjustedBeats();
   let waveform, duration;
   const sharedStems = [];
   try {
     const original = await decodePlaybackAsset(audioUrl, preparation.signal);
+    preparation.signal.throwIfAborted();
+    openingAudioStart = audibleOpeningStart(original, currentData?.beats?.[0], 60 / currentData?.bpm);
+    const beats = getAdjustedBeats();
     waveform = [original.getChannelData(0)]; duration = original.duration;
     const tracks = [];
     if (hasStemAssets({ stems: stemAssets }) && (!isMobileViewport() || activateStems)) {
@@ -3680,6 +3694,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
 
   ws.on("decode", () => {
     audioReady = true;
+    updateStemExportButton();
     startPresentationFrames();
     SELECTORS.waveformLoading.hidden = true;
     disableTransport(false);
@@ -3817,6 +3832,7 @@ const setupControls = () => {
   document.getElementById("btn-retry-stems").onclick = () => rebuildAlignedClicks();
   document.getElementById("btn-original-mix").onclick = () => stemTransport.useOriginal();
   SELECTORS.btnExportStemMix.onclick = () => exportStemMix();
+  SELECTORS.stemExportClick.onchange = updateStemExportButton;
   SELECTORS.btnBpmHalf.onclick = () => {
     if (!currentId) return;
     bpmFactor /= 2;

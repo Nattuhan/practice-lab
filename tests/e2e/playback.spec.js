@@ -113,6 +113,62 @@ test('3・4から始まる曲の前の空白にも1・2のクリックと読み�
   }
 });
 
+test('最初の検出拍より前に歌声が入る曲も、歌い出す前から数えて書き出す', async ({ page }) => {
+  const source = silentWav(12);
+  for (let i = Math.ceil(4.7 * 8000); i < 12 * 8000; i++) {
+    source.writeInt16LE(Math.round(.1 * 32767 * Math.sin(2 * Math.PI * 220 * i / 8000)), 44 + i * 2);
+  }
+  await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
+    ...baselineResult, duration: 12, tempoMode: 'constant',
+    beats: Array.from({ length: 8 }, (_, i) => 8 + i * .5), downbeats: [8, 10],
+  } }));
+  let releaseSource;
+  const sourceReady = new Promise(resolve => { releaseSource = resolve; });
+  await page.route('**/audio/e2e-baseline.mp3', async route => {
+    await sourceReady;
+    return route.fulfill({ contentType: 'audio/wav', body: source });
+  });
+  let exported = null;
+  await page.route('**/results/e2e-baseline/stems/export', route => {
+    exported = route.request().postDataJSON();
+    return route.fulfill({ status: 422, json: { detail: 'Export request captured for timing verification' } });
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('practice_lab_v1', JSON.stringify({ clickSound: 'voice', volMetro: 100, volMusic: 0 }));
+    const create = URL.createObjectURL;
+    URL.createObjectURL = blob => {
+      if (blob.type === 'audio/wav') window.__alignedBlob = blob;
+      return create(blob);
+    };
+  });
+  await page.goto('/');
+  await page.locator('#stem-export-click').check();
+  await expect(page.locator('#btn-export-stem-mix')).toBeDisabled();
+  releaseSource();
+  await expect.poll(() => page.evaluate(() => !!window.__alignedBlob)).toBe(true);
+  const actual = await page.evaluate(async () => {
+    const bytes = await window.__alignedBlob.arrayBuffer(), view = new DataView(bytes);
+    const channels = view.getUint16(22, true), rate = view.getUint32(24, true), pcm = new Float32Array(bytes, 44);
+    return { rate, voices: [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(time => {
+      const start = Math.round(time * rate);
+      return Array.from({ length: 100 }, (_, i) => pcm[(start + i + 100) * channels + channels - 1]);
+    }) };
+  });
+  const voices = countVoiceSamples(actual.rate);
+  for (const [index, count] of [1,2,3,4,1,2,3,4,1].entries()) {
+    expect(actual.voices[index]).toEqual([...voices[count].slice(100, 200)]);
+  }
+  await page.locator('#btn-metro').click();
+  await page.locator('#btn-play').click();
+  await expect.poll(() => page.evaluate(() => window.__clickPeaks.filter(peak => peak.position > 3.9 && peak.position < 4.7).length)).toBeGreaterThanOrEqual(2);
+  await page.locator('#btn-play').click();
+  await page.locator('#stem-export-click').check();
+  await page.locator('#btn-export-stem-mix').click();
+  await expect.poll(() => exported?.clickTimes?.length).toBe(16);
+  expect(exported.clickTimes.slice(0, 9)).toEqual([4,4.5,5,5.5,6,6.5,7,7.5,8]);
+  expect(exported.clickCounts.slice(0, 9)).toEqual([1,2,3,4,1,2,3,4,1]);
+});
+
 test('0.5倍速では左右カーソルキーで2.5秒ずつ移動する', async ({ page }) => {
   await start(page);
   await page.locator('#btn-play').click();

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { VOICE_PITCH_IDS, beatCounts, completeOpeningClickBar, countVoiceSamples, normalizeVoicePitch } from '../src/count-voice.js';
 import { alignedWav } from '../src/aligned-click.js';
+import { audibleOpeningStart } from '../src/opening-audio.js';
 
 test('4拍・2拍・4拍で小節頭から読み上げ直す', () => {
   const beats = Array.from({ length: 14 }, (_, i) => .17 + i * .36);
@@ -77,6 +78,56 @@ test('拍子不明・冒頭のテンポ変化・拍列と合わない小節頭�
   assert.equal(completeOpeningClickBar(freeIntro, [freeIntro[2], freeIntro[6]]), freeIntro);
   const change = [2.8, 3.4, ...beats.slice(2)];
   assert.equal(completeOpeningClickBar(change, [change[2], change[6]]), change);
+});
+
+test('検出拍より前の歌い出しまで一定テンポを遡り、空白に入るためのカウントを置く', () => {
+  for (const period of [.33, .49, .68]) {
+    const offset = 25 * period;
+    const beats = Array.from({ length: 16 }, (_, i) => offset + i * period);
+    const heads = [beats[0], beats[4], beats[8], beats[10], beats[14]];
+    // The source begins before detected beat 1, inside an omitted opening bar.
+    const options = { audibleStart: offset - 7.5 * period, tempoMode: 'constant' };
+    const completed = completeOpeningClickBar(beats, heads, options);
+    assert.equal(completed.length, beats.length + 8);
+    assert.ok(Math.abs(completed[0] - (offset - 8 * period)) < 1e-6);
+    assert.ok(completed[0] < options.audibleStart);
+    assert.deepEqual(beatCounts(completed, heads).slice(0, 8), [1,2,3,4,1,2,3,4]);
+    assert.deepEqual(completed.slice(8), beats);
+    assert.deepEqual(beatCounts(completed, heads).slice(8), beatCounts(beats, heads));
+    assert.deepEqual(completeOpeningClickBar(completed, heads, options), completed);
+    assert.equal(completeOpeningClickBar(beats, heads, { ...options, tempoMode: 'variable' }), beats);
+    assert.equal(completeOpeningClickBar(beats, heads, { ...options, audibleStart: null }), beats);
+  }
+});
+
+test('1拍目から音が始まる場合も手前の小節で合図し、3拍目の入りは1・2だけ補う', () => {
+  const beats = Array.from({ length: 12 }, (_, i) => 3 + i * .5);
+  const options = { audibleStart: 3, tempoMode: 'constant' }, heads = [3, 5, 7];
+  const completed = completeOpeningClickBar(beats, heads, options);
+  assert.deepEqual(completed, [1,1.5,2,2.5,...beats]);
+  assert.deepEqual(completeOpeningClickBar(completed, heads, options), completed);
+  const pickup = completeOpeningClickBar(beats, [4,6,8], { ...options, audibleStart: 2.9 });
+  assert.deepEqual(pickup, [2,2.5,...beats]);
+  const atStart = beats.map(time => time - 3);
+  assert.deepEqual(completeOpeningClickBar(atStart, [0,2,4], { ...options, audibleStart: 0 }), atStart);
+  assert.equal(completeOpeningClickBar(beats, heads, { ...options, audibleStart: 5.6 }), beats);
+});
+
+test('音声の開始は小さい歌声と逆相ステレオでも見つけ、無音や微小ノイズでは作らない', () => {
+  const sampleRate = 8000, length = 10 * sampleRate;
+  const left = Float32Array.from({ length }, (_, i) => {
+    const t = i / sampleRate;
+    return t >= 4.7 ? Math.sin(2 * Math.PI * 220 * t) * (t < 6 ? .02 : .2) : .00001;
+  });
+  const right = left.map(value => -value);
+  const buffer = { sampleRate, length, numberOfChannels: 2, getChannelData: i => [left,right][i] };
+  const start = audibleOpeningStart(buffer, 6, .5);
+  assert.ok(start <= 4.7 && start >= 4.7 - .02);
+  const silent = { ...buffer, getChannelData: () => new Float32Array(length) };
+  assert.equal(audibleOpeningStart(silent, 6, .5), null);
+  assert.equal(audibleOpeningStart({ ...buffer, getChannelData: () => new Float32Array(length).fill(.00001) }, 6, .5), null);
+  assert.equal(audibleOpeningStart(buffer, 0, .5), null);
+  assert.equal(audibleOpeningStart(buffer, 6, 0), null);
 });
 
 test('補った1・2は無音の元音源と別のクリック・読み上げチャンネルに入る', async () => {

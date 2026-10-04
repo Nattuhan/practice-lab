@@ -86,12 +86,10 @@ var barHeadIndexes = (beats, downbeats) => {
   }
   return [...heads].sort((a3, b2) => a3 - b2);
 };
-var completeOpeningClickBar = (beats, downbeats) => {
+var completeOpeningClickBar = (beats, downbeats, { audibleStart = null, tempoMode } = {}) => {
   const [firstHead, secondHead] = barHeadIndexes(beats, downbeats);
   const barLength = secondHead - firstHead;
   if (!(barLength >= 2 && barLength <= 12)) return beats;
-  const missing = (barLength - firstHead % barLength) % barLength;
-  if (!missing) return beats;
   const period = (beats[secondHead] - beats[firstHead]) / barLength;
   if (!(period > 0 && Number.isFinite(period))) return beats;
   if ((downbeats || []).slice(0, 2).some((head) => Math.min(...[firstHead, secondHead].map((index) => Math.abs(beats[index] - head))) > period * 0.12)) return beats;
@@ -99,6 +97,12 @@ var completeOpeningClickBar = (beats, downbeats) => {
     const gap = (beats[i3] - beats[i3 - 1]) / period;
     if (!Number.isFinite(gap) || Math.abs(gap - 1) > 0.1) return beats;
   }
+  const sourceStartKnown = tempoMode === "constant" && Number.isFinite(audibleStart) && audibleStart >= 0;
+  const firstSoundIndex = sourceStartKnown ? Math.ceil((audibleStart - beats[0]) / period - 1e-6) : 0;
+  const soundBeatOffset = ((firstSoundIndex - firstHead) % barLength + barLength) % barLength;
+  const startIndex = firstSoundIndex - (soundBeatOffset || (sourceStartKnown ? barLength : 0));
+  const missing = Math.max(0, -startIndex);
+  if (!missing) return beats;
   const prefix = Array.from({ length: missing }, (_, i3) => beats[0] - (missing - i3) * period).filter((time) => time >= -5e-7).map((time) => Math.max(0, Math.round(time * 1e6) / 1e6));
   return prefix.length ? [...prefix, ...beats] : beats;
 };
@@ -140,6 +144,29 @@ var countVoiceSamples = (sampleRate, variant = "standard") => {
     cache.set(cacheKey, voices);
   }
   return cache.get(cacheKey);
+};
+
+// frontend/src/opening-audio.js
+var audibleOpeningStart = (buffer, firstBeat, period) => {
+  if (!(firstBeat > 0 && Number.isFinite(firstBeat) && period > 0 && Number.isFinite(period))) return null;
+  const { sampleRate, length, numberOfChannels } = buffer;
+  const planes = Array.from({ length: numberOfChannels }, (_, i3) => buffer.getChannelData(i3));
+  const frame = Math.max(1, Math.round(sampleRate * Math.min(0.02, period / 16)));
+  const limit = Math.min(length, Math.ceil((firstBeat + 8 * period) * sampleRate));
+  const levels = [];
+  for (let start = 0; start < limit; start += frame) {
+    const end = Math.min(limit, start + frame);
+    let power = 0;
+    for (const plane of planes) {
+      for (let i3 = start; i3 < end; i3++) power += plane[i3] ** 2;
+    }
+    levels.push(Math.sqrt(power / ((end - start) * numberOfChannels)));
+  }
+  const reference = levels.slice(Math.floor(firstBeat * sampleRate / frame)).sort((a3, b2) => a3 - b2);
+  if (!reference.length) return null;
+  const threshold = Math.max(1e-4, reference[Math.floor((reference.length - 1) * 0.75)] * 0.03);
+  const first = levels.findIndex((level) => level > threshold);
+  return first < 0 ? null : first * frame / sampleRate;
 };
 
 // node_modules/lucide/dist/esm/createElement.js
@@ -3455,6 +3482,7 @@ var clickPitch = "standard";
 var voicePitch = "standard";
 var audioCtx = null;
 var audioPreparation = null;
+var openingAudioStart = null;
 var alignedAssetUrls = [];
 var alignedOutputs = /* @__PURE__ */ new Map();
 var playbackRawAssets = null;
@@ -4242,6 +4270,10 @@ var updateStemExportScopeAvailability = () => {
     SELECTORS.stemExportScope.value = "full";
   }
 };
+var openingClickPending = () => SELECTORS.stemExportClick.checked && currentData?.tempoMode === "constant" && !audioReady;
+var updateStemExportButton = () => {
+  SELECTORS.btnExportStemMix.disabled = SELECTORS.stemExportActions.hidden || stemExportInProgress || openingClickPending();
+};
 var safeDownloadName = (value) => String(value || "practice").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80) || "practice";
 var stemMixFilename = (title, stemVolumes, { selection = false, click = false } = {}) => {
   const base = safeDownloadName(title);
@@ -4256,7 +4288,7 @@ var stemMixFilename = (title, stemVolumes, { selection = false, click = false } 
   return `${base}${stemSuffix}${rangeSuffix}${clickSuffix}.mp3`;
 };
 var exportStemMix = async () => {
-  if (!currentId || !hasServer || stemExportInProgress) return;
+  if (!currentId || !hasServer || stemExportInProgress || openingClickPending()) return;
   const stemVolumes = getStemMix();
   if (!STEM_NAMES.some((stem) => Number(stemVolumes[stem]) > 0)) {
     SELECTORS.stemStatus.className = "stem-status err";
@@ -4319,7 +4351,7 @@ var exportStemMix = async () => {
     SELECTORS.stemStatus.textContent = error.message;
   } finally {
     stemExportInProgress = false;
-    SELECTORS.btnExportStemMix.disabled = false;
+    updateStemExportButton();
   }
 };
 var syncStemPlayers = (time = ws?.getCurrentTime() ?? 0, options = {}) => stemTransport.sync(time, options);
@@ -5094,7 +5126,8 @@ var scheduleWaveformPreviewSeek = (time) => {
 var getAdjustedBeats = () => {
   const beats = currentData?.beats ?? [];
   if (!beats.length) return [];
-  if (bpmFactor === 1) return completeOpeningClickBar(beats, currentData?.downbeats);
+  const opening = { audibleStart: openingAudioStart, tempoMode: currentData?.tempoMode };
+  if (bpmFactor === 1) return completeOpeningClickBar(beats, currentData?.downbeats, opening);
   let adjusted = [...beats];
   let factor = bpmFactor;
   while (factor > 1) {
@@ -5112,7 +5145,7 @@ var getAdjustedBeats = () => {
     adjusted = adjusted.filter((_, index) => index % 2 === 0);
     factor *= 2;
   }
-  return completeOpeningClickBar(adjusted, currentData?.downbeats);
+  return completeOpeningClickBar(adjusted, currentData?.downbeats, opening);
 };
 var getLoopRange = () => {
   if (customLoopRange) return customLoopRange;
@@ -6183,7 +6216,7 @@ var renderStemPanel = (assets) => {
   SELECTORS.stemExportActions.hidden = !available || !hasServer;
   SELECTORS.stemExportClick.disabled = !currentData?.beats?.length;
   if (SELECTORS.stemExportClick.disabled) SELECTORS.stemExportClick.checked = false;
-  SELECTORS.btnExportStemMix.disabled = !available || stemExportInProgress;
+  updateStemExportButton();
   SELECTORS.stemStatus.className = available ? "stem-status ok" : "stem-status";
   SELECTORS.stemStatus.textContent = available ? isMobileViewport() && !mobileStemMixActivated ? "\u8EFD\u91CF\u518D\u751F \xB7 \u5143\u97F3\u6E90\u3092\u4F7F\u7528\uFF08\u30D1\u30FC\u30C8\u64CD\u4F5C\u3067\u5207\u66FF\uFF09" : "\u30D1\u30FC\u30C8\u518D\u751F \xB7 \u81EA\u52D5\u540C\u671F" : hasServer ? "\u30D1\u30FC\u30C8\u751F\u6210\u307E\u3067\u306F\u5143\u97F3\u6E90\u3092\u518D\u751F\u3057\u307E\u3059" : "\u5143\u97F3\u6E90";
   applyStemMix();
@@ -6228,6 +6261,8 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
   const preparation = new AbortController();
   audioPreparation = preparation;
   audioReady = false;
+  openingAudioStart = null;
+  updateStemExportButton();
   cancelAnimationFrame(presentationFrame);
   presentationClock.reset(performance.now(), 0);
   presentationTime = 0;
@@ -6248,11 +6283,13 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
   for (const url of alignedAssetUrls) URL.revokeObjectURL(url);
   alignedAssetUrls = [];
   const preparedUrls = [];
-  const beats = getAdjustedBeats();
   let waveform, duration;
   const sharedStems = [];
   try {
     const original = await decodePlaybackAsset(audioUrl, preparation.signal);
+    preparation.signal.throwIfAborted();
+    openingAudioStart = audibleOpeningStart(original, currentData?.beats?.[0], 60 / currentData?.bpm);
+    const beats = getAdjustedBeats();
     waveform = [original.getChannelData(0)];
     duration = original.duration;
     const tracks = [];
@@ -6509,6 +6546,7 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
   };
   ws.on("decode", () => {
     audioReady = true;
+    updateStemExportButton();
     startPresentationFrames();
     SELECTORS.waveformLoading.hidden = true;
     disableTransport(false);
@@ -6638,6 +6676,7 @@ var setupControls = () => {
   document.getElementById("btn-retry-stems").onclick = () => rebuildAlignedClicks();
   document.getElementById("btn-original-mix").onclick = () => stemTransport.useOriginal();
   SELECTORS.btnExportStemMix.onclick = () => exportStemMix();
+  SELECTORS.stemExportClick.onchange = updateStemExportButton;
   SELECTORS.btnBpmHalf.onclick = () => {
     if (!currentId) return;
     bpmFactor /= 2;
