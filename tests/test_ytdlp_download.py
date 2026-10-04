@@ -82,7 +82,7 @@ class YtDlpDownloadTests(unittest.TestCase):
             self.assertEqual(calls, 2)
             self.assertEqual(destination.read_bytes(), b"video")
 
-    def test_audio_retries_403_with_local_browser_session(self):
+    def test_audio_retries_403_with_an_explicit_player_client(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             destination = Path(temp_dir) / "result.wav"
             commands = []
@@ -101,10 +101,106 @@ class YtDlpDownloadTests(unittest.TestCase):
             with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run), patch.object(source_media, "trim_audio_range", side_effect=fake_trim) as trim:
                 source_media.download_wav("https://youtu.be/example", destination, 3, None)
 
-            self.assertIn("--cookies-from-browser", commands[1])
+            # The player client retry costs no browser access, so it comes first.
+            self.assertNotIn("--extractor-args", commands[0])
+            self.assertEqual(len(commands), 2)
+            self.assertIn("--extractor-args", commands[1])
+            self.assertIn(
+                f"youtube:player_client={source_media.DEFAULT_YOUTUBE_PLAYER_CLIENTS}",
+                commands[1],
+            )
+            self.assertNotIn("--cookies-from-browser", commands[1])
             self.assertNotIn("--download-sections", commands[1])
             self.assertEqual(destination.read_bytes(), b"audio")
             self.assertEqual(trim.call_args.args[2:], (3.0, None))
+
+    def test_audio_falls_back_to_browser_session_after_player_client_403(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "result.wav"
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                if "--cookies-from-browser" not in command:
+                    return subprocess.CompletedProcess(command, 1, "", "HTTP Error 403: Forbidden")
+                output = Path(command[command.index("-o") + 1].replace("%(ext)s", "wav"))
+                output.write_bytes(b"audio")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run):
+                source_media.download_wav("https://youtu.be/example", destination)
+
+            self.assertEqual(len(commands), 3)
+            self.assertIn("--extractor-args", commands[1])
+            self.assertIn("--cookies-from-browser", commands[2])
+            self.assertEqual(destination.read_bytes(), b"audio")
+
+    def test_player_client_failure_still_reaches_the_browser_session(self):
+        # web_embedded needs a JS runtime; without one yt-dlp reports a missing
+        # format rather than a 403, which must not cancel the cookie retry.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "result.wav"
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                if "--cookies-from-browser" in command:
+                    output = Path(command[command.index("-o") + 1].replace("%(ext)s", "wav"))
+                    output.write_bytes(b"audio")
+                    return subprocess.CompletedProcess(command, 0, "", "")
+                if "--extractor-args" in command:
+                    return subprocess.CompletedProcess(
+                        command, 1, "", "ERROR: Requested format is not available"
+                    )
+                return subprocess.CompletedProcess(command, 1, "", "HTTP Error 403: Forbidden")
+
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run):
+                source_media.download_wav("https://youtu.be/example", destination)
+
+            self.assertEqual(len(commands), 3)
+            self.assertEqual(destination.read_bytes(), b"audio")
+
+    def test_anonymous_non_403_failure_still_stops_immediately(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "result.wav"
+            commands = []
+
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                return subprocess.CompletedProcess(command, 1, "", "ERROR: Video unavailable")
+
+            with patch.object(source_media, "yt_dlp_browser_session_args", return_value=["--cookies-from-browser", "chrome"]), patch.object(source_media, "run_process", side_effect=fake_run):
+                with self.assertRaisesRegex(RuntimeError, "Video unavailable"):
+                    source_media.download_wav("https://youtu.be/example", destination)
+
+            self.assertEqual(len(commands), 1)
+
+    def test_player_client_retry_can_be_disabled(self):
+        with patch.dict(os.environ, {"PRACTICE_LAB_YTDLP_PLAYER_CLIENTS": "off"}, clear=False):
+            self.assertEqual(source_media.yt_dlp_player_client_args(), [])
+
+    def test_player_client_retry_is_overridable(self):
+        with patch.dict(os.environ, {"PRACTICE_LAB_YTDLP_PLAYER_CLIENTS": "tv,web_safari"}, clear=False):
+            self.assertEqual(
+                source_media.yt_dlp_player_client_args(),
+                ["--extractor-args", "youtube:player_client=tv,web_safari"],
+            )
+
+    def test_recognises_the_cookie_database_errors_yt_dlp_actually_reports(self):
+        # Observed from a packaged Windows build while Chrome was running.
+        self.assertTrue(
+            source_media.is_cookie_database_error(
+                "ERROR: Could not copy Chrome cookie database. See "
+                "https://github.com/yt-dlp/yt-dlp/issues/7271 for more info"
+            )
+        )
+        # yt-dlp's other wording, used when the database is absent rather than locked.
+        self.assertTrue(
+            source_media.is_cookie_database_error(
+                'ERROR: could not find chrome cookies database in "/nonexistent"'
+            )
+        )
+        self.assertFalse(source_media.is_cookie_database_error("HTTP Error 403: Forbidden"))
 
     def test_video_range_downloads_full_quality_then_trims_locally(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -155,7 +251,10 @@ class YtDlpDownloadTests(unittest.TestCase):
 
             def fake_run(command, **_kwargs):
                 commands.append(command)
-                error = ("ERROR: could not find chrome cookies database" if "--cookies-from-browser" in command
+                # Verbatim wording of a packaged Windows build with Chrome running.
+                error = ("ERROR: Could not copy Chrome cookie database. See "
+                         "https://github.com/yt-dlp/yt-dlp/issues/7271 for more info"
+                         if "--cookies-from-browser" in command
                          else "HTTP Error 403: Forbidden")
                 return subprocess.CompletedProcess(command, 1, "", error)
 
@@ -163,8 +262,11 @@ class YtDlpDownloadTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "(?s)HTTP Error 403.*Browser-cookie retry failed"):
                     source_media.download_video("https://youtu.be/example", destination)
 
-            self.assertEqual(len(commands), 3)
+            # Two formats anonymously, two with the player client, then cookies.
+            self.assertEqual(len(commands), 5)
             self.assertEqual(commands[1][commands[1].index("-f") + 1], source_media.FULL_VIDEO_FALLBACK_FORMAT)
+            self.assertIn("--extractor-args", commands[2])
+            self.assertIn("--cookies-from-browser", commands[4])
 
 
 if __name__ == "__main__":
