@@ -1,9 +1,7 @@
 import voiceData from '../../practice_lab/assets/count_voice.json' with { type: 'json' };
 import highVoiceData from '../../practice_lab/assets/count_voice_high.json' with { type: 'json' };
 
-// Reset at measured bar heads, never at index % 4: a two-beat bar is 1, 2,
-// followed by 1 at the next bar. Seeking/looping therefore needs no counter state.
-export const beatCounts = (beats, downbeats) => {
+const barHeadIndexes = (beats, downbeats) => {
   const heads = new Set();
   for (const head of downbeats || []) {
     let best = -1;
@@ -12,7 +10,38 @@ export const beatCounts = (beats, downbeats) => {
     }
     if (best >= 0) heads.add(best);
   }
-  const headIndexes = [...heads].sort((a, b) => a - b);
+  return [...heads].sort((a, b) => a - b);
+};
+
+// Complete only the bar containing the first detected beat. Silence can hold
+// its count-in, but is not evidence for adding earlier bars to the analysis.
+export const completeOpeningClickBar = (beats, downbeats) => {
+  const [firstHead, secondHead] = barHeadIndexes(beats, downbeats);
+  const barLength = secondHead - firstHead;
+  if (!(barLength >= 2 && barLength <= 12)) return beats;
+  const missing = (barLength - firstHead % barLength) % barLength;
+  if (!missing) return beats;
+  const period = (beats[secondHead] - beats[firstHead]) / barLength;
+  if (!(period > 0 && Number.isFinite(period))) return beats;
+  // A pickup must share the opening bar's pulse. Do not extrapolate a free-time
+  // introduction, a tempo transition, or bar heads that miss the beat grid.
+  if ((downbeats || []).slice(0, 2).some(head =>
+    Math.min(...[firstHead, secondHead].map(index => Math.abs(beats[index] - head))) > period * .12)) return beats;
+  for (let i = 1; i <= secondHead; i++) {
+    const gap = (beats[i] - beats[i - 1]) / period;
+    if (!Number.isFinite(gap) || Math.abs(gap - 1) > .1) return beats;
+  }
+  const prefix = Array.from({ length: missing }, (_, i) => beats[0] - (missing - i) * period)
+    .filter(time => time >= -.0000005)
+    .map(time => Math.max(0, Math.round(time * 1e6) / 1e6));
+  return prefix.length ? [...prefix, ...beats] : beats;
+};
+
+// Reset at measured bar heads, never at index % 4: a two-beat bar is 1, 2,
+// followed by 1 at the next bar. Seeking/looping therefore needs no counter state.
+export const beatCounts = (beats, downbeats) => {
+  const headIndexes = barHeadIndexes(beats, downbeats);
+  const heads = new Set(headIndexes);
   const firstHead = headIndexes[0];
   const openingBarLength = headIndexes.length >= 2 ? headIndexes[1] - firstHead : 0;
   let count = 0;

@@ -1,5 +1,5 @@
 import { PresentationClock, correctionSeconds, normalizeSyncSettings, outputDelaySeconds, renderPresentationProgress } from "./presentation-clock.js";
-import { beatCounts, normalizeVoicePitch } from './count-voice.js';
+import { beatCounts, completeOpeningClickBar, normalizeVoicePitch } from './count-voice.js';
 import { RegionsPlugin, WaveSurfer, renderIcons } from "./vendor.js";
 import { createAppDialog } from "./app-dialog.js";
 import { filterLibraryItems, shouldUseStaticLibrary, sortLibraryItems } from "./library.js";
@@ -1256,10 +1256,11 @@ const exportStemMix = async () => {
   const includeClick = SELECTORS.stemExportClick.checked;
   const rangeStart = range?.start ?? 0;
   const rangeEnd = range?.end ?? Infinity;
-  const allCounts = beatCounts(getAdjustedBeats(), currentData?.downbeats);
-  const clickCounts = includeClick ? getAdjustedBeats().flatMap((time, index) => time >= rangeStart && time <= rangeEnd ? [allCounts[index]] : []) : [];
+  const clickBeats = includeClick ? getAdjustedBeats() : [];
+  const allCounts = beatCounts(clickBeats, currentData?.downbeats);
+  const clickCounts = clickBeats.flatMap((time, index) => time >= rangeStart && time <= rangeEnd ? [allCounts[index]] : []);
   const clickTimes = includeClick
-    ? getAdjustedBeats()
+    ? clickBeats
       .filter(time => time >= rangeStart && time <= rangeEnd)
       .map(time => time - rangeStart)
     : [];
@@ -2134,7 +2135,7 @@ const scheduleWaveformPreviewSeek = time => {
 const getAdjustedBeats = () => {
   const beats = currentData?.beats ?? [];
   if (!beats.length) return [];
-  if (bpmFactor === 1) return beats;
+  if (bpmFactor === 1) return completeOpeningClickBar(beats, currentData?.downbeats);
 
   let adjusted = [...beats];
   let factor = bpmFactor;
@@ -2156,7 +2157,7 @@ const getAdjustedBeats = () => {
     factor *= 2;
   }
 
-  return adjusted;
+  return completeOpeningClickBar(adjusted, currentData?.downbeats);
 };
 
 const getLoopRange = () => {
@@ -3441,7 +3442,7 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     }
     await loadClickRenderer(getCtx());
     preparation.signal.throwIfAborted();
-    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(getAdjustedBeats(), currentData.downbeats), signal: preparation.signal });
+    const blob = await alignedWav(original, beats, { tracks, voicePitch, counts: beatCounts(beats, currentData.downbeats), signal: preparation.signal });
     audioUrl = URL.createObjectURL(blob); preparedUrls.push(audioUrl);
     preparation.signal.throwIfAborted();
   } catch (error) {

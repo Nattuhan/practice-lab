@@ -5,6 +5,7 @@ import path from 'node:path';
 import ffmpeg from 'ffmpeg-static';
 import { expect, test } from '@playwright/test';
 import { silentWav, baselineResult, baselineSession } from './fixtures.js';
+import { countVoiceSamples } from '../../frontend/src/count-voice.js';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/results/manifest.json', route => route.fulfill({ json: [baselineSession] }));
@@ -76,6 +77,41 @@ const start = async page => {
   await page.locator('#btn-play').click();
   await expect.poll(() => page.evaluate(() => Object.keys(window.__media.stems).length)).toBe(4);
 };
+
+test('3・4から始まる曲の前の空白にも1・2のクリックと読み上げを収録する', async ({ page }) => {
+  await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
+    ...baselineResult, duration: 8,
+    beats: Array.from({ length: 10 }, (_, i) => 3 + i * .5), downbeats: [4, 6],
+  } }));
+  await page.route('**/audio/e2e-baseline.mp3', route => route.fulfill({ contentType: 'audio/wav', body: silentWav(8) }));
+  await page.addInitScript(() => {
+    const create = URL.createObjectURL;
+    URL.createObjectURL = blob => {
+      if (blob.type === 'audio/wav') window.__alignedBlob = blob;
+      return create(blob);
+    };
+  });
+  await page.goto('/');
+  await expect.poll(() => page.evaluate(() => !!window.__alignedBlob)).toBe(true);
+  await expect(page.locator('#btn-play')).toBeEnabled();
+  const actual = await page.evaluate(async () => {
+    const bytes = await window.__alignedBlob.arrayBuffer(), view = new DataView(bytes);
+    const channels = view.getUint16(22, true), rate = view.getUint32(24, true);
+    const pcm = new Float32Array(bytes, 44);
+    return { rate, pulses: [2, 2.5, 3, 3.5, 4, 4.5].map(time => {
+      const start = Math.round(time * rate);
+      const voice = Array.from({ length: 100 }, (_, i) => pcm[(start + i + 100) * channels + channels - 1]);
+      const tick = Array.from({ length: 400 }, (_, i) => pcm[(start + i) * channels + channels - 2]);
+      return { voice, tickPeak: Math.max(...tick.map(Math.abs)), music: pcm[(start + 200) * channels] };
+    }) };
+  });
+  const voices = countVoiceSamples(actual.rate);
+  for (const [index, count] of [1, 2, 3, 4, 1, 2].entries()) {
+    expect(actual.pulses[index].voice).toEqual([...voices[count].slice(100, 200)]);
+    expect(actual.pulses[index].tickPeak).toBeGreaterThan(.01);
+    expect(actual.pulses[index].music).toBe(0);
+  }
+});
 
 test('0.5倍速では左右カーソルキーで2.5秒ずつ移動する', async ({ page }) => {
   await start(page);
