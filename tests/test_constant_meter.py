@@ -176,6 +176,50 @@ def test_a_measured_six_beat_bar_without_tracking_failure_is_not_split():
     assert result['constantMeter']['meters'] == meters
 
 
+@pytest.mark.parametrize('meter', [3, 4])
+@pytest.mark.parametrize('period,offset', [(.317, .11), (.493, 1.23), (.731, .17)])
+def test_local_half_tempo_tracking_cannot_double_the_number_of_counts(meter, period, offset):
+    actual = offset + np.arange(meter * 30 + 1) * period
+    heads = actual[::meter]
+    start, end = meter * 10, meter * 18
+    omitted_pulses = np.arange(start + 1, end, 2)
+    tracked = np.delete(actual, omitted_pulses)
+    detected = np.delete(heads, np.arange(11, 18, 2))
+    # The source classifier also favors the wrong long-bar heads. But the
+    # weaker quarter pulses still have evidence; its tracker dropped them.
+    activations = probabilities(actual, detected)
+    for time in actual[omitted_pulses]:
+        activations['beat'][round(time * 100)] = .2
+    data = dict(bpm=60 / period, beats=tracked.tolist(), downbeats=detected.tolist(),
+                duration=float(actual[-1]))
+    result = enforce_constant_tempo(data, detected_downbeats=detected.tolist(),
+                                   activations=activations)
+    assert np.max(abs(np.asarray(result['downbeats']) - heads)) < .000001
+    assert result['constantMeter']['meters'] == [meter] * 30
+    assert np.max(abs(np.diff(result['beats']) - period)) < .000001
+
+
+@pytest.mark.parametrize('supported', [False, True])
+def test_a_real_long_bar_or_unsupported_subdivision_is_not_split(supported):
+    meters = [4] * 10 + [8] * 2 + [4] * 10
+    actual = .17 + np.arange(sum(meters) + 1) * .49
+    heads = actual[np.r_[0, np.cumsum(meters)]]
+    activations = probabilities(actual, heads)
+    if supported:
+        # A real long bar still has all of its measured quarter pulses.
+        tracked = actual
+    else:
+        # Sparse tracking alone cannot authorize inventing unheard pulses.
+        omitted = np.arange(41, 56, 2)
+        tracked = np.delete(actual, omitted)
+        for time in actual[omitted]:
+            activations['beat'][round(time * 100)] = .001
+    result = enforce_constant_tempo(dict(bpm=60/.49, beats=tracked.tolist(),
+                                   downbeats=heads.tolist(), duration=actual[-1]),
+                                   detected_downbeats=heads.tolist(), activations=activations)
+    assert result['constantMeter']['meters'] == meters
+
+
 def test_another_missed_beat_repair_cannot_erase_a_preserved_short_bar():
     from practice_lab.audio_timing import _apply_verified_grid
     beats = .17 + np.arange(240) * .5

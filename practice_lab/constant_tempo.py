@@ -63,7 +63,8 @@ def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None
             else:
                 eligible.append(head)
         measured_heads = eligible
-    heads, meter_diagnostics = decode_bar_heads(grid, measured_heads, activations, activation_fps)
+    heads, meter_diagnostics = decode_bar_heads(grid, measured_heads, activations, activation_fps,
+                                              tracked_beats=beats)
     meter_diagnostics["discardedRepairHeads"] = discarded
     meter_diagnostics["restoredRepairAnchors"] = restored_anchors
     adjusted = {**meter_data, "bpm": round(60 / period, 1), "beats": grid.tolist(),
