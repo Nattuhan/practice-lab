@@ -1277,9 +1277,11 @@ def reanalyze_saved_audio(video_id: str, job_id: str | None = None, *, tempo_mod
     raise_if_job_canceled(job_id)
     # Keep library/source metadata, never feed previous beat edits or diagnostics
     # back into inference. Reload here to retain edits made while it was running.
+    # Artwork is source metadata too; dropping it here erases library thumbnails
+    # when the rebuilt manifest replaces the previous entry.
     previous = json.loads(result_file.read_text(encoding="utf-8"))
     metadata_keys = ("id", "title", "sourceType", "sourceVideoId", "analysisStartSec",
-                     "analysisEndSec", "originalFilename", "assets", "tags", "lastOpenedAt")
+                     "analysisEndSec", "originalFilename", "thumbnailUrl", "assets", "tags", "lastOpenedAt")
     data = attach_session_assets({**{key: previous[key] for key in metadata_keys if key in previous}, **analysis})
     set_job_status(job_id, "saving", "Saving results")
     save_json(result_file, data)

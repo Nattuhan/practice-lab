@@ -21,12 +21,15 @@ class SavedReanalysisTests(unittest.TestCase):
                 old = dict(id='sample', title='Edited title', sourceType=source_type,
                            tags=['rock'], analysisStartSec=30, analysisEndSec=90,
                            bpm=81, beats=[1, 2], audioTimingRepair={'old': True})
+                if source_type == 'youtube':
+                    old['thumbnailUrl'] = 'https://i.ytimg.com/vi/sample/hqdefault.jpg'
                 result.write_text(json.dumps(old))
                 audio = services.DATA_AUDIO_DIR / 'sample.wav'
                 audio.write_bytes(b'original audio')
                 fresh = dict(bpm=162, total_bars=1, duration=60, beats=[0, .37], downbeats=[0], sections=[])
                 analyzer = stack.enter_context(patch.object(services, 'run_analyzer', return_value=fresh))
-                for name in ('set_job_status', 'update_manifest', 'export_static_assets'):
+                manifest = stack.enter_context(patch.object(services, 'update_manifest'))
+                for name in ('set_job_status', 'export_static_assets'):
                     stack.enter_context(patch.object(services, name))
                 forbidden = [stack.enter_context(patch.object(services, name, side_effect=AssertionError(name)))
                              for name in ('download_video', 'get_title', 'convert_wav_to_mp3', 'publish_video', 'create_stems', 'publish_session_to_cloud')]
@@ -35,6 +38,9 @@ class SavedReanalysisTests(unittest.TestCase):
                 self.assertEqual(updated['title'], old['title'])
                 self.assertEqual(updated['tags'], old['tags'])
                 self.assertEqual(updated['analysisStartSec'], 30)
+                self.assertEqual(updated.get('thumbnailUrl'), old.get('thumbnailUrl'))
+                self.assertEqual(json.loads(result.read_text()).get('thumbnailUrl'), old.get('thumbnailUrl'))
+                self.assertEqual(manifest.call_args.args[0].get('thumbnailUrl'), old.get('thumbnailUrl'))
                 self.assertNotIn('audioTimingRepair', updated)
                 self.assertEqual(audio.read_bytes(), b'original audio')
                 analyzer.assert_called_once_with(audio, 'sample', job_id='sample', tempo_mode='constant')
