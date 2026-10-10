@@ -1,6 +1,7 @@
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { writeUpdateConfiguration } = require("./macos-update-config.cjs");
 
 function sign(pathToCode, entitlements) {
   const args = ["--force"];
@@ -23,6 +24,18 @@ module.exports = async function afterPack(context) {
   const electronEntitlements = path.join(__dirname, "..", "desktop", "entitlements.mac.plist");
   const backendEntitlements = path.join(__dirname, "..", "desktop", "entitlements.backend.plist");
   const productName = context.packager.appInfo.productFilename;
+
+  // Directory-only builds have no DMG/ZIP target, so electron-builder skips
+  // its update-config hook. Write the public feed before sealing this bundle.
+  // Dev and audit apps intentionally do not share the normal update channel.
+  if (context.packager.config.appId === "jp.nattuhan.practicelab") {
+    const publish = context.packager.config.publish;
+    writeUpdateConfiguration(
+      path.join(appPath, "Contents", "Resources", "app-update.yml"),
+      Array.isArray(publish) ? publish[0] : publish,
+      context.packager.appInfo.updaterCacheDirName,
+    );
+  }
 
   // MornNotary preserves entitlements already present in the submitted app.
   // Embed each process's minimum required rights here so a generic signer does

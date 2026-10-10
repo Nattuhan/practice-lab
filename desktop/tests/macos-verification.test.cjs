@@ -18,6 +18,7 @@ test('通常アプリの入れ替えや自動更新設定の変更を検出し�
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'verification-test-'));
   const appPath = path.join(root, 'PracticeLab.app'), settingsPath = path.join(root, 'settings.json');
   fs.mkdirSync(path.join(appPath, 'Contents/Resources'), { recursive: true });
+  fs.writeFileSync(path.join(appPath, 'Contents/Resources/app-update.yml'), 'provider: github\nowner: Nattuhan\nrepo: practice-lab\nupdaterCacheDirName: practice-lab-updater\n');
   const asar = path.join(appPath, 'Contents/Resources/app.asar'); fs.writeFileSync(asar, 'signed build');
   fs.writeFileSync(settingsPath, '{"autoUpdate":true}');
   const execute = () => ({ status: 0, stderr: 'Authority=Developer ID Application: Test\n' });

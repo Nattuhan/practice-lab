@@ -4,6 +4,7 @@ const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
+const { readUpdateConfiguration } = require('./macos-update-config.cjs');
 const { hasDeveloperIdSignature } = require('../desktop/update-policy.cjs');
 
 const normalApp = '/Applications/PracticeLab.app';
@@ -15,8 +16,14 @@ function captureNormalInstall({ appPath = normalApp, settingsPath = normalSettin
   const signature = exists ? execute('/usr/bin/codesign', ['-dvv', appPath], { encoding: 'utf8', timeout: 10000 }) : { status: 1 };
   const verification = exists ? execute('/usr/bin/codesign', ['--verify', '--deep', '--strict', appPath], { encoding: 'utf8', timeout: 30000 }) : { status: 1 };
   const settings = fs.existsSync(settingsPath) ? JSON.parse(fs.readFileSync(settingsPath, 'utf8')) : {};
+  let updateConfigurationValid = false;
+  let updateConfigurationError = null;
+  try {
+    readUpdateConfiguration(path.join(appPath, 'Contents/Resources/app-update.yml'));
+    updateConfigurationValid = true;
+  } catch (error) { updateConfigurationError = error.message; }
   return {
-    appPath, settingsPath, exists,
+    appPath, settingsPath, exists, updateConfigurationValid, updateConfigurationError,
     developerIdSigned: hasDeveloperIdSignature(signature),
     signatureValid: verification.status === 0,
     autoUpdate: settings.autoUpdate !== false,
@@ -31,7 +38,7 @@ function assertNormalInstallPreserved(before, after) {
   }
 }
 function automaticUpdatesAvailable(state) {
-  return state.exists && state.developerIdSigned && state.signatureValid && state.autoUpdate;
+  return state.exists && state.developerIdSigned && state.signatureValid && state.updateConfigurationValid && state.autoUpdate;
 }
 function validateVerificationApp(appPath, protectedApp = normalApp) {
   const resolved = fs.realpathSync(appPath);
@@ -57,7 +64,8 @@ async function main() {
   const [argument, appPath] = process.argv.slice(2);
   const before = captureNormalInstall();
   console.log(JSON.stringify({ normalApp: before.appPath, developerIdSigned: before.developerIdSigned,
-    signatureValid: before.signatureValid, startupUpdateCheck: before.autoUpdate,
+    signatureValid: before.signatureValid, updateConfigurationValid: before.updateConfigurationValid,
+    updateConfigurationError: before.updateConfigurationError, startupUpdateCheck: before.autoUpdate,
     automaticUpdatesAvailable: automaticUpdatesAvailable(before) }, null, 2));
   if (argument === '--check') { process.exitCode = automaticUpdatesAvailable(before) ? 0 : 2; return; }
   if (argument !== '--launch' || !appPath) throw new Error('Usage: node scripts/macos-verification.cjs --check | --launch /path/to/PracticeLab.app');

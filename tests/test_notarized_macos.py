@@ -19,6 +19,32 @@ class NotarizedMacTests(unittest.TestCase):
             "CFBundleShortVersionString": "1.2.2",
         }))
 
+        (self.app / "Contents/Resources").mkdir()
+        (self.app / "Contents/Resources/app-update.yml").write_text(
+            "provider: github\nowner: Nattuhan\nrepo: practice-lab\nupdaterCacheDirName: practice-lab-updater\n"
+        )
+
+    def test_missing_update_config_is_rejected_before_running_code(self):
+        (self.app / "Contents/Resources/app-update.yml").unlink()
+        with patch("scripts.verify_notarized_macos.subprocess.run") as run:
+            with self.assertRaisesRegex(RuntimeError, "app-update.yml"):
+                verify_app(self.app, "1.2.2", False)
+            run.assert_not_called()
+
+    def test_wrong_update_feed_is_rejected_before_signature_checks(self):
+        (self.app / "Contents/Resources/app-update.yml").write_text(
+            "provider: github\nowner: someone-else\nrepo: practice-lab\nupdaterCacheDirName: practice-lab-updater\n"
+        )
+        real_run = subprocess.run
+
+        def run(command, **kwargs):
+            self.assertEqual(command[0], "node")
+            return real_run(command, **kwargs, capture_output=True)
+
+        with patch("scripts.verify_notarized_macos.subprocess.run", side_effect=run):
+            with self.assertRaises(subprocess.CalledProcessError):
+                verify_app(self.app, "1.2.2", False)
+
     def test_wrong_version_is_rejected_before_running_code(self):
         with patch("scripts.verify_notarized_macos.subprocess.run") as run:
             with self.assertRaisesRegex(RuntimeError, "version"):

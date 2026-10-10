@@ -46,6 +46,15 @@ def verify_app(app: Path, version: str, runtime: bool) -> None:
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     if info.get("CFBundleIdentifier") != "jp.nattuhan.practicelab" or info.get("CFBundleShortVersionString") != version:
         raise RuntimeError("Unexpected application identity or version")
+    # Public releases must be able to locate their next update even when
+    # signature, Gatekeeper and runtime checks all pass.
+    update_config = app / "Contents/Resources/app-update.yml"
+    if not update_config.is_file():
+        raise RuntimeError("Update configuration app-update.yml is missing")
+    subprocess.run([
+        "node", str(Path(__file__).with_name("macos-update-config.cjs")),
+        "--verify", str(update_config),
+    ], check=True)
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     signature = subprocess.run(["codesign", "-dvv", str(app)], capture_output=True, text=True, check=True).stderr
     if "Authority=Developer ID Application:" not in signature or "runtime" not in signature:
