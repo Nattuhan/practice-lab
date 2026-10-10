@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
         if activations is not None:
             from allin1fix.config import Config
             fps = Config().fps
-        data = resolve_variable_meter(data, activations, fps)
+        data = resolve_variable_meter(data, activations, fps, mp3_path)
     print(json.dumps(data, ensure_ascii=False))
     return 0
 
