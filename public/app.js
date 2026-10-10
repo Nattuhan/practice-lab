@@ -3994,6 +3994,16 @@ var createSessionRow = (item, items, containerId = "root") => {
   row.draggable = false;
   const tags = Array.isArray(item.tags) ? item.tags : [];
   row.innerHTML = `<div class="si-body"><div class="si-title">${escapeHtml(item.title)}</div><div class="si-meta">\u2669${escapeHtml(getDisplayBpm(item))} \xB7 ${escapeHtml(item.date)}${tags.length ? ` \xB7 <span class="si-tags">${escapeHtml(tags.join(" / "))}</span>` : ""}</div></div>`;
+  if (item.thumbnailUrl?.startsWith("https://")) {
+    const image = document.createElement("img");
+    image.className = "si-thumbnail";
+    image.src = item.thumbnailUrl;
+    image.alt = "";
+    image.loading = "lazy";
+    image.draggable = false;
+    image.addEventListener("error", () => image.remove(), { once: true });
+    row.prepend(image);
+  }
   row.addEventListener("pointerdown", (event) => {
     if (!hasServer || event.button !== 0 || event.pointerType === "touch" || event.ctrlKey || event.metaKey || event.shiftKey) return;
     sidebarSessionDrag = {
@@ -4961,7 +4971,7 @@ var extractVideoId = (url) => {
   try {
     const parsed = new URL(url);
     if (parsed.hostname === "youtu.be") return parsed.pathname.replace(/^\//, "").split("?")[0] || null;
-    if (["www.youtube.com", "youtube.com", "m.youtube.com"].includes(parsed.hostname)) {
+    if (["www.youtube.com", "youtube.com", "m.youtube.com", "music.youtube.com"].includes(parsed.hostname)) {
       return parsed.searchParams.get("v");
     }
   } catch {

@@ -56,7 +56,7 @@ class AnalysisRangeTests(unittest.TestCase):
                 response = client.post(
                     "/analyze",
                     json={
-                        "url": "https://www.youtube.com/watch?v=abc123",
+                        "url": "https://music.youtube.com/watch?v=abc123",
                         "startSec": 30.5,
                         "endSec": 95,
                     },
@@ -101,6 +101,7 @@ class AnalysisRangeTests(unittest.TestCase):
             with (
                 patch.multiple(services, **paths),
                 patch.object(services, "get_title", return_value="Demo"),
+                patch.object(services, "get_thumbnail_url", return_value="https://i.ytimg.com/vi/abc123/hqdefault.jpg"),
                 patch.object(services, "download_video", side_effect=fake_download) as download_video,
                 patch.object(services, "extract_wav_from_video", side_effect=fake_trim) as extract_audio,
                 patch.object(services, "trim_audio_range", side_effect=fake_trim) as trim_audio,
@@ -114,7 +115,7 @@ class AnalysisRangeTests(unittest.TestCase):
                 patch.object(services, "set_job_status"),
             ):
                 result = services.analyze_url(
-                    "https://www.youtube.com/watch?v=abc123",
+                    "https://music.youtube.com/watch?v=abc123",
                     start_sec=30.5,
                     end_sec=95,
                 )
@@ -131,6 +132,7 @@ class AnalysisRangeTests(unittest.TestCase):
 
             self.assertEqual(result["id"], "abc123-clip-30500-95000")
             self.assertEqual(result["sourceVideoId"], "abc123")
+            self.assertEqual(result["thumbnailUrl"], "https://i.ytimg.com/vi/abc123/hqdefault.jpg")
             self.assertEqual(result["analysisStartSec"], 30.5)
             self.assertEqual(result["analysisEndSec"], 95.0)
             self.assertEqual(result["title"], "Demo (0:30–1:35)")

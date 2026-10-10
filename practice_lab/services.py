@@ -15,14 +15,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from statistics import median
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 from .analyzer_backend import analyzer_command, resolve_backend, stem_command
 from .config import DATA_AUDIO_DIR, DATA_DIR, DATA_RESULTS_DIR, DATA_STEMS_DIR, DATA_VIDEO_DIR, DATA_WORK_DIR, DEVICE_SYNC_STATE_FILE, FOLDERS_FILE, MANIFEST_FILE, PUBLIC_AUDIO_DIR, PUBLIC_DIR, PUBLIC_RESULTS_DIR, PUBLIC_STEMS_DIR, PUBLIC_VIDEO_DIR, SOURCE_ROOT, default_wsl_python
 from .cloud_storage import build_r2_session_assets, configure_bucket_cors, delete_session_assets, get_r2_config, upload_file, upload_folders, upload_manifest, upload_session_assets, upload_static_app
 from .cloud_sync import sync_cloud_incremental
 from .device_sync import record_session_deletions
-from .source_media import download_video, extract_wav_from_video, get_title, normalize_analysis_range, source_media_cache_paths, trim_audio_range, trim_video_range
+from .source_media import extract_video_id, get_thumbnail_url, download_video, extract_wav_from_video, get_title, normalize_analysis_range, source_media_cache_paths, trim_audio_range, trim_video_range
 from .optional_features import mac_analysis_runtime_executable, windows_cpu_runtime_executable
 from .process_manager import job_process_context, run_process, running_process, start_process, terminate_process, unregister_process
 from .storage import STEM_NAMES, attach_session_assets, build_manifest_entry, export_static_assets, load_manifest, save_json, update_manifest
@@ -425,18 +424,6 @@ def submit_queued_job(job_id: str, description: str, func, cleanup=None, *, spec
     cli_log(job_id, description)
     job_queue.put(QueuedJob(job_id, description, func, cleanup))
     return {"jobId": job_id, "stage": "queued", "message": description}
-
-
-def extract_video_id(url: str) -> str | None:
-    try:
-        parsed = urlparse(url)
-        if parsed.hostname == "youtu.be":
-            return parsed.path.lstrip("/").split("?")[0]
-        if parsed.hostname in ("www.youtube.com", "youtube.com", "m.youtube.com"):
-            return parse_qs(parsed.query).get("v", [None])[0]
-    except Exception:
-        return None
-    return None
 
 
 def build_analysis_session_id(
@@ -1350,6 +1337,7 @@ def analyze_url(
 
     set_job_status(job_id, "downloading", "Fetching title")
     title = get_title(url, source_video_id)
+    thumbnail_url = get_thumbnail_url(url)
     set_job_display_title(job_id, title)
 
     if not source_video_file.exists():
@@ -1405,6 +1393,7 @@ def analyze_url(
         "id": video_id,
         "title": title,
         "sourceType": "youtube",
+        "thumbnailUrl": thumbnail_url,
         "sourceVideoId": source_video_id,
         "analysisStartSec": start_sec,
         "analysisEndSec": end_sec,

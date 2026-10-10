@@ -1211,3 +1211,25 @@ test("再解析完了は曲を切り替えず通知し、開く操作でのみ�
   await expect(page.locator("#topbar-song")).toHaveText(updated.title);
   await expect(toast).toHaveCount(0);
 });
+
+test("YouTube MusicのURLを送信し、曲のサムネイルを一覧へ表示する", async ({ page }) => {
+  const thumbnailUrl = 'https://i.ytimg.com/vi/TXO9p00KY2o/maxresdefault.jpg';
+  await page.route('**/results/manifest.json', route => route.fulfill({ json: [{ ...baselineSession, thumbnailUrl }] }));
+  await page.route(thumbnailUrl, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="orange"/></svg>' }));
+  await page.goto('/');
+  const artwork = page.locator('.si-thumbnail');
+  await expect(artwork).toBeVisible();
+  await expect(artwork).toHaveAttribute('src', thumbnailUrl);
+  await expect.poll(() => artwork.evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+  let submitted;
+  await page.route('**/analyze', route => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ json: { jobId: 'music-test', stage: 'queued' } });
+  });
+  await page.getByRole('button', { name: '新しい解析', exact: true }).click();
+  const url = 'https://music.youtube.com/watch?v=TXO9p00KY2o';
+  await page.locator('#url-input').fill(url);
+  await page.locator('#analyze-btn').click();
+  await expect(page.locator('#analysis-dialog')).not.toBeVisible();
+  expect(submitted.url).toBe(url);
+});

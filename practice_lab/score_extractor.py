@@ -11,7 +11,6 @@ import unicodedata
 import zipfile
 from pathlib import Path
 from typing import Callable
-from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 import cv2
@@ -19,7 +18,7 @@ from PIL import Image, ImageChops, ImageOps, ImageStat
 
 from .config import DATA_AUDIO_DIR, DATA_RESULTS_DIR, DATA_SCORE_DIR, PUBLIC_SCORE_DIR
 from .process_manager import run_process
-from .source_media import run_yt_dlp, yt_dlp_js_runtime
+from .source_media import extract_video_id, run_yt_dlp, yt_dlp_js_runtime
 
 MAX_OUTPUT_HEIGHT = 30000
 A4_RATIO = 297 / 210
@@ -51,18 +50,6 @@ MINOR_KEY_PROFILE = np.asarray((6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return run_process(command, capture_output=True, text=True, check=True)
-
-
-def extract_video_id(url: str) -> str | None:
-    try:
-        parsed = urlparse(url)
-        if parsed.hostname == "youtu.be":
-            return parsed.path.lstrip("/").split("?")[0]
-        if parsed.hostname in ("www.youtube.com", "youtube.com", "m.youtube.com"):
-            return parse_qs(parsed.query).get("v", [None])[0]
-    except Exception:
-        return None
-    return None
 
 
 def make_score_id(url: str) -> str:

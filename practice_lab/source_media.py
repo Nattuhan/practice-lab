@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from .process_manager import run_process
 
@@ -16,6 +17,37 @@ FULL_VIDEO_FORMAT = (
     "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"
 )
 _prefer_ipv4 = False
+
+
+def extract_video_id(url: str) -> str | None:
+    """Music and regular YouTube URLs identify the same source and cache."""
+    try:
+        parsed = urlparse(url)
+        if parsed.hostname == "youtu.be":
+            return parsed.path.lstrip("/").split("?")[0] or None
+        if parsed.hostname in ("www.youtube.com", "youtube.com", "m.youtube.com", "music.youtube.com"):
+            return parse_qs(parsed.query).get("v", [None])[0]
+    except ValueError:
+        return None
+    return None
+
+
+def get_thumbnail_url(url: str) -> str | None:
+    """Keep the source artwork, rather than guessing an image from a video frame.
+
+    Artwork is optional: a metadata timeout must not prevent audio analysis.
+    """
+    try:
+        result = run_yt_dlp(
+            "--print", "thumbnail", "--no-playlist", "--js-runtimes", yt_dlp_js_runtime(), url,
+            capture_output=True, text=True, timeout=10, ipv4_retry_timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    thumbnail = result.stdout.strip()
+    if result.returncode == 0 and thumbnail.startswith("https://"):
+        return thumbnail
+    return None
 
 
 def normalize_analysis_range(

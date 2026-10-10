@@ -394,6 +394,7 @@ body {
   bottom: -2px;
 }
 
+.si-thumbnail { width: 40px; height: 40px; flex: 0 0 40px; object-fit: cover; border-radius: var(--r); }
 .si-body { flex: 1; min-width: 0; }
 
 .si-title {

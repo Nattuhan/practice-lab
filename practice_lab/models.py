@@ -163,6 +163,7 @@ class AnalyzeResponse(BaseModel):
     title: str
     sourceType: str | None = None
     originalFilename: str | None = None
+    thumbnailUrl: str | None = None
     sourceVideoId: str | None = None
     analysisStartSec: float | None = None
     analysisEndSec: float | None = None
