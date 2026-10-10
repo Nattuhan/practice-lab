@@ -160,7 +160,9 @@ test('最初の検出拍より前に歌声が入る曲も、歌い出す前か�
   }
   await page.locator('#btn-metro').click();
   await page.locator('#btn-play').click();
-  await expect.poll(() => page.evaluate(() => window.__clickPeaks.filter(peak => peak.position > 3.9 && peak.position < 4.7).length)).toBeGreaterThanOrEqual(2);
+  // Both clicks are after four seconds of playback; allow CI audio startup
+  // overhead as well, without relaxing the expected audible timing or count.
+  await expect.poll(() => page.evaluate(() => window.__clickPeaks.filter(peak => peak.position > 3.9 && peak.position < 4.7).length), { timeout: 15000 }).toBeGreaterThanOrEqual(2);
   await page.locator('#btn-play').click();
   await page.locator('#stem-export-click').check();
   await page.locator('#btn-export-stem-mix').click();

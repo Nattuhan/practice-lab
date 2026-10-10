@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const {
   hasNormalMacAppProcess,
   isSharedDataDevelopmentBuild,
@@ -13,7 +14,7 @@ test("MacのPracticeLab Devだけを共有データ開発版として扱う", ()
   assert.equal(isSharedDataDevelopmentBuild("PracticeLab Dev", "win32", "PracticeLab Dev.exe"), false);
   assert.equal(
     normalMacDataDirectory("/Users/test"),
-    "/Users/test/Library/Application Support/practice-lab/data",
+    path.join("/Users/test", "Library", "Application Support", "practice-lab", "data"),
   );
 });
 
