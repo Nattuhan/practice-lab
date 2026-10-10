@@ -588,14 +588,14 @@ body {
 
 .queue-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 112px;
+  grid-template-columns: minmax(0, 1fr) auto max-content;
   gap: 6px 10px;
   padding: 9px 10px;
   border-radius: var(--r);
   border-left: 2px solid var(--gray-5);
   align-items: start;
 }
-.queue-actions { justify-content: flex-end; }
+.queue-actions { grid-column: 3; grid-row: 2; justify-content: flex-end; }
 .queue-actions .queue-cancel { min-width: 48px; }
 .queue-discard { color: #fda4af; }
 
@@ -670,10 +670,14 @@ body {
 .queue-cancel {
   grid-column: 3;
   grid-row: 2;
-  width: 82px;
+  /* Labels need their full width, including Japanese glyphs and letter spacing. */
+  width: auto;
+  min-width: 82px;
+  flex-shrink: 0;
+  white-space: nowrap;
   justify-self: end;
-  height: 24px;
-  padding: 0 8px;
+  min-height: 24px;
+  padding: 2px 8px;
   border: 1px solid var(--gray-4);
   border-radius: var(--r);
   background: transparent;
@@ -681,6 +685,7 @@ body {
   font-family: var(--font);
   font-size: var(--type-ui);
   font-weight: 700;
+  line-height: 1.35;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
