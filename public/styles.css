@@ -4603,3 +4603,7 @@ body.column-resizing, body.column-resizing * { cursor: col-resize !important; us
 @media (max-width: 680px) {
   .library-column-resize { display: none; }
 }
+
+.bpm-info { display: flex; flex-direction: column; gap: 3px; }
+.bpm-meter, .bpm-tempo-range { font-size: var(--type-ui); color: var(--gray-6); }
+.bpm-meter { padding-left: 3px; }

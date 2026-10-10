@@ -16,6 +16,7 @@ import { videoClickAction } from "./video-gestures.js";
 import { acceptsPlaybackShortcuts } from "./playback-shortcuts.js";
 import { jobElapsedSeconds, queueItemClass } from "./job-status.js";
 import { initColumnResize } from "./column-resize.js";
+import { tempoAtTime, tempoRange, meterAtTime } from "./tempo-display.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -201,6 +202,8 @@ const SELECTORS = {
   btnSaveSections: document.getElementById("btn-save-sections"),
   btnRestoreSections: document.getElementById("btn-restore-sections"),
   metaBpm: document.getElementById("meta-bpm"),
+  metaTempoRange: document.getElementById("meta-tempo-range"),
+  metaMeter: document.getElementById("meta-meter"),
   metaBars: document.getElementById("meta-bars"),
   loopInfo: document.getElementById("loop-info"),
   btnClearRange: document.getElementById("btn-clear-range"),
@@ -1467,6 +1470,7 @@ const renderPresentation = () => {
   if (sectionEditorScrubState) return;
   SELECTORS.timeCur.textContent = fmt(presentationTime);
   SELECTORS.timeCur.dataset.seconds = String(presentationTime);
+  updateBpmReading(presentationTime);
   updatePlayingRow(presentationTime);
   renderPresentationProgress(ws, presentationTime);
   const transition = Math.abs(presentationDelay - previousDelay) > 0.04
@@ -2319,10 +2323,21 @@ const adjustBarRange = (startBar, endBar) => {
   return { start, end, count: end - start + 1 };
 };
 
+const updateBpmReading = (time = ws?.getCurrentTime?.() || 0) => {
+  if (!currentData) return;
+  const value = tempoAtTime(currentData, time) * bpmFactor;
+  SELECTORS.metaBpm.textContent = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  const meter = meterAtTime(currentData, time);
+  SELECTORS.metaMeter.hidden = !meter || bpmFactor !== 1;
+  SELECTORS.metaMeter.textContent = meter ? `${meter}拍子` : "";
+};
+
 const applyBpmDisplay = () => {
   if (!currentData) return;
-  const value = Number(currentData.bpm || 0) * bpmFactor;
-  SELECTORS.metaBpm.textContent = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  updateBpmReading();
+  const range = tempoRange(currentData)?.map(value => Math.round(value * bpmFactor));
+  SELECTORS.metaTempoRange.hidden = !range;
+  SELECTORS.metaTempoRange.textContent = range ? `テンポ変化 ${range[0]}–${range[1]} BPM` : "";
   SELECTORS.metaBars.textContent = adjustBarValue(currentData.total_bars || 0);
   document.querySelectorAll(".sec-row").forEach((row, index) => {
     const section = currentData.sections[index];
@@ -2338,7 +2353,7 @@ const applyBpmDisplay = () => {
     const meta = row.querySelector(".si-meta");
     if (meta) {
       const date = row.dataset.date || "";
-      meta.textContent = `♩${SELECTORS.metaBpm.textContent}${date ? ` · ${date}` : ""}`;
+      meta.textContent = `♩${range ? range.join("–") : SELECTORS.metaBpm.textContent}${date ? ` · ${date}` : ""}`;
     }
   });
   renderFourBarGrid();

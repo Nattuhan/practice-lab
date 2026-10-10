@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_ROOT))
 # in the installed runtime. Otherwise app updates silently run old beat repair.
 import practice_lab
 practice_lab.__path__.insert(0, str(REPO_ROOT / "practice_lab"))
-for module_name in ("compute_device", "jpop_sections", "timing", "audio_timing", "metrical_tempo", "constant_meter", "constant_tempo"):
+for module_name in ("compute_device", "jpop_sections", "timing", "audio_timing", "metrical_tempo", "constant_meter", "constant_tempo", "variable_meter"):
     sys.modules.pop(f"practice_lab.{module_name}", None)
 
 import numpy as np
@@ -41,6 +41,7 @@ from practice_lab.timing import normalize_tempo_grid
 from practice_lab.audio_timing import refine_timing_from_audio
 from practice_lab.metrical_tempo import resolve_tempo_octave
 from practice_lab.constant_tempo import enforce_constant_tempo
+from practice_lab.variable_meter import resolve_variable_meter
 
 
 def fmt(seconds: float) -> str:
@@ -64,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         # plotting/font discovery before doing useful work. Keep preparation
         # in this process; the model's inference and outputs are unchanged.
         return allin1fix.analyze(str(mp3_path), device=selected_device,
-                                include_activations=args.tempo_mode == "constant",
+                                include_activations=True,
                                 multiprocess=False)
 
     with contextlib.redirect_stdout(sys.stderr):
@@ -120,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     sections, jpop_changes = refine_jpop_section_labels(sections)
 
     data = {
+        "tempoMode": args.tempo_mode,
         "device": device,
         "bpm": round(float(result.bpm), 1) if result.bpm is not None else 0.0,
         "total_bars": len(downbeats),
@@ -144,6 +146,13 @@ def main(argv: list[str] | None = None) -> int:
             fps = Config().fps
         data = enforce_constant_tempo(data, detected_downbeats=downbeats,
                                       activations=activations, activation_fps=fps)
+    else:
+        activations = getattr(result, "activations", None)
+        fps = 100
+        if activations is not None:
+            from allin1fix.config import Config
+            fps = Config().fps
+        data = resolve_variable_meter(data, activations, fps)
     print(json.dumps(data, ensure_ascii=False))
     return 0
 

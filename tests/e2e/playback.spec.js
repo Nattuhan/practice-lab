@@ -171,6 +171,27 @@ test('最初の検出拍より前に歌声が入る曲も、歌い出す前か�
   expect(exported.clickCounts.slice(0, 9)).toEqual([1,2,3,4,1,2,3,4,1]);
 });
 
+test('テンポ変化の前後で現在BPMと拍子の表示が切り替わる', async ({ page }) => {
+  const slow = Array.from({ length: 21 }, (_, i) => i * .8);
+  const fast = Array.from({ length: 37 }, (_, i) => 16 + (i + 1) * .375);
+  await page.route('**/results/e2e-baseline.json', route => route.fulfill({ json: {
+    ...baselineResult, duration: 30, tempoMode: 'variable', bpm: 160,
+    beats: [...slow, ...fast],
+    downbeats: [...Array.from({length: 5}, (_, i) => i * 3.2), ...Array.from({length: 13}, (_, i) => 16 + i * 1.125)],
+  } }));
+  await start(page);
+  await page.locator('#btn-play').click();
+  await expect(page.locator('#meta-bpm')).toHaveText('75');
+  await expect(page.locator('#meta-meter')).toHaveText('4拍子');
+  await expect(page.locator('#meta-tempo-range')).toHaveText('テンポ変化 75–160 BPM');
+  await page.evaluate(() => { window.__media.original.currentTime = 20; });
+  await expect(page.locator('#meta-bpm')).toHaveText('160');
+  await expect(page.locator('#meta-meter')).toHaveText('3拍子');
+  await page.evaluate(() => { window.__media.original.currentTime = 2; });
+  await expect(page.locator('#meta-bpm')).toHaveText('75');
+  await expect(page.locator('#meta-meter')).toHaveText('4拍子');
+});
+
 test('波形をクリックした後も左右キーで5秒スキップできる', async ({ page }) => {
   await start(page);
   await page.locator('#btn-play').click();

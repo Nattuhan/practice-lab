@@ -3277,6 +3277,53 @@ var initColumnResize = () => {
   update();
 };
 
+// frontend/src/tempo-display.js
+var median = (values) => {
+  const sorted = [...values].sort((a3, b2) => a3 - b2);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+var indexAt = (times, time) => {
+  let left = 0, right = times.length;
+  while (left < right) {
+    const middle = left + right >>> 1;
+    if (times[middle] <= time) left = middle + 1;
+    else right = middle;
+  }
+  return Math.max(0, left - 1);
+};
+var tempoAtTime = (data, time) => {
+  const beats = data?.beats || [];
+  if (data?.tempoMode !== "variable" || beats.length < 2) return Number(data?.bpm || 0);
+  const index = Math.min(beats.length - 2, indexAt(beats, time));
+  const period = beats[index + 1] - beats[index];
+  const gaps = [];
+  for (let i3 = Math.max(0, index - 4); i3 <= Math.min(beats.length - 2, index + 4); i3++) {
+    const gap = beats[i3 + 1] - beats[i3];
+    if (gap > 0 && Math.abs(gap / period - 1) < 0.15) gaps.push(gap);
+  }
+  return gaps.length ? 60 / median(gaps) : Number(data?.bpm || 0);
+};
+var tempoRange = (data) => {
+  if (data?.tempoMode !== "variable" || (data.beats?.length || 0) < 8) return null;
+  const values = [];
+  for (let i3 = 0; i3 < data.beats.length - 1; i3 += 8) values.push(tempoAtTime(data, data.beats[i3]));
+  const sorted = values.filter((value) => value > 0).sort((a3, b2) => a3 - b2);
+  if (!sorted.length) return null;
+  const low = sorted[Math.floor((sorted.length - 1) * 0.05)];
+  const high = sorted[Math.ceil((sorted.length - 1) * 0.95)];
+  return high / low > 1.1 ? [Math.round(low), Math.round(high)] : null;
+};
+var meterAtTime = (data, time) => {
+  const beats = data?.beats || [], heads = data?.downbeats || [];
+  if (heads.length < 2 || beats.length < 2) return null;
+  const index = Math.min(heads.length - 2, indexAt(heads, time));
+  const start = indexAt(beats, heads[index] + 1e-3);
+  const end = indexAt(beats, heads[index + 1] + 1e-3);
+  const meter = end - start;
+  return meter >= 2 && meter <= 12 ? meter : null;
+};
+
 // frontend/src/app.js
 var lucide = { createIcons: renderIcons };
 var COLORS = {
@@ -3460,6 +3507,8 @@ var SELECTORS = {
   btnSaveSections: document.getElementById("btn-save-sections"),
   btnRestoreSections: document.getElementById("btn-restore-sections"),
   metaBpm: document.getElementById("meta-bpm"),
+  metaTempoRange: document.getElementById("meta-tempo-range"),
+  metaMeter: document.getElementById("meta-meter"),
   metaBars: document.getElementById("meta-bars"),
   loopInfo: document.getElementById("loop-info"),
   btnClearRange: document.getElementById("btn-clear-range"),
@@ -4615,6 +4664,7 @@ var renderPresentation = () => {
   if (sectionEditorScrubState) return;
   SELECTORS.timeCur.textContent = fmt(presentationTime);
   SELECTORS.timeCur.dataset.seconds = String(presentationTime);
+  updateBpmReading(presentationTime);
   updatePlayingRow(presentationTime);
   renderPresentationProgress(ws, presentationTime);
   const transition = Math.abs(presentationDelay - previousDelay) > 0.04 || presentationState.segment !== previousState.segment || presentationState.playing !== previousState.playing || presentationState.rate !== previousState.rate;
@@ -5391,10 +5441,20 @@ var adjustBarRange = (startBar, endBar) => {
   const end = Math.max(start, Math.round(endBar * bpmFactor));
   return { start, end, count: end - start + 1 };
 };
+var updateBpmReading = (time = ws?.getCurrentTime?.() || 0) => {
+  if (!currentData) return;
+  const value = tempoAtTime(currentData, time) * bpmFactor;
+  SELECTORS.metaBpm.textContent = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  const meter = meterAtTime(currentData, time);
+  SELECTORS.metaMeter.hidden = !meter || bpmFactor !== 1;
+  SELECTORS.metaMeter.textContent = meter ? `${meter}\u62CD\u5B50` : "";
+};
 var applyBpmDisplay = () => {
   if (!currentData) return;
-  const value = Number(currentData.bpm || 0) * bpmFactor;
-  SELECTORS.metaBpm.textContent = Number.isInteger(value) ? String(value) : value.toFixed(1);
+  updateBpmReading();
+  const range = tempoRange(currentData)?.map((value) => Math.round(value * bpmFactor));
+  SELECTORS.metaTempoRange.hidden = !range;
+  SELECTORS.metaTempoRange.textContent = range ? `\u30C6\u30F3\u30DD\u5909\u5316 ${range[0]}\u2013${range[1]} BPM` : "";
   SELECTORS.metaBars.textContent = adjustBarValue(currentData.total_bars || 0);
   document.querySelectorAll(".sec-row").forEach((row, index) => {
     const section = currentData.sections[index];
@@ -5410,7 +5470,7 @@ var applyBpmDisplay = () => {
     const meta = row.querySelector(".si-meta");
     if (meta) {
       const date = row.dataset.date || "";
-      meta.textContent = `\u2669${SELECTORS.metaBpm.textContent}${date ? ` \xB7 ${date}` : ""}`;
+      meta.textContent = `\u2669${range ? range.join("\u2013") : SELECTORS.metaBpm.textContent}${date ? ` \xB7 ${date}` : ""}`;
     }
   });
   renderFourBarGrid();

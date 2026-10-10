@@ -198,6 +198,10 @@ def bars_from_sections(sections: list[dict], downbeats: list[float]) -> list[dic
 
 
 def normalize_tempo_grid(data: dict) -> dict:
+    # Expanding slower pulses to the global BPM destroys intentional tempo
+    # changes. Variable-mode timestamps are the clock, not its summary BPM.
+    if data.get("tempoMode") == "variable":
+        return data
     bpm = float(data.get("bpm") or 0.0)
     beats = [float(beat) for beat in data.get("beats") or []]
     adjusted = data
