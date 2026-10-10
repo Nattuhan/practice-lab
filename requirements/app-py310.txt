@@ -1,6 +1,7 @@
 fastapi==0.128.0
 uvicorn==0.40.0
 # Pin the nightly verified against YouTube stream failures; default includes EJS challenge solving.
+# The frozen backend cannot update itself: release preparation must verify this version.
 yt-dlp[default]==2026.9.27.232945.dev0
 librosa==0.11.0
 numpy<2

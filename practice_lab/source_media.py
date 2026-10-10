@@ -16,6 +16,10 @@ FULL_VIDEO_FORMAT = (
     "bv*[vcodec^=avc1][height<=1080][ext=mp4]+ba[ext=m4a]/"
     "bv*[vcodec^=avc1][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/b"
 )
+DEFAULT_YOUTUBE_PLAYER_CLIENTS = "web_embedded"
+# yt-dlp words an unusable browser cookie store two ways, depending on whether
+# it failed to locate the database or to copy it. Match both.
+COOKIE_DATABASE_ERROR_MARKERS = ("cookie database", "cookies database")
 _prefer_ipv4 = False
 
 
@@ -48,6 +52,11 @@ def get_thumbnail_url(url: str) -> str | None:
     if result.returncode == 0 and thumbnail.startswith("https://"):
         return thumbnail
     return None
+
+
+def is_cookie_database_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(marker in lowered for marker in COOKIE_DATABASE_ERROR_MARKERS)
 
 
 def normalize_analysis_range(
@@ -185,6 +194,25 @@ def run_yt_dlp(
         return result
 
 
+def yt_dlp_player_client_args() -> list[str]:
+    """Return an explicit YouTube player client for the retry after a 403.
+
+    YouTube periodically stops serving media to the player clients yt-dlp
+    selects by default: metadata extraction still succeeds, then the stream
+    download answers 403. Naming a client that is still served recovers the
+    download without waiting for a new yt-dlp release, which matters most on
+    Windows where the packaged build cannot update yt-dlp by itself.
+
+    Set PRACTICE_LAB_YTDLP_PLAYER_CLIENTS to try other clients, or to "off"
+    to skip this retry entirely.
+    """
+    clients = os.environ.get("PRACTICE_LAB_YTDLP_PLAYER_CLIENTS", "").strip()
+    clients = clients or DEFAULT_YOUTUBE_PLAYER_CLIENTS
+    if clients.lower() in {"off", "none"}:
+        return []
+    return ["--extractor-args", f"youtube:player_client={clients}"]
+
+
 def yt_dlp_browser_session_args() -> list[str]:
     """Return a local browser session fallback for YouTube's signed streams.
 
@@ -231,6 +259,21 @@ def yt_dlp_browser_session_args() -> list[str]:
     return []
 
 
+def yt_dlp_retry_tiers() -> list[list[str]]:
+    """Extra yt-dlp arguments to try, in order, after an anonymous attempt.
+
+    Each tier is only reached when the previous one failed with a 403, so a
+    working anonymous download still costs a single yt-dlp run. The player
+    client retry comes before the browser session because it needs no access
+    to the user's browser profile.
+    """
+    tiers = [[]]
+    for extra_args in (yt_dlp_player_client_args(), yt_dlp_browser_session_args()):
+        if extra_args:
+            tiers.append(extra_args)
+    return tiers
+
+
 def yt_dlp_error(stderr: str, fallback: str) -> str:
     lines = [
         line for line in (stderr or fallback).splitlines()
@@ -264,8 +307,7 @@ def download_wav(
 ) -> None:
     """Download the complete source audio, then apply any range locally."""
     start_sec, end_sec = normalize_analysis_range(start_sec, end_sec)
-    session_args = yt_dlp_browser_session_args()
-    attempt_args = [[], session_args] if session_args else [[]]
+    attempt_args = yt_dlp_retry_tiers()
     last_error = "yt-dlp failed"
     anonymous_error = ""
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -297,10 +339,15 @@ def download_wav(
             last_error = yt_dlp_error(result.stderr, "yt-dlp failed")
             if not extra_args:
                 anonymous_error = last_error
-            elif "cookies database" in last_error.lower():
+            elif is_cookie_database_error(last_error):
                 raise RuntimeError(f"{anonymous_error}\n\nBrowser-cookie retry failed: {last_error}")
             if "403" not in last_error and "Forbidden" not in last_error:
-                raise RuntimeError(last_error)
+                if not extra_args or index + 1 == len(attempt_args):
+                    raise RuntimeError(last_error)
+                # A retry tier can fail for its own reasons, such as a player
+                # client that needs a JS runtime. Keep the error the anonymous
+                # attempt reported and let the remaining tiers run.
+                last_error = anonymous_error or last_error
 
     raise RuntimeError(last_error)
 
@@ -321,11 +368,11 @@ def download_video(
     format_candidates = [FULL_VIDEO_FORMAT, FULL_VIDEO_FALLBACK_FORMAT]
     last_error = "yt-dlp video download failed"
     anonymous_error = ""
-    session_args = yt_dlp_browser_session_args()
+    attempt_tiers = yt_dlp_retry_tiers()
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Exhaust anonymous formats before trying browser cookies. A failed
+        # Exhaust every format of one tier before moving to the next. A failed
         # cookie read must not prevent the lower-bandwidth format from working.
-        for attempt, extra_args in enumerate([[], session_args] if session_args else [[]]):
+        for attempt, extra_args in enumerate(attempt_tiers):
             for format_index, candidate in enumerate(format_candidates):
                 output_base = f"video-{format_index}-{attempt}"
                 result = run_yt_dlp(
@@ -362,10 +409,15 @@ def download_video(
                 last_error = yt_dlp_error(result.stderr, "yt-dlp video download failed")
                 if not extra_args:
                     anonymous_error = last_error
-                elif "cookies database" in last_error.lower():
+                elif is_cookie_database_error(last_error):
                     raise RuntimeError(f"{anonymous_error}\n\nBrowser-cookie retry failed: {last_error}")
                 if "403" not in last_error and "Forbidden" not in last_error:
-                    raise RuntimeError(last_error)
-            if attempt == 0 and session_args:
+                    if not extra_args or attempt + 1 == len(attempt_tiers):
+                        raise RuntimeError(last_error)
+                    # A retry tier can fail for its own reasons, such as a player
+                    # client that needs a JS runtime. Keep the error the anonymous
+                    # attempt reported and let the remaining tiers run.
+                    last_error = anonymous_error or last_error
+            if attempt + 1 < len(attempt_tiers):
                 time.sleep(1)
     raise RuntimeError(last_error)
