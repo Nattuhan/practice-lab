@@ -39,6 +39,48 @@ test.beforeEach(async ({ page }) => {
   }));
 });
 
+test("カラムをドラッグで調整し保存・復元でき、狭い画面では収まる", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.locator('#structure-workspace')).toBeVisible();
+  const width = locator => locator.evaluate(element => element.getBoundingClientRect().width);
+  const drag = async (locator, delta) => {
+    const box = await locator.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + delta, box.y + 30, { steps: 5 });
+    await page.mouse.up();
+  };
+  const sidebar = page.locator('#sidebar');
+  const mixer = page.locator('#stem-panel');
+  const libraryHandle = page.locator('#library-column-resize');
+  const mixerHandle = page.locator('#mixer-column-resize');
+  const initialLibrary = await width(sidebar);
+  await drag(libraryHandle, 100);
+  await expect.poll(() => width(sidebar)).toBeCloseTo(initialLibrary + 100, 0);
+  const initialMixer = await width(mixer);
+  await drag(mixerHandle, -60);
+  await expect.poll(() => width(mixer)).toBeCloseTo(initialMixer + 60, 0);
+  await page.reload();
+  await expect.poll(() => width(sidebar)).toBeCloseTo(initialLibrary + 100, 0);
+  await expect.poll(() => width(mixer)).toBeCloseTo(initialMixer + 60, 0);
+  await libraryHandle.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => width(sidebar)).toBeCloseTo(initialLibrary + 90, 0);
+  await page.setViewportSize({ width: 720, height: 900 });
+  await expect.poll(() => width(sidebar)).toBeLessThanOrEqual(260);
+  await expect(mixerHandle).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(libraryHandle).toBeHidden();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => width(sidebar)).toBeCloseTo(initialLibrary + 90, 0);
+  await libraryHandle.dblclick({ position: { x: 4, y: 30 } });
+  await expect.poll(() => width(sidebar)).toBeCloseTo(initialLibrary, 0);
+  await mixerHandle.focus();
+  await page.keyboard.press('Home');
+  await expect.poll(() => width(mixer)).toBeCloseTo(initialMixer, 0);
+});
+
 test("主要画面をネットワークCDNなしで開ける", async ({ page }) => {
   const dependencyRequests = [];
   page.on("request", request => {

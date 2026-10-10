@@ -15,6 +15,7 @@ import { normalizeClickPitch, normalizeClickSound } from "./click-renderer-workl
 import { videoClickAction } from "./video-gestures.js";
 import { acceptsPlaybackShortcuts } from "./playback-shortcuts.js";
 import { jobElapsedSeconds, queueItemClass } from "./job-status.js";
+import { initColumnResize } from "./column-resize.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -5515,6 +5516,7 @@ SELECTORS.urlInput.addEventListener("keydown", event => {
 SELECTORS.desktopStatusAction?.addEventListener("click", startDesktopAnalysisSetup);
 
 lucide.createIcons();
+initColumnResize();
 syncScoreOptionAvailability();
 renderScoreHistory();
 await detectServer();
