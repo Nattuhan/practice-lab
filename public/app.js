@@ -6445,6 +6445,7 @@ var initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateSte
     if (!ws || event.button !== 0) return;
     const rect = SELECTORS.waveform.getBoundingClientRect();
     if (rect.width <= 0) return;
+    SELECTORS.waveform.focus({ preventScroll: true });
     const handle = event.target.closest?.(".loop-selection-handle");
     const selection = event.target.closest?.(".loop-selection");
     if (handle && customLoopRange) {

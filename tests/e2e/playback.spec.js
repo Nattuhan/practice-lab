@@ -171,6 +171,24 @@ test('最初の検出拍より前に歌声が入る曲も、歌い出す前か�
   expect(exported.clickCounts.slice(0, 9)).toEqual([1,2,3,4,1,2,3,4,1]);
 });
 
+test('波形をクリックした後も左右キーで5秒スキップできる', async ({ page }) => {
+  await start(page);
+  await page.locator('#btn-play').click();
+  const waveform = page.locator('#waveform');
+  const bounds = await waveform.boundingBox();
+  await waveform.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+  await expect(waveform).toBeFocused();
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(15, 1);
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(10, 1);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(15, 1);
+  // Focusing a real control must still reserve its arrow keys for that control.
+  await page.locator('#playback-rate').focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(15, 1);
+});
+
 test('0.5倍速では左右カーソルキーで2.5秒ずつ移動する', async ({ page }) => {
   await start(page);
   await page.locator('#btn-play').click();

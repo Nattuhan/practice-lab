@@ -3575,6 +3575,9 @@ const initWaveSurfer = async (audioUrl, videoUrl, stemAssets = null, { activateS
     if (!ws || event.button !== 0) return;
     const rect = SELECTORS.waveform.getBoundingClientRect();
     if (rect.width <= 0) return;
+    // Scrubbing prevents the browser's default focus change. Explicitly move
+    // focus off the previous button/input so playback shortcuts work afterward.
+    SELECTORS.waveform.focus({ preventScroll: true });
     const handle = event.target.closest?.(".loop-selection-handle");
     const selection = event.target.closest?.(".loop-selection");
     if (handle && customLoopRange) {
