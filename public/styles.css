@@ -588,14 +588,15 @@ body {
 
 .queue-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto max-content;
+  /* State and action share the right column so the song keeps the left width. */
+  grid-template-columns: minmax(0, 1fr) max-content;
   gap: 6px 10px;
   padding: 9px 10px;
   border-radius: var(--r);
   border-left: 2px solid var(--gray-5);
   align-items: start;
 }
-.queue-actions { grid-column: 3; grid-row: 2; justify-content: flex-end; }
+.queue-actions { grid-column: 2; grid-row: 2; justify-content: flex-end; }
 .queue-actions .queue-cancel { min-width: 48px; }
 .queue-discard { color: #fda4af; }
 
@@ -638,16 +639,22 @@ body {
 }
 
 .queue-title {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   color: var(--gray-9);
   font-size: var(--type-ui);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Long song names should remain readable instead of disappearing in dots. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .queue-stage {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  white-space: nowrap;
   color: var(--gray-6);
   font-family: var(--mono);
   font-size: var(--type-ui);
@@ -655,7 +662,7 @@ body {
 }
 
 .queue-message {
-  grid-column: 1 / 3;
+  grid-column: 1;
   grid-row: 2;
   color: var(--gray-6);
   font-family: var(--mono);
@@ -668,7 +675,7 @@ body {
 }
 
 .queue-cancel {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 2;
   /* Labels need their full width, including Japanese glyphs and letter spacing. */
   width: auto;
