@@ -3155,6 +3155,23 @@ var acceptsPlaybackShortcuts = (target, { dialogOpen = false } = {}) => {
   return true;
 };
 
+// frontend/src/job-status.js
+var jobElapsedSeconds = (job, now = Date.now() / 1e3, fallbackStartedAt = now) => {
+  if (!job || job.stage === "queued") return 0;
+  const startedAt = "execution_started_at" in job ? job.execution_started_at : job.started_at ?? fallbackStartedAt;
+  if (startedAt == null) return 0;
+  const endedAt = job.done || job.interrupted ? job.finished_at ?? job.updated_at ?? startedAt : now;
+  return Math.max(0, Math.floor(endedAt - startedAt));
+};
+var queueItemClass = (job) => {
+  if (job?.canceled || job?.stage === "canceled") return "canceled";
+  if (job?.error) return "error";
+  if (job?.interrupted || job?.stage === "interrupted") return "interrupted";
+  if (job?.done) return "done";
+  if (!job?.stage || job.stage === "queued") return "queued";
+  return "running";
+};
+
 // frontend/src/app.js
 var lucide = { createIcons: renderIcons };
 var COLORS = {
@@ -5305,7 +5322,7 @@ var renderJobStatus = (job) => {
   SELECTORS.jobStage.textContent = localizeJobStage(job.stage);
   const startedAt = job.started_at ?? currentJobStartedAt ?? Date.now() / 1e3;
   currentJobStartedAt = startedAt;
-  const elapsed = Math.max(0, Math.floor(Date.now() / 1e3 - startedAt));
+  const elapsed = jobElapsedSeconds(job, Date.now() / 1e3, startedAt);
   SELECTORS.jobElapsed.textContent = `${elapsed}\u79D2`;
   SELECTORS.jobMessage.textContent = job.error || localizeJobMessage(job.message);
 };
@@ -5314,13 +5331,6 @@ var fetchJobStatus = async (jobId) => {
   const response = await fetch(`/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`\u30B8\u30E7\u30D6\u72B6\u614B\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093 (${response.status})`);
   return response.json();
-};
-var queueItemClass = (job) => {
-  if (job?.canceled || job?.stage === "canceled") return "canceled";
-  if (job?.error) return "error";
-  if (job?.done) return "done";
-  if (job?.stage === "queued") return "queued";
-  return "running";
 };
 var localizeJobStage = (stage) => ({
   queued: "\u5F85\u6A5F\u4E2D",
@@ -5495,8 +5505,7 @@ var renderQueueDock = () => {
   SELECTORS.queueCount.textContent = String(jobs.filter((item) => !item.status?.done || item.status?.resumable).length);
   SELECTORS.queueList.innerHTML = jobs.map((item) => {
     const status = item.status || { stage: "queued", message: "\u30B5\u30FC\u30D0\u30FC\u3092\u5F85\u3063\u3066\u3044\u307E\u3059" };
-    const startedAt = status.started_at || item.createdAt / 1e3;
-    const elapsed = Math.max(0, Math.floor(Date.now() / 1e3 - startedAt));
+    const elapsed = jobElapsedSeconds(status, Date.now() / 1e3, item.createdAt / 1e3);
     const stageText = status.resumable ? localizeJobStage(status.stage) : `${localizeJobStage(status.stage)} \xB7 ${elapsed}\u79D2`;
     return `
       <div class="queue-item ${queueItemClass(status)}">

@@ -726,6 +726,25 @@ test("起動時の曲読み込みが終わっても開いた解析画面の設�
   await expect(page.locator("#analysis-tempo-mode")).toHaveValue("variable");
 });
 
+test("処理一覧の待機・実行・中断を色で区別し待機時間を加算しない", async ({ page }) => {
+  const now = Date.now() / 1000;
+  await page.route("**/jobs?recoverable=true", route => route.fulfill({ json: [
+    { id: "queue-wait", kind: "stems", display_title: "待機の曲", stage: "queued", message: "Queued", started_at: now - 1000, execution_started_at: null },
+    { id: "queue-run", kind: "analysis", display_title: "実行の曲", stage: "stems", message: "Working", started_at: now - 1000, execution_started_at: now - 10 },
+    { id: "queue-stop", kind: "analysis", display_title: "中断の曲", stage: "interrupted", message: "Interrupted", done: true, interrupted: true, resumable: true },
+  ] }));
+  await page.goto("/");
+  const queued = page.locator(".queue-item.queued .queue-stage");
+  const running = page.locator(".queue-item.running .queue-stage");
+  const interrupted = page.locator(".queue-item.interrupted .queue-stage");
+  await expect(queued).toHaveText("待機中 · 0秒");
+  await expect(running).toContainText("パート分離中");
+  await expect(interrupted).toHaveText("再開待ち");
+  await expect(queued).toHaveCSS("color", "rgb(147, 197, 253)");
+  await expect(running).toHaveCSS("color", "rgb(251, 146, 60)");
+  await expect(interrupted).toHaveCSS("color", "rgb(253, 224, 71)");
+});
+
 test("再起動で中断したジョブを利用者が再開できる", async ({ page }) => {
   await page.route("**/jobs?recoverable=true", route => route.fulfill({
     contentType: "application/json",

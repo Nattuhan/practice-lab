@@ -191,6 +191,7 @@ class JobStatusResponse(BaseModel):
     canceled: bool = False
     cancel_requested: bool = False
     started_at: float | None = None
+    execution_started_at: float | None = None
     updated_at: float | None = None
     finished_at: float | None = None
     duration_seconds: float | None = None

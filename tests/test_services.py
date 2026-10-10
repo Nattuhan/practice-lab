@@ -108,6 +108,32 @@ class PublishedVideoStorageTests(unittest.TestCase):
 
 
 class JobQueueTests(unittest.TestCase):
+    def test_execution_timer_excludes_queue_wait_and_survives_stage_changes(self):
+        job_id = "test-execution-timer"
+        try:
+            with (
+                patch.object(services, "ensure_job_worker"),
+                patch.object(services, "JOB_QUEUE", MagicMock()),
+                patch.object(services, "cli_log"),
+                patch.object(services, "persist_jobs_locked"),
+                patch.object(services.time, "time", return_value=100) as clock,
+            ):
+                services.submit_queued_job(job_id, "Queued", lambda: {})
+                self.assertIsNone(services.get_job_status(job_id)["execution_started_at"])
+                clock.return_value = 900
+                services.set_job_status(job_id, "running", "Working")
+                clock.return_value = 910
+                services.set_job_status(job_id, "stems", "Separating")
+                clock.return_value = 925
+                services.complete_job_status(job_id, "Complete", {})
+                job = services.get_job_status(job_id)
+                self.assertEqual(job["started_at"], 100)
+                self.assertEqual(job["execution_started_at"], 900)
+                self.assertEqual(job["finished_at"], 925)
+        finally:
+            with services.JOB_LOCK:
+                services.JOBS.pop(job_id, None)
+
     def test_cloud_sync_uses_a_separate_network_queue(self):
         job_id = "cloud:queue-test"
         cloud_queue = MagicMock()

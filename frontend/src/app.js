@@ -14,6 +14,7 @@ import { alignedWav, connectAlignedOutput, loadClickRenderer } from "./aligned-c
 import { normalizeClickPitch, normalizeClickSound } from "./click-renderer-worklet-source.js";
 import { videoClickAction } from "./video-gestures.js";
 import { acceptsPlaybackShortcuts } from "./playback-shortcuts.js";
+import { jobElapsedSeconds, queueItemClass } from "./job-status.js";
 
 const lucide = { createIcons: renderIcons };
 
@@ -2355,7 +2356,7 @@ const renderJobStatus = job => {
   SELECTORS.jobStage.textContent = localizeJobStage(job.stage);
   const startedAt = job.started_at ?? currentJobStartedAt ?? Date.now() / 1000;
   currentJobStartedAt = startedAt;
-  const elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startedAt));
+  const elapsed = jobElapsedSeconds(job, Date.now() / 1000, startedAt);
   SELECTORS.jobElapsed.textContent = `${elapsed}秒`;
   SELECTORS.jobMessage.textContent = job.error || localizeJobMessage(job.message);
 };
@@ -2366,14 +2367,6 @@ const fetchJobStatus = async jobId => {
   const response = await fetch(`/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`ジョブ状態を取得できません (${response.status})`);
   return response.json();
-};
-
-const queueItemClass = job => {
-  if (job?.canceled || job?.stage === "canceled") return "canceled";
-  if (job?.error) return "error";
-  if (job?.done) return "done";
-  if (job?.stage === "queued") return "queued";
-  return "running";
 };
 
 const localizeJobStage = stage => ({
@@ -2562,8 +2555,7 @@ const renderQueueDock = () => {
   SELECTORS.queueCount.textContent = String(jobs.filter(item => !item.status?.done || item.status?.resumable).length);
   SELECTORS.queueList.innerHTML = jobs.map(item => {
     const status = item.status || { stage: "queued", message: "サーバーを待っています" };
-    const startedAt = status.started_at || item.createdAt / 1000;
-    const elapsed = Math.max(0, Math.floor(Date.now() / 1000 - startedAt));
+    const elapsed = jobElapsedSeconds(status, Date.now() / 1000, item.createdAt / 1000);
     const stageText = status.resumable ? localizeJobStage(status.stage) : `${localizeJobStage(status.stage)} · ${elapsed}秒`;
     return `
       <div class="queue-item ${queueItemClass(status)}">

@@ -225,6 +225,10 @@ def set_job_status(video_id: str, stage: str, message: str, *, done: bool = Fals
         previous_stage = current.get("stage")
         previous_message = current.get("message")
         previous_error = current.get("error")
+        # Submission time remains available for history; the UI timer starts
+        # only when the worker actually takes this job out of the queue.
+        if stage == "running" and current.get("execution_started_at") is None:
+            current["execution_started_at"] = now
         current.update(
             {
                 "stage": stage,
@@ -413,6 +417,7 @@ def submit_queued_job(job_id: str, description: str, func, cleanup=None, *, spec
             "canceled": False,
             "cancel_requested": False,
             "started_at": now,
+            "execution_started_at": None,
             "updated_at": now,
             "description": description,
             "kind": kind,
