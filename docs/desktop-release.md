@@ -123,6 +123,8 @@ node scripts/verify_desktop_release.cjs 1.4.1 35360410184
 
 詳しい転送経路、v1.4.3の実測、再開と監視方法は[リリーススキルの効率化手順](../.agents/skills/practice-lab-release/references/efficient-release.md)を参照してください。公開CIでは仮署名Macアプリの再梱包を省き、実際に配布する署名・公証済みDMGとZIPを検証します。手動CIの仮署名ビルド検証は維持します。
 
+長いビルド・転送・CI待機は`node scripts/release_tasks.cjs run PLAN.json`へまとめます。工程別ログと完了位置を保存し、失敗時は後続を止め、成功済みの工程を再提出せずに再開できます。CI待機は計画内の`gh run watch --exit-status --interval 60`に一本化し、会話から毎分状態を問い合わせません。計画の例と再開時の注意点は上記の効率化手順を参照してください。
+
 ## 署名と公開の方針
 
 Windows版は従来どおり未署名です。Mac版はv1.2.2からMornNotary経由のDeveloper ID署名・Apple公証を使用します。証明書とAppleの認証情報はMornNotary側のSecretsに保持し、PracticeLabのリポジトリへ複製しません。

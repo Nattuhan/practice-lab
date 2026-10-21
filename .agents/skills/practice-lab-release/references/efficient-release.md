@@ -31,15 +31,37 @@ gh workflow run stage-notarized-mac.yml --ref main -f version=X.Y.Z -f from_stag
 - 同梱されないテスト・ドキュメントだけを修正した場合、配布入力の不変性を確認してMac配布物を再利用する。アプリコード・資源・依存・ビルド設定・バージョンが変われば作り直す。
 - Releaseの対象は`main`という文字列ではなく固定SHA。タグ付け替え後もdraftの対象を新SHAへ合わせる。公開jobは`GITHUB_SHA`を設定する。
 
-## 監視と失敗ログ
+## 工程の実行役
 
-特定したrunだけを監視する。一定間隔の無変更通知や、Release一覧・全run一覧を繰り返す監視を避ける。ツールの待機は一回60秒以内に区切り、意味のある工程変化・失敗・完了を簡潔に伝える。ユーザーが状況を求めた場合は現在の工程を答える。
+v1.4.6では監視プロセスに加え、モデルが何度もrun状態・ログ・転送量を読み直したことがトークン消費を増やした。待機時間の長さと、モデルによる状態確認の回数を切り離す。`scripts/release_tasks.cjs`は連続実行できる工程を順に実行し、工程別ログと完了位置を計画ファイルの隣へ保存する。コマンドには引数配列を使い、シェル展開を挟まない。
 
-```bash
-gh run view RUN_ID --json status,conclusion,jobs --jq '{status,conclusion,jobs:[.jobs[]|{name,status,conclusion,current:[.steps[]|select(.status=="in_progress")|.name]}]}'
+計画はGit管理外の`desktop/dist/release-X.Y.Z/`へ置く。`sourceSha`は配布元の完全なコミットSHA、`steps`は承認済みの工程だけにする。次は公開CIのrun ID確定後に使う計画の例（SHA・版番号・run IDを実値に置換する）。
+
+```json
+{
+  "sourceSha": "配布元の40桁SHA",
+  "steps": [
+    { "id": "wait-release", "command": ["gh", "run", "watch", "RUN_ID", "--exit-status", "--interval", "60"] },
+    { "id": "verify-release", "command": ["node", "scripts/verify_desktop_release.cjs", "X.Y.Z", "RUN_ID"] }
+  ]
+}
 ```
 
-`gh run watch`はログファイルへ出力すれば長時間処理を継続できる。run全体が実行中でも終了済みの失敗jobログは取得できる。
+```bash
+node scripts/release_tasks.cjs run desktop/dist/release-X.Y.Z/publish.json
+```
+
+このプロセスを一度起動し、同じ実行セッションの終了を待つ。`gh run view`や`tail`を別途繰り返さない。必要な場合はツール内のJavaScriptで同じセッションの待機をまとめ、モデルへ返す情報は工程完了・失敗に絞る。実行環境から待機応答が返っただけなら、そのまま同じセッションの待機を続ける。
+
+ビルド、MornNotaryの`sign.sh`、転送なども、入力と承認範囲が確定した連続工程を同じ形式でまとめられる。run IDなど次の入力が未確定な境界では計画を分ける。計画へ秘密情報を記録しない。公開前の配布物照合、タグ作成前のstage成功確認、最終公開検証を省略しない。転送中に別の経路を並行開始しない。利用者の解析完了待ちもプロセス側で判定し、モデルで毎分読み直さない。
+
+バックグラウンドとして独立させる必要がある場合は`start PLAN`で起動し、`wait PLAN`でローカルの状態ファイル変更を待つ。`wait`は完了・失敗だけを返す。ユーザーが途中経過を求めた場合だけ`status PLAN`を使う。`wait --timeout-seconds=55`で待機を区切ることもできるが、これを毎分の外部状態照会と組み合わせない。
+
+失敗したら後続は実行しない。該当する`PLAN.logs/工程ID.log`だけを調べ、同じ入力での再試行が適切と確認できた場合だけ`run PLAN --retry-failed`で再開する。成功した工程は再実行しない。計画内容・作業ディレクトリ・配布元コミットの変更は拒否する。プロセスが中断された場合、提出がリモートで完了している可能性があるため、状態確認後の`--retry-interrupted`が必要。古い子プロセスが生存中なら再実行を拒否する。
+
+## 失敗ログ
+
+run全体が実行中でも、失敗済みjobのログは取得できる。これは失敗の調査に限り、通常待機の監視を増やさない。
 
 ```bash
 gh api --allow-escape-sequences repos/Nattuhan/practice-lab/actions/jobs/JOB_ID/logs > JOB_LOG
