@@ -101,7 +101,7 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
     beats = np.asarray(data.get("beats") or [], dtype=float)
     downbeats = np.asarray(data.get("downbeats") or [], dtype=float)
     bpm = float(data.get("bpm") or 0)
-    if bpm <= 0 or len(beats) < 65 or not len(downbeats) or np.any(np.diff(beats) <= 0):
+    if bpm <= 0 or len(beats) < 33 or not len(downbeats) or np.any(np.diff(beats) <= 0):
         return data
     # A BPM change must describe the existing pulse, not repair a mismatched
     # numeric label; timing repair is a separate, earlier step in the pipeline.
@@ -110,14 +110,32 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
     bar_positions = np.argmin(abs(downbeats[:, None] - beats[None, :]), axis=1)
     if np.any(np.diff(bar_positions) != 4):
         return data
+    if data.get("tempoMode") == "constant":
+        from .constant_tempo import fit_constant_grid
+
+        # Evaluate the user's constant-clock hypothesis against the audio.
+        # Local tracker drift can otherwise move the intervening attacks out
+        # of the sampling windows, hiding the very pulse we need to compare.
+        # Keep the original data when that hypothesis lacks source support.
+        beats, _ = fit_constant_grid(data)
     votes = []
     eligible = 0
     subdivision_candidates = []
+    # Short excerpts still need four independent passages. Two detected bars
+    # contain four bars at the proposed faster pulse, enough to compare repeated
+    # accents without requiring a minute of audio before considering an octave.
+    window_intervals = 16 if len(beats) >= 65 else 8
+
+    def distributed(indexes: list[int]) -> bool:
+        # Measure the supported passage, including its final window. Comparing
+        # only window starts discards most of the coverage in a short excerpt.
+        return bool(indexes) and indexes[-1] + window_intervals - indexes[0] >= (len(beats) - 1) / 2
+
     with sf.SoundFile(audio_path) as audio:
-        # Each vote covers four detected bars; process bounded windows instead
+        # Each vote covers two or four detected bars; process bounded windows instead
         # of retaining a full-song multichannel spectrogram in memory.
-        for index in range(0, len(beats) - 16, 16):
-            window = beats[index:index + 17]
+        for index in range(0, len(beats) - window_intervals, window_intervals):
+            window = beats[index:index + window_intervals + 1]
             period = float(np.median(np.diff(window)))
             if np.max(abs(np.diff(window) / period - 1)) > .12:
                 continue
@@ -157,8 +175,9 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
     # repeated evidence while allowing those slower-feel passages to coexist.
     alternating_support = (len(faster) >= 4 and len(faster) >= eligible / 3
                            and len(faster) >= (2 / 3) * len(votes)
-                           and faster[-1][0] - faster[0][0] >= len(beats) / 2)
+                           and distributed([vote[0] for vote in faster]))
     kick_parity = None
+    supported = []
     if alternating_support:
         parity_counts = np.bincount([vote[2] for vote in faster], minlength=2)
         kick_parity = int(np.argmax(parity_counts))
@@ -166,7 +185,7 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
         if not alternating_support:
             kick_parity = None
     if not alternating_support:
-        # Two-thirds of independent four-bar windows must carry both pitched
+        # Two-thirds of independent windows must carry both pitched
         # and bass attacks on the faster grid, with no dominant slow backbeat.
         # This is a musical-pulse choice, not a way to fill missing onsets.
         slow_votes = sum(vote[1] == 1 for vote in votes)
@@ -178,7 +197,7 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
             supported = [index for index, window in subdivision_candidates
                          if _harmonic_subdivision_ratio(audio, window) >= .75]
         if (len(supported) < (2 / 3) * eligible
-                or supported[-1] - supported[0] < len(beats) / 2):
+                or not distributed(supported)):
             return data
     expanded = np.sort(np.r_[beats, (beats[:-1] + beats[1:]) / 2])
     first_bar = int(np.argmin(abs(expanded - downbeats[0])))
@@ -211,10 +230,11 @@ def resolve_tempo_octave(data: dict, audio_path: Path) -> dict:
         if key in data:
             adjusted[key] = bars_from_sections(data[key], new_downbeats)
     adjusted["tempoOctaveResolution"] = {
-        "version": 3 if alternating_support else 4,
+        "version": 5 if window_intervals == 8 else 3 if alternating_support else 4,
         "method": "alternating_backbeat" if alternating_support else "bass_and_harmonic_subdivision",
         "factor": 2, "fromBpm": bpm, "toBpm": adjusted["bpm"],
-        "eligibleWindows": eligible, "fasterVotes": len(faster),
+        "eligibleWindows": eligible, "windowIntervals": window_intervals, "fasterVotes": len(faster),
+        "subdivisionVotes": len(supported),
         "originalVotes": len(votes) - len(faster), "kickParity": kick_parity,
         "preservedBarAnchors": [new_beats[index] for index in sorted(anchors) if index != first_bar],
     }

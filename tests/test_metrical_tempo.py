@@ -130,6 +130,75 @@ def test_keeps_slow_pulse_with_guitar_eighths_and_slow_bass(tmp_path):
     assert resolve_tempo_octave(original, audio) is original
 
 
+@pytest.mark.parametrize('period,offset,count', [(.29, .13, 33), (.375, 1.27, 38), (.55, 2.13, 64)])
+def test_short_excerpts_resolve_repeated_backbeats(tmp_path, period, offset, count):
+    audio = tmp_path / 'short-backbeats.wav'
+    write_drums(audio, period, offset, count=count * 2)
+    original = detected_grid(period * 2, offset, count=count)
+    result = resolve_tempo_octave(original, audio)
+    assert result['bpm'] == round(60 / period, 1)
+    assert len(result['beats']) == count * 2 - 1
+    assert result['tempoOctaveResolution']['windowIntervals'] == 8
+    assert result['tempoOctaveResolution']['eligibleWindows'] >= 4
+    assert resolve_tempo_octave(result, audio) == result
+
+
+@pytest.mark.parametrize('period,offset', [(.31, .17), (.41, 1.13), (.53, .29)])
+def test_short_pitched_pulse_can_be_supported_after_a_sparse_opening(tmp_path, period, offset):
+    audio = tmp_path / 'short-pitched.wav'
+    write_drums(audio, period, offset, count=76, only_hats=True)
+    add_pitched_pulses(audio, period, offset, 76)
+    samples, rate = sf.read(audio, dtype='float32')
+    # Only three of four independent windows carry evidence. The span of
+    # their complete passages still covers most of the excerpt.
+    samples[:round((offset + 16 * period) * rate)] = 0
+    sf.write(audio, samples, rate, subtype='FLOAT')
+    original = detected_grid(period * 2, offset, count=38)
+    result = resolve_tempo_octave(original, audio)
+    assert result['bpm'] == round(60 / period, 1)
+    assert result['tempoOctaveResolution']['method'] == 'bass_and_harmonic_subdivision'
+    assert result['tempoOctaveResolution']['subdivisionVotes'] == 3
+
+
+@pytest.mark.parametrize('case', ['backbeat', 'four_on_floor', 'only_hats', 'guitar_eighths', 'silence'])
+@pytest.mark.parametrize('mode', ['constant', 'variable'])
+def test_short_excerpts_keep_real_slow_pulses_and_ambiguous_subdivisions(tmp_path, case, mode):
+    audio = tmp_path / 'short-slow.wav'
+    period, offset = .79, .23
+    write_drums(audio, period, offset, count=38, four_on_floor=case == 'four_on_floor',
+                only_hats=case in {'only_hats', 'silence'})
+    if case == 'guitar_eighths':
+        add_pitched_pulses(audio, period / 2, offset, 76, bass_on_every_pulse=False)
+    if case == 'silence':
+        samples, rate = sf.read(audio)
+        sf.write(audio, np.zeros_like(samples), rate)
+    original = detected_grid(period, offset, count=38)
+    original['tempoMode'] = mode
+    assert resolve_tempo_octave(original, audio) is original
+
+
+def test_excerpt_with_fewer_than_four_independent_passages_stays_unresolved(tmp_path):
+    audio = tmp_path / 'too-short.wav'
+    write_drums(audio, .37, .17, count=64)
+    original = detected_grid(.74, .17, count=32)
+    assert resolve_tempo_octave(original, audio) is original
+
+
+@pytest.mark.parametrize('period,offset', [(.29, .17), (.41, 1.13), (.53, .29)])
+def test_constant_clock_is_used_to_compare_audio_despite_local_tracker_drift(tmp_path, period, offset):
+    audio = tmp_path / 'tracker-drift.wav'
+    write_drums(audio, period, offset, count=76)
+    original = detected_grid(period * 2, offset, count=38)
+    original['beats'][18:26] = [beat + .5 * period for beat in original['beats'][18:26]]
+    original['downbeats'] = original['beats'][::4]
+    # Variable timing cannot assume this is drift instead of an actual change.
+    assert resolve_tempo_octave(original, audio) is original
+    original['tempoMode'] = 'constant'
+    result = resolve_tempo_octave(original, audio)
+    assert result['bpm'] == round(60 / period, 1)
+    assert np.max(abs(np.asarray(result['beats']) - (offset + np.arange(75) * period))) < .002
+
+
 @pytest.mark.parametrize('period', [.27, .33, .48])
 def test_promotes_majority_clock_despite_distributed_half_time_breakdowns(tmp_path, period):
     audio = tmp_path / f'half-time-breakdowns-{period}.wav'
@@ -164,7 +233,8 @@ def test_keeps_mixed_meter(tmp_path):
     assert resolve_tempo_octave(original, audio) is original
 
 
-def test_fresh_analysis_entry_resolves_octave_without_saved_song_data(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('count', [38, 96])
+def test_fresh_analysis_entry_resolves_octave_without_saved_song_data(tmp_path, monkeypatch, capsys, count):
     import importlib.util
     import json
     import sys
@@ -172,8 +242,8 @@ def test_fresh_analysis_entry_resolves_octave_without_saved_song_data(tmp_path, 
     from types import SimpleNamespace
 
     audio = tmp_path / 'new-input.wav'
-    write_drums(audio, .375, .17)
-    detected = detected_grid(.75, .17)
+    write_drums(audio, .375, .17, count=count * 2)
+    detected = detected_grid(.75, .17, count=count)
     model_result = SimpleNamespace(path=audio, bpm=80, beats=detected['beats'],
                                    downbeats=detected['downbeats'], segments=[])
     monkeypatch.setitem(sys.modules, 'allin1fix', SimpleNamespace(analyze=lambda *args, **kwargs: model_result))
@@ -187,7 +257,7 @@ def test_fresh_analysis_entry_resolves_octave_without_saved_song_data(tmp_path, 
         assert module.main([str(audio), '--device', 'cpu']) == 0
         result = json.loads(capsys.readouterr().out)
         assert result['bpm'] == 160
-        assert len(result['beats']) == 191
+        assert len(result['beats']) == count * 2 - 1
         assert result['tempoOctaveResolution']['fromBpm'] == 80
 
 
