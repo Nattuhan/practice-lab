@@ -401,6 +401,108 @@ def test_keeps_genuine_half_time_passages_in_octave_mixed_detection(tmp_path):
     assert refine_timing_from_audio(data, audio) is data
 
 
+def write_sustained_opening(path, actual, transition):
+    period = float(np.median(np.diff(actual)))
+    write_attacks(path, actual[transition:], actual[-1] + period)
+    samples, rate = sf.read(path, dtype='float32')
+    for index in range(0, transition, 4):
+        first, last = round(actual[index] * rate), round(actual[index + 4] * rate)
+        time = np.arange(last - first) / rate
+        chord = .2 * np.sin(2 * np.pi * 330 * time) + .1 * np.sin(2 * np.pi * 660 * time)
+        samples[first:last] += chord * np.exp(-time / (3 * period))
+    sf.write(path, samples, rate, subtype='FLOAT')
+
+
+@pytest.mark.parametrize('period,offset', [(.29, .17), (.43, 1.13), (.61, .29)])
+@pytest.mark.parametrize('transition', [16, 48])
+def test_later_pulse_recovers_sparse_intro_without_demanding_attacks_at_missing_beats(tmp_path, period, offset, transition):
+    actual = offset + np.arange(160) * period + .03 * period * np.sin(np.arange(160) / 10)
+    detected = np.r_[actual[:transition:2], actual[transition:]]
+    beats = np.round(detected, 3).tolist()
+    audio = tmp_path / 'long-chords-before-eight-beat-groove.wav'
+    write_sustained_opening(audio, actual, transition)
+    sections = [dict(start_time=0, end_time=float(actual[transition])),
+                dict(start_time=float(actual[transition]), end_time=float(actual[-1]))]
+    data = dict(bpm=60 / period, tempoMode='variable', beats=beats, downbeats=beats[::4],
+                duration=float(actual[-1] + period), sections=sections, automaticSections=sections)
+    result = refine_timing_from_audio(data, audio)
+    assert len(result['beats']) == len(actual)
+    assert np.max(abs(np.asarray(result['beats']) - actual)) < .0011
+    assert result['beats'][transition:] == beats[transition // 2:]
+    assert set(beats).issubset(result['beats'])
+    assert result['downbeats'] == result['beats'][::4]
+    assert result['sections'] == result['automaticSections']
+    assert result['sections'][0]['bar_count'] == transition // 4
+    assert result['tempoMode'] == 'variable'
+    assert result['audioTimingRepair']['leadingHalfTime']['insertedBeats'] == transition // 2
+    assert refine_timing_from_audio(result, audio) == result
+
+
+@pytest.mark.parametrize('case', ['slow_backbeat', 'slow_backbeat_with_guitar_eighths', 'silence'])
+def test_intro_continuity_does_not_erase_a_clear_slow_backbeat_or_fill_silence(tmp_path, case):
+    from test_metrical_tempo import write_drums, add_pitched_pulses
+    period, offset = .37, .17
+    intro = tmp_path / 'intro.wav'
+    audio = tmp_path / 'slow-groove-then-faster-groove.wav'
+    write_drums(intro, 2 * period, offset, count=16)
+    if case == 'slow_backbeat_with_guitar_eighths':
+        add_pitched_pulses(intro, period, offset, 32, bass_on_every_pulse=False)
+    write_drums(audio, period, offset + 32 * period, count=96)
+    samples, rate = sf.read(audio, dtype='float32')
+    opening, _ = sf.read(intro, dtype='float32')
+    if case != 'silence':
+        samples[:len(opening)] += opening
+    sf.write(audio, samples, rate, subtype='FLOAT')
+    detected = offset + np.r_[np.arange(0, 32, 2), np.arange(32, 128)] * period
+    beats = np.round(detected, 3).tolist()
+    data = dict(bpm=60 / period, tempoMode='variable', beats=beats, downbeats=beats[::4],
+                duration=float(detected[-1] + period))
+    result = refine_timing_from_audio(data, audio)
+    assert result['beats'][:17] == beats[:17]
+    assert 'leadingHalfTime' not in result.get('audioTimingRepair', {})
+
+
+@pytest.mark.parametrize('ratio', [1.5, 1.25, .8])
+def test_intro_continuity_does_not_flatten_other_tempo_changes(tmp_path, ratio):
+    period, offset = .41, .17
+    intro = offset + np.arange(24) * ratio * period
+    detected = np.r_[intro, offset + 24 * ratio * period + np.arange(96) * period]
+    beats = np.round(detected, 3).tolist()
+    audio = tmp_path / 'real-tempo-change.wav'
+    write_attacks(audio, detected, detected[-1] + period)
+    data = dict(bpm=60 / period, tempoMode='variable', beats=beats, downbeats=beats[::4],
+                duration=float(detected[-1] + period))
+    result = refine_timing_from_audio(data, audio)
+    assert result['beats'][:25] == beats[:25]
+    assert 'leadingHalfTime' not in result.get('audioTimingRepair', {})
+
+
+def test_fresh_variable_analysis_reconsiders_intro_from_later_pulse(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    import json
+    import sys
+    from types import SimpleNamespace
+
+    actual = .17 + np.arange(160) * .375
+    beats = np.round(np.r_[actual[:32:2], actual[32:]], 3).tolist()
+    audio = tmp_path / 'fresh-sparse-intro.wav'
+    write_sustained_opening(audio, actual, 32)
+    inferred = SimpleNamespace(bpm=160, beats=beats, downbeats=beats[::4], path=audio, segments=[])
+    monkeypatch.setitem(sys.modules, 'allin1fix', SimpleNamespace(analyze=lambda *args, **kwargs: inferred))
+    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False))))
+    spec = importlib.util.spec_from_file_location('intro_entry_test', Path(__file__).resolve().parents[1] / 'scripts/analyze_audio.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    for _ in range(2):
+        assert module.main([str(audio), '--device', 'cpu', '--tempo-mode', 'variable']) == 0
+        result = json.loads(capsys.readouterr().out)
+        assert np.max(abs(np.asarray(result['beats']) - actual)) < .0011
+        assert result['tempoMode'] == 'variable'
+        assert result['audioTimingRepair']['leadingHalfTime']['insertedBeats'] == 16
+
+
 @pytest.mark.parametrize('period,offset', [(.33, .19), (.49, 1.13), (.68, .37)])
 def test_extends_source_supported_constant_clock_through_missing_outro(tmp_path, period, offset):
     actual = offset + np.arange(360) * period

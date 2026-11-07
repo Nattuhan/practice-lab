@@ -11,7 +11,7 @@ import numpy as np
 import soundfile as sf
 from scipy.signal import find_peaks
 
-from .metrical_tempo import _accent_features
+from .metrical_tempo import _accent_features, _alternation
 from .timing import bars_from_sections
 
 
@@ -102,6 +102,117 @@ def _audio_supported_spans(audio: sf.SoundFile, start: float, end: float, period
     anchors[0], anchors[-1] = (start, 0), (end, beat_count)
     return [{"start": left[0], "end": right[0], "intervals": right[1] - left[1]}
             for left, right in zip(anchors, anchors[1:])]
+
+
+def _resolve_leading_half_time(audio: sf.SoundFile, data: dict) -> tuple[dict, dict | None]:
+    """Read a sparse opening backwards from the following established pulse.
+
+    Long intro notes do not have to attack on every quarter note. A sustained
+    near-2:1 switch is first a change of tracking density; retain an actual
+    slower backbeat when repeated timbral evidence resolves it that way.
+    """
+    beats = np.asarray(data.get("beats") or [], dtype=float)
+    if len(beats) < 25 or np.any(np.diff(beats) <= 0):
+        return data, None
+    gaps = np.diff(beats)
+    for boundary in range(8, len(gaps) - 15):
+        following = gaps[boundary:boundary + 16]
+        period = float(np.median(following))
+        if (np.max(abs(following[:4] / period - 1)) > .12
+                or np.mean(abs(following / period - 1) < .12) < .9):
+            continue
+        slow = abs(gaps[:boundary] / (2 * period) - 1) < .15
+        if np.mean(slow) < .9:
+            continue
+        last = boundary
+        while last and not slow[last - 1]:
+            last -= 1
+        if last < 8 or not np.all(slow[:last]):
+            continue
+        starts = list(range(0, last - 3, 4))
+        if starts[-1] + 4 < last:
+            starts.append(last - 4)
+        votes, audible = [], 0
+        for index in starts:
+            window = beats[index:index + 5]
+            local_period = float(np.median(np.diff(window))) / 2
+            grid = np.sort(np.r_[window, (window[:-1] + window[1:]) / 2])
+            # Sustained chords are useful continuity evidence even when their
+            # next attack is several beats away. Silence is not an intro clock.
+            first = max(0, round(window[0] * audio.samplerate))
+            audio.seek(first)
+            samples = audio.read(round((window[-1] - window[0]) * audio.samplerate),
+                                 always_2d=True, dtype="float32")
+            if not len(samples) or float(np.mean(samples ** 2)) < 1e-10:
+                continue
+            frame = max(1, round(audio.samplerate * local_period / 8))
+            count = len(samples) // frame
+            if not count:
+                continue
+            rms = np.sqrt(np.mean(samples[:count * frame].reshape(count, frame, -1) ** 2, axis=(1, 2)))
+            held_notes = np.mean(rms > max(1e-5, float(np.percentile(rms, 75)) * .03)) >= .8
+            if not held_notes:
+                # Isolated slow attacks can be a genuine slower introduction.
+                # Require either sustained notes (unresolved beat density) or
+                # audible attacks that the old sparse tracking misses.
+                attacks = _attacks(audio, window[0], window[-1], .1, local_period)
+                if len(attacks) < 3:
+                    continue
+                attack_times, strengths = np.asarray(attacks).T
+                old_distance = np.min(abs(attack_times[:, None] - window[None, :]), axis=1) / local_period
+                new_distance = np.min(abs(attack_times[:, None] - grid[None, :]), axis=1) / local_period
+                old_fit = float(np.average(old_distance, weights=strengths))
+                new_fit = float(np.average(new_distance, weights=strengths))
+                if old_fit < .35 or new_fit > .34 or old_fit - new_fit < .1:
+                    continue
+            audible += 1
+            times, features = _accent_features(audio, window[0] - local_period,
+                                                window[-1] + local_period)
+            if not len(times):
+                continue
+            accents = []
+            for beat in grid[:-1]:
+                nearby = (times >= beat - .07 * local_period) & (times <= beat + .1 * local_period)
+                accents.append(features[:, nearby].max(axis=1) if nearby.any() else np.zeros(3))
+            accents = np.asarray(accents)
+            scale = np.percentile(accents, 90, axis=0)
+            if np.min(scale) >= 1e-7:
+                accents = np.minimum(accents / scale, 2)
+                original, _ = _alternation(accents[::2])
+                faster, _ = _alternation(accents)
+                if original > .15 and original - faster > .1:
+                    votes.append(1)
+                elif faster > .15 and faster - original > .1:
+                    votes.append(2)
+        # Prefer continuity for unresolved long notes, but do not overwrite a
+        # clearly established slow kick/snare pattern with its eighth notes.
+        slow_votes = votes.count(1)
+        if (audible < max(2, len(starts) * .8)
+                or (slow_votes >= 2 and slow_votes >= .5 * len(starts)
+                    and slow_votes >= (2 / 3) * len(votes))):
+            return data, {"factor": 1, "end": float(beats[last])}
+        prefix = np.sort(np.r_[beats[:last + 1], (beats[:last] + beats[1:last + 1]) / 2])
+        expanded = np.round(np.r_[prefix, beats[last + 1:]], 3).tolist()
+        heads = list(data.get("downbeats") or [])
+        # Infer the meter from the following measured bars. The intro's old
+        # four-count bars can span two real bars at the recovered pulse.
+        positions = np.unique(np.argmin(abs(np.asarray(heads)[:, None] - beats[None, :]), axis=1)) if heads else np.array([], dtype=int)
+        after = positions[(positions >= boundary) & (positions <= boundary + 32)]
+        before = positions[positions <= last]
+        meters = np.diff(after)
+        if (len(meters) >= 3 and np.all(meters == meters[0]) and meters[0] >= 2
+                and len(before) >= 2 and np.all(np.diff(before) == meters[0])):
+            heads = ([round(float(prefix[i]), 3) for i in range(2 * int(before[0]), len(prefix), int(meters[0]))]
+                     + [head for head in heads if head > beats[last]])
+        adjusted = {**data, "beats": expanded, "downbeats": heads, "total_bars": len(heads)}
+        for key in ("sections", "automaticSections"):
+            if key in data:
+                adjusted[key] = bars_from_sections(data[key], heads)
+        return adjusted, {"factor": 2, "method": "following_pulse_continuity", "start": float(beats[0]),
+                          "end": float(beats[last]), "followingStart": float(beats[boundary]),
+                          "insertedBeats": last, "evaluatedWindows": len(starts),
+                          "slowBackbeatVotes": slow_votes, "fasterBackbeatVotes": votes.count(2)}
+    return data, None
 
 
 def _missing_intro(audio: sf.SoundFile, data: dict) -> dict | None:
@@ -724,7 +835,14 @@ def _unmetered_tail(audio: sf.SoundFile, data: dict) -> dict | None:
 def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
     """Repair source-supported drift or short ambiguous aliases of a stable pulse."""
     with sf.SoundFile(audio_path) as audio:
+        data, leading_resolution = _resolve_leading_half_time(audio, data)
+        leading_half_time = ({key: value for key, value in leading_resolution.items() if key != "factor"}
+                             if leading_resolution and leading_resolution["factor"] == 2 else None)
         dominant_spans = _dominant_grid_spans(audio, data)
+        if leading_resolution and not leading_half_time:
+            # The local intro decision also constrains the older global-clock
+            # repair: dense hats must not bypass an established slow backbeat.
+            dominant_spans = [span for span in dominant_spans if span["start"] >= leading_resolution["end"]]
         if dominant_spans:
             data = _apply_verified_grid(data, {"spans": dominant_spans})
         intro = _missing_intro(audio, data)
@@ -738,8 +856,10 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
         if outro:
             correction["outro"] = outro
         adjusted = _apply_verified_grid(data, correction) if correction != {"spans": []} else data
+        if leading_half_time:
+            correction["leadingHalfTime"] = leading_half_time
         unmetered = _unmetered_tail(audio, adjusted)
-    if not intro and not outro and not spans and not unmetered:
+    if not intro and not outro and not spans and not unmetered and not leading_half_time:
         return data
     if unmetered:
         correction["unmeteredTail"] = unmetered
@@ -751,6 +871,6 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
             if key in adjusted:
                 adjusted[key] = bars_from_sections(adjusted[key], heads)
     adjusted["audioTimingRepair"] = {
-        "version": 7 if unmetered and unmetered.get("trackingAlias") else 5, **correction,
+        "version": 8 if leading_half_time else 7 if unmetered and unmetered.get("trackingAlias") else 5, **correction,
     }
     return adjusted
