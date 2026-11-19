@@ -210,6 +210,39 @@ test('波形をクリックした後も左右キーで5秒スキップできる'
   await expect.poll(() => page.evaluate(() => window.__media.original.currentTime)).toBeCloseTo(15, 1);
 });
 
+test('ボタンのクリックやスライダーのドラッグ後も再生ショートカットを使える', async ({ page }) => {
+  await start(page);
+  const play = page.locator('#btn-play');
+  const position = () => page.evaluate(() => window.__media.original.currentTime);
+  await play.click();
+  await page.evaluate(() => { window.__media.original.currentTime = 10; });
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(position).toBeCloseTo(15, 1);
+
+  const volume = page.locator('#vol-music');
+  const bounds = await volume.boundingBox();
+  await page.mouse.move(bounds.x + bounds.width * 0.8, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.4, bounds.y + bounds.height / 2, { steps: 4 });
+  await page.mouse.move(bounds.x + bounds.width * 0.4, bounds.y - 10);
+  await page.mouse.up();
+  const draggedVolume = await volume.inputValue();
+  expect(Number(draggedVolume)).toBeLessThan(60);
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(position).toBeCloseTo(10, 1);
+  await expect(volume).toHaveValue(draggedVolume);
+  await page.keyboard.press('Space');
+  await expect.poll(() => page.evaluate(() => window.__media.original.paused)).toBe(false);
+
+  await play.click();
+  await play.focus();
+  await page.keyboard.press('Tab');
+  const restart = page.locator('#btn-restart');
+  await expect(restart).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect.poll(position).toBeLessThan(2);
+});
+
 test('0.5倍速では左右カーソルキーで2.5秒ずつ移動する', async ({ page }) => {
   await start(page);
   await page.locator('#btn-play').click();

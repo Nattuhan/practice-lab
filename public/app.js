@@ -8144,6 +8144,25 @@ var initDesktopCommands = () => {
     }
   });
 };
+document.addEventListener("click", (event) => {
+  if (event.detail === 0) return;
+  const control = event.target.closest?.('button, [role="button"], input[type="range"]');
+  if (control && control === document.activeElement && !document.querySelector("dialog[open]")) control.blur();
+}, { capture: true });
+var rangePointer = null;
+document.addEventListener("pointerdown", (event) => {
+  if (!event.isPrimary || event.button !== 0) return;
+  const range = event.target.closest?.('input[type="range"]');
+  rangePointer = range ? { range, id: event.pointerId } : null;
+}, { capture: true });
+var finishRangePointer = (event) => {
+  if (rangePointer?.id !== event.pointerId) return;
+  const { range } = rangePointer;
+  rangePointer = null;
+  if (range === document.activeElement && !document.querySelector("dialog[open]")) range.blur();
+};
+document.addEventListener("pointerup", finishRangePointer, { capture: true });
+document.addEventListener("pointercancel", finishRangePointer, { capture: true });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     hideContextMenu();

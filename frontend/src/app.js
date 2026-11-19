@@ -5226,6 +5226,30 @@ const initDesktopCommands = () => {
   });
 };
 
+// Pointer-operated controls should give playback keys back after the gesture.
+// Keep keyboard focus and dialog focus so those controls still work with keys.
+document.addEventListener("click", event => {
+  if (event.detail === 0) return;
+  const control = event.target.closest?.('button, [role="button"], input[type="range"]');
+  if (control && control === document.activeElement && !document.querySelector("dialog[open]")) control.blur();
+}, { capture: true });
+
+let rangePointer = null;
+document.addEventListener("pointerdown", event => {
+  if (!event.isPrimary || event.button !== 0) return;
+  const range = event.target.closest?.('input[type="range"]');
+  rangePointer = range ? { range, id: event.pointerId } : null;
+}, { capture: true });
+const finishRangePointer = event => {
+  if (rangePointer?.id !== event.pointerId) return;
+  const { range } = rangePointer;
+  rangePointer = null;
+  // A drag can end outside the slider without firing a click on it.
+  if (range === document.activeElement && !document.querySelector("dialog[open]")) range.blur();
+};
+document.addEventListener("pointerup", finishRangePointer, { capture: true });
+document.addEventListener("pointercancel", finishRangePointer, { capture: true });
+
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") {
     hideContextMenu();
