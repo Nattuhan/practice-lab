@@ -1062,14 +1062,15 @@ document.getElementById("reanalyze-mode").addEventListener("change", updateReana
 const updateAnalysisTempoHint = () => {
   document.getElementById("analysis-tempo-hint").textContent = SELECTORS.analysisTempoMode.value === "variable"
     ? "曲の途中でBPMが変わる曲や、テンポが揺れる演奏に使います。"
-    : "曲全体でBPMが一定の曲に使います。3/4などの拍子変更はテンポを変えずに扱います。";
+    : "一定テンポを優先します。音源の拍と大きくずれるときはテンポ変化ありで解析します。3/4などの拍子変更にも対応します。";
 };
 SELECTORS.analysisTempoMode.addEventListener("change", updateAnalysisTempoHint);
 
 const openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
   if (!hasServer || !SELECTORS.analysisDialog) return;
   analysisForce = reanalyze;
-  SELECTORS.analysisTempoMode.value = reanalyze && currentData?.tempoMode === "variable" ? "variable" : "constant";
+  const previousTempoMode = currentData?.requestedTempoMode ?? currentData?.tempoMode;
+  SELECTORS.analysisTempoMode.value = reanalyze && previousTempoMode === "variable" ? "variable" : "constant";
   updateAnalysisTempoHint();
   document.getElementById("reanalyze-options").hidden = !reanalyze;
   document.getElementById("reanalyze-mode").value = "saved";

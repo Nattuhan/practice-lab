@@ -10,6 +10,10 @@ from math import log
 import numpy as np
 
 
+class ConstantBarAlignmentError(ValueError):
+    """Measured heads cannot be placed on the fixed pulse."""
+
+
 def _pulse_evidence(beats: np.ndarray, activations: dict | None, fps: float) -> tuple[np.ndarray, np.ndarray]:
     period = float(np.median(np.diff(beats)))
     evidence = np.zeros(len(beats))
@@ -308,7 +312,7 @@ def decode_bar_heads(beats: np.ndarray, detected_heads: list[float],
         if not current:
             # Silently collapsing two detections onto one beat hides an
             # unresolved bar topology. Let the job fail visibly instead.
-            raise ValueError("一定テンポで小節頭を整列できませんでした。テンポ変化ありで解析してください")
+            raise ConstantBarAlignmentError("一定テンポで小節頭を整列できませんでした。テンポ変化ありで解析してください")
         layers.append(current)
 
     state = min(layers[-1], key=lambda key: layers[-1][key][0])

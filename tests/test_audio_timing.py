@@ -105,6 +105,33 @@ def test_backfills_held_intro_before_first_detected_beat(tmp_path):
     assert refine_timing_from_audio(result, audio) == result
 
 
+@pytest.mark.parametrize('period,meter', [(.39, 3), (.57, 4)])
+def test_variable_intro_follows_the_nearby_pulse_through_a_later_tempo_change(tmp_path, period, meter):
+    first = 6.75 * period
+    beats = np.r_[first + np.arange(12) * period, first + (11 + np.arange(1, 27) * .79) * period]
+    beats = np.round(beats, 3)
+    data = dict(tempoMode='variable', bpm=60 / period, beats=beats.tolist(),
+                downbeats=beats[1::meter].tolist(), duration=beats[-1] + period)
+    audio = tmp_path / 'bass-opening.wav'
+    write_attacks(audio, beats, data['duration'])
+    original, rate = sf.read(audio)
+    for phase in (0, .25):
+        samples = original.copy()
+        for position in (-5, -3.5, -2, -1):
+            start = round((first + (position + phase) * period) * rate)
+            time = np.arange(round(.57 * period * rate)) / rate
+            samples[start:start + len(time)] += .35 * np.sin(2 * np.pi * 82 * time)
+        sf.write(audio, samples, rate, subtype='FLOAT')
+        result = refine_timing_from_audio(data, audio)
+        if phase == 0:
+            assert result['beats'][:5] == pytest.approx((first + np.arange(-5, 0) * period).tolist(), abs=.004)
+            assert result['beats'][5:] == data['beats']
+            assert result['downbeats'][-len(data['downbeats']):] == data['downbeats']
+            assert result['audioTimingRepair']['intro']['meter'] == meter
+        else:
+            assert result['beats'] == data['beats']
+
+
 def test_fresh_analyzer_output_is_repaired_without_session_identity_or_saved_correction(tmp_path, monkeypatch, capsys):
     import importlib.util
     import json

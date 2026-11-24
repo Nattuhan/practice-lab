@@ -40,8 +40,38 @@ from practice_lab.jpop_sections import refine_jpop_section_labels
 from practice_lab.timing import normalize_tempo_grid
 from practice_lab.audio_timing import refine_timing_from_audio
 from practice_lab.metrical_tempo import resolve_tempo_octave
-from practice_lab.constant_tempo import enforce_constant_tempo
+from practice_lab.constant_meter import ConstantBarAlignmentError
+from practice_lab.constant_tempo import ConstantTempoFitError, constant_tempo_conflict, enforce_constant_tempo
 from practice_lab.variable_meter import resolve_variable_meter
+
+
+def resolve_analysis_tempo(data: dict, audio_path: Path, activations: dict | None, fps: float) -> dict:
+    def measured(mode: str) -> dict:
+        source = normalize_tempo_grid({**data, "tempoMode": mode})
+        return resolve_tempo_octave(refine_timing_from_audio(source, audio_path), audio_path)
+
+    fallback = None
+    if data["tempoMode"] == "constant":
+        detected = measured("constant")
+        try:
+            fixed = enforce_constant_tempo(detected, audio_path=audio_path, detected_downbeats=data["downbeats"],
+                                           activations=activations, activation_fps=fps)
+        except (ConstantTempoFitError, ConstantBarAlignmentError):
+            fallback = {"reason": "no_constant_grid"}
+        else:
+            fallback = constant_tempo_conflict(detected, fixed, activations, fps)
+            if fallback is None:
+                return fixed
+
+    # Reuse inference but recompute from its original timestamps. The
+    # constant pass can already have inserted beats or normalized an alias.
+    variable = resolve_variable_meter(measured("variable"), activations, fps, audio_path)
+    if fallback is not None:
+        beats = np.asarray(variable["beats"], dtype=float)
+        if len(beats) < 2 or not np.all(np.isfinite(beats)) or np.any(np.diff(beats) <= 0):
+            raise ConstantTempoFitError("音源から再生に使える拍を検出できませんでした")
+        variable = {**variable, "requestedTempoMode": "constant", "tempoFallback": fallback}
+    return variable
 
 
 def fmt(seconds: float) -> str:
@@ -132,27 +162,12 @@ def main(argv: list[str] | None = None) -> int:
     }
     if jpop_changes:
         data["jpopLabeling"] = {"version": 1, "changes": jpop_changes}
-    data = normalize_tempo_grid(data)
-    data = refine_timing_from_audio(data, mp3_path)
-    data = resolve_tempo_octave(data, mp3_path)
-    data["tempoMode"] = args.tempo_mode
-    if args.tempo_mode == "constant":
-        activations = getattr(result, "activations", None)
-        # Frame rate belongs to the model, not the rounded segment duration.
-        # Read its configuration only when frame probabilities are available.
-        fps = 100
-        if activations is not None:
-            from allin1fix.config import Config
-            fps = Config().fps
-        data = enforce_constant_tempo(data, audio_path=mp3_path, detected_downbeats=downbeats,
-                                      activations=activations, activation_fps=fps)
-    else:
-        activations = getattr(result, "activations", None)
-        fps = 100
-        if activations is not None:
-            from allin1fix.config import Config
-            fps = Config().fps
-        data = resolve_variable_meter(data, activations, fps, mp3_path)
+    activations = getattr(result, "activations", None)
+    fps = 100
+    if activations is not None:
+        from allin1fix.config import Config
+        fps = Config().fps
+    data = resolve_analysis_tempo(data, mp3_path, activations, fps)
     print(json.dumps(data, ensure_ascii=False))
     return 0
 

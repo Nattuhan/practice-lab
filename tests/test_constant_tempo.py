@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from practice_lab.constant_tempo import enforce_constant_tempo
+from practice_lab.constant_tempo import constant_tempo_conflict, enforce_constant_tempo
 
 
 @pytest.mark.parametrize('period,offset', [(.317, 0), (.493, .17), (.731, 1.23)])
@@ -104,8 +104,25 @@ def test_inadequate_input_does_not_silently_return_a_variable_pulse():
         enforce_constant_tempo(dict(bpm=120, beats=[0, .3, 1], downbeats=[0], duration=2))
 
 
-@pytest.mark.parametrize('mode', ['constant', 'variable'])
-def test_analyzer_cli_uses_the_selected_assumption_for_new_and_repeated_analysis(tmp_path, monkeypatch, capsys, mode):
+def test_an_isolated_displaced_fill_does_not_discard_the_constant_pulse():
+    beats = .2 + np.arange(96) * .5
+    observed = beats.copy()
+    observed[32:39] += .24
+    data = dict(bpm=120, beats=observed.tolist(), downbeats=beats[::4].tolist(), duration=49)
+    fixed = enforce_constant_tempo(data)
+    pulse = np.zeros(4900)
+    pulse[np.rint(observed * 100).astype(int)] = .9
+    activations = dict(beat=pulse, downbeat=np.zeros_like(pulse))
+    assert constant_tempo_conflict(data, fixed, activations, 100) is None
+
+
+@pytest.mark.parametrize('mode,with_evidence,expected', [
+    ('constant', False, 'constant'),
+    ('constant', True, 'variable'),
+    ('variable', True, 'variable'),
+])
+def test_analyzer_cli_uses_the_selected_assumption_for_new_and_repeated_analysis(
+        tmp_path, monkeypatch, capsys, mode, with_evidence, expected):
     from test_audio_timing import write_attacks
     beats = np.r_[4.17 + np.arange(192) * .5, 4.17 + 191 * .5 + np.arange(1, 129) * .6].tolist()
     beats[1:4] = [beat + jitter for beat, jitter in zip(beats[1:4], (.065, -.04, .035))]
@@ -117,8 +134,17 @@ def test_analyzer_cli_uses_the_selected_assumption_for_new_and_repeated_analysis
         time = np.arange(round(.32 * rate)) / rate
         samples[first:first + len(time)] = .4 * np.sin(2 * np.pi * 83 * time)
     sf.write(audio, samples, rate, subtype='FLOAT')
-    inferred = SimpleNamespace(beats=beats, downbeats=beats[::4], bpm=120, path=audio, segments=[])
+    activations = None
+    if with_evidence:
+        pulse = np.zeros(round((beats[-1] + 1) * 100))
+        pulse[np.rint(np.asarray(beats) * 100).astype(int)] = .9
+        heads = np.zeros_like(pulse)
+        heads[np.rint(np.asarray(beats[::4]) * 100).astype(int)] = .8
+        activations = dict(beat=pulse, downbeat=heads)
+    inferred = SimpleNamespace(beats=beats, downbeats=beats[::4], bpm=120, path=audio, segments=[],
+                               activations=activations)
     monkeypatch.setitem(sys.modules, 'allin1fix', SimpleNamespace(analyze=lambda *args, **kwargs: inferred))
+    monkeypatch.setitem(sys.modules, 'allin1fix.config', SimpleNamespace(Config=lambda: SimpleNamespace(fps=100)))
     monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False),
                          backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False))))
     spec = importlib.util.spec_from_file_location('tempo_cli_test', Path(__file__).resolve().parents[1] / 'scripts/analyze_audio.py')
@@ -129,8 +155,8 @@ def test_analyzer_cli_uses_the_selected_assumption_for_new_and_repeated_analysis
         assert module.main([str(audio), '--device', 'cpu', '--tempo-mode', mode]) == 0
         output = json.loads(capsys.readouterr().out)
         intervals = np.diff(output['beats'])
-        assert output['tempoMode'] == mode
-        if mode == 'constant':
+        assert output['tempoMode'] == expected
+        if expected == 'constant':
             assert max(intervals) - min(intervals) < 2e-6
             assert output['beats'][0] == pytest.approx(.17, abs=.001)
         else:
@@ -138,3 +164,8 @@ def test_analyzer_cli_uses_the_selected_assumption_for_new_and_repeated_analysis
             assert min(intervals) < .51
             assert output['beats'][0] == beats[0]
             assert 'constantTempo' not in output
+        if mode != expected:
+            assert output['requestedTempoMode'] == mode
+            assert output['tempoFallback']['reason'] == 'beat_phase_conflict'
+        else:
+            assert 'tempoFallback' not in output

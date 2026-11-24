@@ -106,3 +106,11 @@ class SavedReanalysisTests(unittest.TestCase):
             self.assertEqual(services.reanalyze_saved_audio('sample', tempo_mode='constant')['tempoMode'], 'constant')
             self.assertEqual(analyzer.call_args.kwargs['tempo_mode'], 'constant')
             self.assertEqual(json.loads(result.read_text())['tempoMode'], 'constant')
+            analyzer.return_value = {**fresh, 'tempoMode': 'variable', 'requestedTempoMode': 'constant',
+                                     'tempoFallback': {'reason': 'beat_phase_conflict'}, 'beats': [0, .73, 1.12, 1.50]}
+            updated = services.reanalyze_saved_audio('sample')
+            self.assertEqual(updated['tempoMode'], 'variable')
+            self.assertEqual(updated['beats'], analyzer.return_value['beats'])
+            updated = services.reanalyze_saved_audio('sample')
+            self.assertEqual(analyzer.call_args.kwargs['tempo_mode'], 'constant')
+            self.assertEqual(json.loads(result.read_text())['tempoFallback'], updated['tempoFallback'])

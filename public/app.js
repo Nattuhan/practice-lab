@@ -4284,13 +4284,14 @@ var updateReanalysisInputs = () => {
 };
 document.getElementById("reanalyze-mode").addEventListener("change", updateReanalysisInputs);
 var updateAnalysisTempoHint = () => {
-  document.getElementById("analysis-tempo-hint").textContent = SELECTORS.analysisTempoMode.value === "variable" ? "\u66F2\u306E\u9014\u4E2D\u3067BPM\u304C\u5909\u308F\u308B\u66F2\u3084\u3001\u30C6\u30F3\u30DD\u304C\u63FA\u308C\u308B\u6F14\u594F\u306B\u4F7F\u3044\u307E\u3059\u3002" : "\u66F2\u5168\u4F53\u3067BPM\u304C\u4E00\u5B9A\u306E\u66F2\u306B\u4F7F\u3044\u307E\u3059\u30023/4\u306A\u3069\u306E\u62CD\u5B50\u5909\u66F4\u306F\u30C6\u30F3\u30DD\u3092\u5909\u3048\u305A\u306B\u6271\u3044\u307E\u3059\u3002";
+  document.getElementById("analysis-tempo-hint").textContent = SELECTORS.analysisTempoMode.value === "variable" ? "\u66F2\u306E\u9014\u4E2D\u3067BPM\u304C\u5909\u308F\u308B\u66F2\u3084\u3001\u30C6\u30F3\u30DD\u304C\u63FA\u308C\u308B\u6F14\u594F\u306B\u4F7F\u3044\u307E\u3059\u3002" : "\u4E00\u5B9A\u30C6\u30F3\u30DD\u3092\u512A\u5148\u3057\u307E\u3059\u3002\u97F3\u6E90\u306E\u62CD\u3068\u5927\u304D\u304F\u305A\u308C\u308B\u3068\u304D\u306F\u30C6\u30F3\u30DD\u5909\u5316\u3042\u308A\u3067\u89E3\u6790\u3057\u307E\u3059\u30023/4\u306A\u3069\u306E\u62CD\u5B50\u5909\u66F4\u306B\u3082\u5BFE\u5FDC\u3057\u307E\u3059\u3002";
 };
 SELECTORS.analysisTempoMode.addEventListener("change", updateAnalysisTempoHint);
 var openAnalysisDialog = ({ reanalyze = false, openAudioPicker = false } = {}) => {
   if (!hasServer || !SELECTORS.analysisDialog) return;
   analysisForce = reanalyze;
-  SELECTORS.analysisTempoMode.value = reanalyze && currentData?.tempoMode === "variable" ? "variable" : "constant";
+  const previousTempoMode = currentData?.requestedTempoMode ?? currentData?.tempoMode;
+  SELECTORS.analysisTempoMode.value = reanalyze && previousTempoMode === "variable" ? "variable" : "constant";
   updateAnalysisTempoHint();
   document.getElementById("reanalyze-options").hidden = !reanalyze;
   document.getElementById("reanalyze-mode").value = "saved";

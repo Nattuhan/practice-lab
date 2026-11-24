@@ -170,6 +170,8 @@ class AnalyzeResponse(BaseModel):
     assets: SessionAssets | None = None
     bpm: float
     tempoMode: Literal["constant", "variable"] | None = None
+    requestedTempoMode: Literal["constant", "variable"] | None = None
+    tempoFallback: dict | None = None
     total_bars: int
     duration: float
     sections: list[SectionEntry]

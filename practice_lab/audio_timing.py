@@ -290,7 +290,7 @@ def _missing_intro(audio: sf.SoundFile, data: dict) -> dict | None:
             "intervals": intervals, "firstDownbeatIndex": first_head_index}
 
 
-def constant_intro_onset(audio_path: Path, first: float, period: float) -> float | None:
+def sparse_bass_onset(audio_path: Path, first: float, period: float) -> float | None:
     """Find the start of a sparse bass intro whose pulse has already been fitted."""
     if first < period / 2:
         return None
@@ -342,6 +342,50 @@ def constant_intro_onset(audio_path: Path, first: float, period: float) -> float
             if np.all((bass.sum(axis=1) > .5 * total) & (bass.max(axis=1) > .12 * total)):
                 return onset * frame / rate
     return None
+
+
+def _missing_sparse_bass_intro(audio: sf.SoundFile, audio_path: Path, data: dict) -> dict | None:
+    beats = np.asarray(data.get("beats") or [], dtype=float)
+    heads = np.asarray(data.get("downbeats") or [], dtype=float)
+    if len(beats) < 9 or len(heads) < 3:
+        return None
+    first = float(beats[0])
+    gaps = np.diff(beats[:9])
+    typical = float(np.median(gaps))
+    if typical <= 0 or np.max(abs(gaps / typical - 1)) > .12:
+        return None
+    head_indexes = np.searchsorted(beats, heads[:3])
+    meter = int(head_indexes[1] - head_indexes[0])
+    if (not 2 <= meter <= 12 or head_indexes[0] >= meter
+            or np.any(head_indexes >= len(beats)) or np.diff(head_indexes)[1] != meter
+            or not np.allclose(beats[head_indexes], heads[:3], atol=.003, rtol=0)):
+        return None
+
+    onset = sparse_bass_onset(audio_path, first, typical)
+    if onset is None:
+        return None
+    attacks = [(time, strength) for time, strength in _attacks(audio, onset - typical / 4, first, .16, typical)
+               if onset <= time < first]
+    if len(attacks) < 3 or attacks[-1][0] - attacks[0][0] < typical:
+        return None
+    times, weights = np.asarray(attacks).T
+    # The local median and local slope estimate the same pulse differently
+    # when detector frames jitter. Let bass attacks choose between them, but
+    # keep the first measured beat as the phase anchor in either case.
+    slope = float(np.polyfit(np.arange(9), beats[:9], 1)[0])
+    candidates = np.asarray([typical, slope])
+    positions = (times[None, :] - first) / candidates[:, None]
+    distances = abs(positions * 2 - np.rint(positions * 2)) / 2
+    fit = np.average(distances, weights=weights, axis=1)
+    best = int(np.argmin(fit))
+    period = float(candidates[best])
+    if fit[best] > .10 or np.average(distances[best] < .125, weights=weights) < .60:
+        return None
+    intervals = int(np.floor((first - onset) / period + .125))
+    if not 1 <= intervals <= min(32, int(first / period)):
+        return None
+    return {"start": first, "period": period, "intervals": intervals, "meter": meter,
+            "firstDownbeatIndex": int(head_indexes[0]), "method": "local_bass_pulse"}
 
 
 def _missing_outro(audio: sf.SoundFile, data: dict) -> dict | None:
@@ -536,11 +580,12 @@ def _apply_verified_grid(data: dict, correction: dict) -> dict:
         period = correction["intro"]["period"]
         intervals = correction["intro"]["intervals"]
         head_index = correction["intro"]["firstDownbeatIndex"]
+        meter = correction["intro"].get("meter", 4)
         leading = [(i, round(anchor - i * period, 3))
                    for i in range(intervals, -1, -1)]
         beats = sorted([b for b in beats if b > anchor] + [b for _, b in leading])
         downbeats = sorted([b for b in downbeats if b > anchor]
-                           + [b for i, b in leading if (i + head_index) % 4 == 0])
+                           + [b for i, b in leading if (i + head_index) % meter == 0])
     if correction.get("outro"):
         outro = correction["outro"]
         anchor, end, count = outro["start"], outro["end"], outro["intervals"]
@@ -900,6 +945,8 @@ def refine_timing_from_audio(data: dict, audio_path: Path) -> dict:
         if dominant_spans:
             data = _apply_verified_grid(data, {"spans": dominant_spans})
         intro = _missing_intro(audio, data)
+        if intro is None and data.get("tempoMode") == "variable":
+            intro = _missing_sparse_bass_intro(audio, audio_path, data)
         outro = _missing_outro(audio, data)
         spans = list(dominant_spans)
         for start, end, period in _candidate_spans(data):
