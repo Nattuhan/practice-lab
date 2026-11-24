@@ -1,8 +1,10 @@
 """A user-selected constant pulse, independent of the number of beats per bar."""
 from math import ceil, floor
+from pathlib import Path
 
 import numpy as np
 
+from .audio_timing import constant_intro_onset
 from .timing import bars_from_sections
 from .constant_meter import decode_bar_heads, restore_recounted_bar_heads
 
@@ -45,7 +47,8 @@ def fit_constant_grid(data: dict) -> tuple[np.ndarray, dict]:
                   "supportedBeats": int(np.count_nonzero(consistent)), "detectedBeats": len(beats)}
 
 
-def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None = None,
+def enforce_constant_tempo(data: dict, *, audio_path: Path | None = None,
+                           detected_downbeats: list[float] | None = None,
                            activations: dict | None = None, activation_fps: float = 100) -> dict:
     grid, clock = fit_constant_grid(data)
     period, phase = clock["period"], clock["phase"]
@@ -74,6 +77,30 @@ def enforce_constant_tempo(data: dict, *, detected_downbeats: list[float] | None
         measured_heads = eligible
     heads, meter_diagnostics = decode_bar_heads(grid, measured_heads, activations, activation_fps,
                                               tracked_beats=beats)
+    if audio_path is not None:
+        # Under the explicit constant-tempo assumption, use the fitted pulse
+        # for the missing prefix. Sparse or syncopated notes delimit the
+        # audible intro but need not furnish a second independent clock.
+        onset = constant_intro_onset(audio_path, float(grid[0]), period)
+        if onset is not None:
+            first_index = round((grid[0] - phase) / period)
+            start_index = max(ceil((-phase - .0000005) / period), round((onset - phase) / period))
+            if start_index < first_index:
+                prefix = np.round(phase + np.arange(start_index, first_index) * period, 6)
+                grid = np.r_[prefix, grid]
+                clock["intro"] = {"audioStart": onset, "insertedBeats": len(prefix)}
+                # Use a repeated meter from the following bars. Fill up to
+                # the first measured head: the old pickup can span a whole
+                # bar, even if the fitted pulse already covers that part.
+                meters = meter_diagnostics["meters"][:4]
+                values, counts = np.unique(meters, return_counts=True)
+                if len(values) and max(counts) >= 3:
+                    meter = int(values[np.argmax(counts)])
+                    head_index = round((heads[0] - grid[0]) / period)
+                    prefix_heads = grid[head_index % meter:head_index:meter].tolist() if meter >= 2 else []
+                    heads = prefix_heads + heads
+                    meter_diagnostics["alignedBars"] = len(heads)
+                    meter_diagnostics["meters"] = np.rint(np.diff(heads) / period).astype(int).tolist()
     meter_diagnostics["discardedRepairHeads"] = discarded
     meter_diagnostics["restoredRepairAnchors"] = restored_anchors
     adjusted = {**meter_data, "bpm": round(60 / period, 1), "beats": grid.tolist(),

@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         if activations is not None:
             from allin1fix.config import Config
             fps = Config().fps
-        data = enforce_constant_tempo(data, detected_downbeats=downbeats,
+        data = enforce_constant_tempo(data, audio_path=mp3_path, detected_downbeats=downbeats,
                                       activations=activations, activation_fps=fps)
     else:
         activations = getattr(result, "activations", None)

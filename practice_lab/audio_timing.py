@@ -290,6 +290,60 @@ def _missing_intro(audio: sf.SoundFile, data: dict) -> dict | None:
             "intervals": intervals, "firstDownbeatIndex": first_head_index}
 
 
+def constant_intro_onset(audio_path: Path, first: float, period: float) -> float | None:
+    """Find the start of a sparse bass intro whose pulse has already been fitted."""
+    if first < period / 2:
+        return None
+    with sf.SoundFile(audio_path) as audio:
+        rate = audio.samplerate
+        frame = max(1, round(rate * period / 16))
+        # Read a little past the first detected beat to distinguish a short
+        # pickup from noise. Frame power also handles antiphase stereo sources.
+        end = min(audio.frames, int((first + 4 * period) * rate))
+        if end < 2 * frame:
+            return None
+        rms = np.concatenate([
+            np.sqrt(np.mean(block.reshape(-1, frame, audio.channels) ** 2, axis=(1, 2)))
+            for block in audio.blocks(blocksize=128 * frame, frames=end // frame * frame,
+                                      dtype="float32", always_2d=True)
+        ])
+        # Find the first sustained sound. Quiet room tone and isolated
+        # impulses cannot set the onset or the level reference.
+        sustained = np.minimum(rms[:-1], rms[1:])
+        threshold = max(1e-4, .12 * float(sustained.max()))
+        starts = np.flatnonzero(sustained > threshold)
+        if not len(starts):
+            return None
+        onset = int(starts[0])
+        if onset * frame / rate >= first - period / 2:
+            return None
+
+        # The existing rhythm check handles aligned percussion. This fallback
+        # needs evidence of a held low note before extending over an ambiguous
+        # prefix, since loud speech or crowd noise can also pass the level test.
+        end_of_note = np.flatnonzero(rms[onset:] <= threshold)
+        note_frames = int(end_of_note[0]) if len(end_of_note) else len(rms) - onset
+        check_frames = min(note_frames, 16)
+        if check_frames < 8:
+            return None
+        audio.seek(onset * frame)
+        samples = audio.read(check_frames * frame, dtype="float32", always_2d=True)
+        window = np.hanning(4 * frame)[:, None]
+        frequencies = np.fft.rfftfreq(len(window), 1 / rate)
+        bass_band = (frequencies >= 40) & (frequencies <= 350)
+        if not np.any(bass_band):
+            return None
+        for start in range(0, check_frames - 5, 2):
+            # Two overlapping quarter-beat windows reject isolated transients.
+            pairs = [samples[i * frame:(i + 4) * frame] for i in (start, start + 2)]
+            power = np.mean(abs(np.fft.rfft(pairs * window, axis=1)) ** 2, axis=2)
+            bass = power[:, bass_band]
+            total = power[:, 1:].sum(axis=1)
+            if np.all((bass.sum(axis=1) > .5 * total) & (bass.max(axis=1) > .12 * total)):
+                return onset * frame / rate
+    return None
+
+
 def _missing_outro(audio: sf.SoundFile, data: dict) -> dict | None:
     """Extend a proven constant clock when the detector drops the song ending."""
     beats = np.asarray(data.get("beats") or [], dtype=float)
