@@ -100,10 +100,11 @@ function wait(file, timeoutSeconds = 0) {
   const { files, hash } = loadPlan(file);
   return new Promise((resolve, reject) => {
     let timer;
-    // Observe local state writes; no GitHub API polling or repeated tool output.
-    const watcher = fs.watch(path.dirname(files.state), check);
+    // Check the local snapshot and lock together. Directory notifications can
+    // miss a rename or lock removal, particularly on Windows.
+    const interval = setInterval(check, 250);
     function finish(error, state) {
-      watcher.close(); clearTimeout(timer);
+      clearInterval(interval); clearTimeout(timer);
       if (error) reject(error); else resolve(summary(state));
     }
     function check() {
@@ -139,10 +140,10 @@ async function main() {
     // Return only after this worker owns the snapshot. Otherwise wait could
     // mistake the previous failed attempt for the newly started attempt.
     await new Promise((resolve, reject) => {
-      const watcher = fs.watch(path.dirname(files.state), check);
+      const interval = setInterval(check, 250);
       const timer = setTimeout(() => finish(new Error('Worker startup timed out; inspect the worker log')), 30000);
       function finish(error) {
-        watcher.close(); clearTimeout(timer); child.removeListener('exit', exited);
+        clearInterval(interval); clearTimeout(timer); child.removeListener('exit', exited);
         if (error) reject(error); else resolve();
       }
       function check() {
